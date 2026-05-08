@@ -853,7 +853,11 @@
                 'grid-tile--no-main': !entry.hasMain,
                 'grid-tile--fav': entry.isFavorite,
               }"
-              :title="`${entry.mainFilename} · ${formatSize(entry.trailerSizeBytes)}`"
+              :title="
+                sessionIndex === RECENTS_SESSION_ID
+                  ? `Destaques · ${libraryFolderLabel(libSession(entry))} · ${entry.mainFilename} · ${formatSize(entry.trailerSizeBytes)}`
+                  : `${entry.mainFilename} · ${formatSize(entry.trailerSizeBytes)}`
+              "
               @pointerdown="onGridTileChromePointerDown(i, $event)"
               @pointerup="onGridTileChromePointerUp"
               @pointerleave="onGridTileChromePointerUp"
@@ -980,9 +984,21 @@
               <button
                 type="button"
                 class="grid-tile-select"
-                :aria-label="`Escolher trailer ${entry.label}`"
+                :aria-label="
+                  sessionIndex === RECENTS_SESSION_ID
+                    ? `Escolher trailer ${entry.label} em Destaques, origem ${libraryFolderLabel(libSession(entry))}`
+                    : `Escolher trailer ${entry.label}`
+                "
                 @click="onListItemClick(i)"
               >
+                <span
+                  v-if="sessionIndex === RECENTS_SESSION_ID"
+                  class="grid-tile-recents-meta"
+                  :title="`Lista Destaques · vídeo da biblioteca «${libraryFolderLabel(libSession(entry))}»`"
+                >
+                  <span class="grid-tile-recents-tag">Destaques</span>
+                  <span class="grid-tile-recents-lib">{{ libraryFolderLabel(libSession(entry)) }}</span>
+                </span>
                 <span class="grid-tile-label">{{ entry.label }}</span>
                 <span v-if="!entry.hasMain" class="badge badge--tile">sem completo</span>
                 <span
@@ -1266,6 +1282,15 @@ function libSession(entry: TrailerListEntry | null | undefined): number {
   const n = entry?.librarySession
   if (typeof n === 'number' && Number.isFinite(n) && n >= 0) return Math.floor(n)
   return sessionIndex.value >= 0 ? sessionIndex.value : 0
+}
+
+/** Rótulo da pasta/biblioteca no menu (`sessions`), por índice real da sessão (≥0). */
+function libraryFolderLabel(sessionId: number): string {
+  const row = sessions.value.find((s) => s.id === sessionId)
+  const label = row?.label?.trim()
+  if (label) return label
+  if (sessionId >= 0) return `Biblioteca ${sessionId}`
+  return ''
 }
 
 const recentsMutationBusy = ref(false)
@@ -2048,6 +2073,12 @@ const playbackFolderCaption = computed(() => {
   if (!entry) return ''
   const lib = sessions.value.find((s) => s.id === libSession(entry))?.label?.trim() ?? ''
   const sub = parentRelDir(entry.mainRel)
+  const destaquesPrefix =
+    sessionIndex.value === RECENTS_SESSION_ID ? (lib ? `Destaques · ${lib}` : 'Destaques') : ''
+  if (sessionIndex.value === RECENTS_SESSION_ID) {
+    if (sub && destaquesPrefix) return `${destaquesPrefix} · ${sub.replace(/\//g, ' / ')}`
+    return destaquesPrefix || 'Destaques'
+  }
   if (sub && lib) return `${lib} · ${sub.replace(/\//g, ' / ')}`
   if (sub) return sub.replace(/\//g, ' / ')
   return lib || '—'
@@ -4569,6 +4600,40 @@ onUnmounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.grid-tile-recents-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 0.08rem;
+}
+
+.grid-tile-recents-tag {
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #fdd663;
+  padding: 0.06rem 0.28rem;
+  border-radius: 4px;
+  background: rgba(253, 214, 99, 0.12);
+  border: 1px solid rgba(253, 214, 99, 0.35);
+}
+
+.grid-tile-recents-lib {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #9db9e8;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .badge {

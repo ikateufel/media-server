@@ -144,17 +144,10 @@
                   type="button"
                   class="admin-btn admin-btn--sm"
                   :disabled="jobActive || !isWinServer"
-                  @click="startSyncJob('trailers', { session: i })"
+                  title="Corre trailer.bat e depois preview.bat nesta pasta (um único job)"
+                  @click="startSyncJob('both', { session: i })"
                 >
-                  Trailers
-                </button>
-                <button
-                  type="button"
-                  class="admin-btn admin-btn--sm"
-                  :disabled="jobActive || !isWinServer"
-                  @click="startSyncJob('previews', { session: i })"
-                >
-                  Previews
+                  Trailer + preview
                 </button>
               </td>
               <td class="admin-td-autotags">
@@ -249,28 +242,12 @@
         </button>
         <button
           type="button"
-          class="admin-btn"
-          :disabled="jobActive || !isWinServer || !rows.length"
-          @click="startSyncJob('trailers', { all: true })"
-        >
-          Trailers (todas)
-        </button>
-        <button
-          type="button"
-          class="admin-btn"
-          :disabled="jobActive || !isWinServer || !rows.length"
-          @click="startSyncJob('previews', { all: true })"
-        >
-          Previews (todas)
-        </button>
-        <button
-          type="button"
           class="admin-btn admin-btn--primary"
           :disabled="jobActive || !isWinServer || !rows.length"
-          title="Corre primeiro Trailers para todas as bibliotecas, depois Previews. Tudo num único job — basta esperar."
+          title="Corre trailer.bat e depois preview.bat para todas as bibliotecas (um único job)"
           @click="startSyncJob('both', { all: true })"
         >
-          Trailers + Previews (todas)
+          Trailer + preview (todas)
         </button>
       </div>
       <p v-if="autoTagsBusy" class="admin-muted">A correr o pipeline auto-tags… (pode demorar vários minutos)</p>
