@@ -242,6 +242,24 @@
         </button>
         <button
           type="button"
+          class="admin-btn"
+          :disabled="jobActive || !isWinServer || !rows.length"
+          title="Corre só trailer.bat para todas as bibliotecas"
+          @click="startSyncJob('trailers', { all: true })"
+        >
+          Trailers (todas)
+        </button>
+        <button
+          type="button"
+          class="admin-btn"
+          :disabled="jobActive || !isWinServer || !rows.length"
+          title="Corre só preview.bat para todas as bibliotecas"
+          @click="startSyncJob('previews', { all: true })"
+        >
+          Previews (todas)
+        </button>
+        <button
+          type="button"
           class="admin-btn admin-btn--primary"
           :disabled="jobActive || !isWinServer || !rows.length"
           title="Corre trailer.bat e depois preview.bat para todas as bibliotecas (um único job)"
