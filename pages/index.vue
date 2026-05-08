@@ -57,21 +57,40 @@
           <template v-if="!playerUrl && previewUrl && pinnedTrailers.length > 0">
             <div class="video-shell-main" title="Segue o título seleccionado na grelha">
               <span class="video-shell-pane-badge video-shell-pane-badge--main" aria-hidden="true">Grelha</span>
-              <video
-                ref="previewVideoRef"
-                :key="`${sessionIndex}-${previewUrl}`"
-                class="stage-video"
-                :src="previewUrl"
-                :muted="previewTrailerMuted"
-                playsinline
-                controls
-                :preload="videoPreloadAttr"
-                @loadeddata="onPreviewLoaded"
-                @ended="onPreviewEnded"
-                @ratechange="syncRateFromVideo"
-                @volumechange="onPreviewTrailerVolumeChange"
-                @error="onStageVideoError"
-              />
+              <div ref="previewFullscreenWrapRef" class="stage-fullscreen-wrap">
+                <video
+                  ref="previewVideoRef"
+                  :key="`${sessionIndex}-${previewUrl}`"
+                  class="stage-video"
+                  :src="previewUrl"
+                  :muted="previewTrailerMuted"
+                  playsinline
+                  controls
+                  :preload="videoPreloadAttr"
+                  @loadeddata="onPreviewLoaded"
+                  @ended="onPreviewEnded"
+                  @ratechange="syncRateFromVideo"
+                  @volumechange="onPreviewTrailerVolumeChange"
+                  @error="onStageVideoError"
+                />
+                <div
+                  v-show="trailerStageFullscreen && entries.length > 0"
+                  class="stage-fullscreen-trailer-actions"
+                  aria-label="Controlo no trailer em ecrã inteiro"
+                >
+                  <button
+                    type="button"
+                    class="stage-fullscreen-trailer-btn"
+                    title="Próximo trailer"
+                    @click.stop="goToNextTrailer"
+                  >
+                    <span>Próximo trailer</span>
+                    <svg class="stage-fullscreen-trailer-btn-ico" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                      <path d="M7 6v12l7-6-7-6zm9 0v12h2V6h-2z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
             </div>
             <div class="video-shell-pinned-row" role="group" aria-label="Trailers fixos em loop">
               <div
@@ -97,29 +116,52 @@
               </div>
             </div>
           </template>
-          <video
+          <div
             v-else-if="!playerUrl && previewUrl"
-            ref="previewVideoRef"
-            :key="`${sessionIndex}-${previewUrl}`"
-            class="stage-video"
-            :src="previewUrl"
-            :muted="previewTrailerMuted"
-            playsinline
-            controls
-            :preload="videoPreloadAttr"
-            @loadeddata="onPreviewLoaded"
-            @ended="onPreviewEnded"
-            @ratechange="syncRateFromVideo"
-            @volumechange="onPreviewTrailerVolumeChange"
-            @error="onStageVideoError"
-          />
+            ref="previewFullscreenWrapRef"
+            class="stage-fullscreen-wrap"
+          >
+            <video
+              ref="previewVideoRef"
+              :key="`${sessionIndex}-${previewUrl}`"
+              class="stage-video"
+              :src="previewUrl"
+              :muted="previewTrailerMuted"
+              playsinline
+              controls
+              :preload="videoPreloadAttr"
+              @loadeddata="onPreviewLoaded"
+              @ended="onPreviewEnded"
+              @ratechange="syncRateFromVideo"
+              @volumechange="onPreviewTrailerVolumeChange"
+              @error="onStageVideoError"
+            />
+            <div
+              v-show="trailerStageFullscreen && entries.length > 0"
+              class="stage-fullscreen-trailer-actions"
+              aria-label="Controlo no trailer em ecrã inteiro"
+            >
+              <button
+                type="button"
+                class="stage-fullscreen-trailer-btn"
+                title="Próximo trailer"
+                @click.stop="goToNextTrailer"
+              >
+                <span>Próximo trailer</span>
+                <svg class="stage-fullscreen-trailer-btn-ico" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                  <path d="M7 6v12l7-6-7-6zm9 0v12h2V6h-2z" />
+                </svg>
+              </button>
+            </div>
+          </div>
           <video
             v-else-if="playerUrl"
             ref="mainVideoRef"
             :key="`${sessionIndex}-${playerUrl}`"
             class="stage-video"
+            :class="{ 'stage-video--fast-play': fastPlayEnabled }"
             :src="playerUrl"
-            controls
+            :controls="mainVideoNativeControls"
             playsinline
             :preload="videoPreloadAttr"
             @loadedmetadata="onMainVideoLoadedMetadata"
@@ -127,6 +169,7 @@
             @seeking="onMainVideoSeeking"
             @ended="onMainVideoEnded"
             @ratechange="syncRateFromVideo"
+            @click="onMainVideoSurfaceClick"
             @error="onStageVideoError"
           />
           <div v-else class="preview-placeholder">Escolha um título na lista.</div>
@@ -532,8 +575,8 @@
               :class="{ 'icon-tool--on': fastPlayEnabled }"
               :title="
                 fastPlayEnabled
-                  ? 'Fast Play activo: toca 10s por minuto e deixa o último minuto normal. Mexer na barra desliga.'
-                  : 'Fast Play: tocar 10s por minuto e deixar o último minuto normal.'
+                  ? 'Fast Play: ecrã inteiro; saltos automáticos; último trecho normal. No telemóvel a barra fica oculta — toque no vídeo para pausar. Desligue o FAST para sair do ecrã inteiro e voltar à barra.'
+                  : 'Fast Play: entra em ecrã inteiro, saltos automáticos no vídeo completo (parâmetros no Admin). No telemóvel, sem barra nativa durante o FAST.'
               "
               :aria-pressed="fastPlayEnabled"
               @click="toggleFastPlay"
@@ -1611,6 +1654,9 @@ const activeIndex = ref<number | null>(null)
 
 const previewUrl = ref<string | null>(null)
 const previewVideoRef = ref<HTMLVideoElement | null>(null)
+/** Contentor do trailer para fullscreen com overlay (não só o elemento vídeo). */
+const previewFullscreenWrapRef = ref<HTMLElement | null>(null)
+const trailerStageFullscreen = ref(false)
 
 /** Máximo de trailers fixos por baixo do principal (grelha + 2 = 3 vídeos). */
 const MAX_PINNED_TRAILERS = 2
@@ -1634,6 +1680,13 @@ const fastPlayWindowSeconds = ref(10)
 const fastPlayLastMinuteSeconds = ref(60)
 let fastPlaySegmentStartAt = 0
 let fastPlayProgrammaticSeek = false
+
+/**
+ * Com FAST activo, sem `controls` no vídeo completo (desktop fullscreen incluído): seeks programáticos
+ * fazem vários browsers mostrarem a barra nativa. Usa a toolbar e toque no vídeo para pausar/continuar;
+ * desligue o FAST para voltar à barra nativa e poder arrastar.
+ */
+const mainVideoNativeControls = computed(() => !fastPlayEnabled.value)
 
 const PREVIEW_TRAILER_MUTED_KEY = 'video-player-preview-trailer-muted'
 
@@ -2414,26 +2467,95 @@ function activeVideoEl(): HTMLVideoElement | null {
   return playerUrl.value ? mainVideoRef.value : previewVideoRef.value
 }
 
-async function tryEnterVideoFullscreen(el: HTMLVideoElement) {
-  try {
-    if (el.requestFullscreen) {
+/** Alvo do fullscreen automático em landscape: trailer → contentor com botões; vídeo completo → elemento vídeo. */
+function fullscreenTargetForAutorient(): HTMLElement | null {
+  if (playerUrl.value) return mainVideoRef.value
+  return previewFullscreenWrapRef.value ?? previewVideoRef.value
+}
+
+async function tryEnterFullscreen(el: HTMLElement | null) {
+  if (!el) return
+  const innerVideo =
+    el instanceof HTMLVideoElement ? el : (el.querySelector('video') as HTMLVideoElement | null)
+
+  /** Primeiro: contentor (overlay «próximo»); se falhar, o mesmo fluxo no elemento vídeo (compat mobile). */
+  if (!(el instanceof HTMLVideoElement) && typeof el.requestFullscreen === 'function') {
+    try {
       await el.requestFullscreen()
       return
+    } catch {
+      /* continuar para o vídeo */
     }
-  } catch {
-    /* fall through */
   }
-  const wk = (el as HTMLVideoElement & { webkitEnterFullscreen?: () => void }).webkitEnterFullscreen
-  wk?.()
+
+  if (el instanceof HTMLVideoElement) {
+    try {
+      if (el.requestFullscreen) {
+        await el.requestFullscreen()
+        return
+      }
+    } catch {
+      /* */
+    }
+    const wk = (el as HTMLVideoElement & { webkitEnterFullscreen?: () => void }).webkitEnterFullscreen
+    wk?.()
+    return
+  }
+
+  if (innerVideo) {
+    try {
+      if (innerVideo.requestFullscreen) {
+        await innerVideo.requestFullscreen()
+        return
+      }
+    } catch {
+      /* */
+    }
+    const wk = (innerVideo as HTMLVideoElement & { webkitEnterFullscreen?: () => void }).webkitEnterFullscreen
+    wk?.()
+  }
+}
+
+async function tryEnterVideoFullscreen(el: HTMLVideoElement) {
+  await tryEnterFullscreen(el)
+}
+
+function syncTrailerStageFullscreenFlag() {
+  if (!import.meta.client || typeof document === 'undefined') return
+  const wrap = previewFullscreenWrapRef.value
+  trailerStageFullscreen.value = !!wrap && document.fullscreenElement === wrap
+}
+
+function onDocumentFullscreenChange() {
+  syncTrailerStageFullscreenFlag()
+}
+
+/** Sai de fullscreen só se o elemento activo for o vídeo completo (ex.: ao desligar FAST). */
+function exitFullscreenIfMainVideo() {
+  if (!import.meta.client || typeof document === 'undefined') return
+  const v = mainVideoRef.value
+  if (!v) return
+  if (document.fullscreenElement !== v) return
+  document.exitFullscreen?.().catch(() => {})
 }
 
 function onLandscapeOrientationChange() {
   if (!shouldAutoFullscreenOnLandscape()) return
   const landscape = window.matchMedia('(orientation: landscape)').matches
-  const el = activeVideoEl()
-  if (landscape && el) {
-    tryEnterVideoFullscreen(el).catch(() => {})
-  } else if (!landscape && document.fullscreenElement) {
+  if (landscape) {
+    const attempt = () => {
+      const el = fullscreenTargetForAutorient()
+      if (el) return tryEnterFullscreen(el)
+      return Promise.resolve()
+    }
+    void attempt().then(() => {
+      if (typeof document === 'undefined' || document.fullscreenElement) return
+      void nextTick(() => void attempt())
+    })
+    window.setTimeout(() => {
+      if (typeof document !== 'undefined' && !document.fullscreenElement) void attempt()
+    }, 200)
+  } else if (document.fullscreenElement) {
     document.exitFullscreen?.().catch(() => {})
   }
 }
@@ -2572,6 +2694,15 @@ function onMainVideoSeeking() {
   stopFastPlay(false)
 }
 
+/** Com controlos nativos ocultos (FAST em touch), toque no vídeo = pausar / continuar. */
+function onMainVideoSurfaceClick() {
+  if (mainVideoNativeControls.value) return
+  const v = mainVideoRef.value
+  if (!v) return
+  if (v.paused) void v.play().catch(() => {})
+  else v.pause()
+}
+
 function stopFastPlay(keepEnabled: boolean) {
   const v = mainVideoRef.value
   if (v && Number.isFinite(playbackRate.value)) {
@@ -2579,7 +2710,10 @@ function stopFastPlay(keepEnabled: boolean) {
   }
   fastPlayProgrammaticSeek = false
   fastPlaySegmentStartAt = 0
-  if (!keepEnabled) fastPlayEnabled.value = false
+  if (!keepEnabled) {
+    fastPlayEnabled.value = false
+    exitFullscreenIfMainVideo()
+  }
 }
 
 function toggleFastPlay() {
@@ -2592,6 +2726,10 @@ function toggleFastPlay() {
   v.playbackRate = fastPlayRate.value
   fastPlaySegmentStartAt = Number.isFinite(v.currentTime) ? v.currentTime : 0
   if (v.paused) v.play().catch(() => {})
+  void nextTick(() => {
+    const el = mainVideoRef.value
+    if (el && fastPlayEnabled.value) tryEnterVideoFullscreen(el).catch(() => {})
+  })
 }
 
 function applyFastPlayStepIfNeeded() {
@@ -3542,6 +3680,7 @@ onMounted(async () => {
   onDesktopWidthUiChange()
   desktopWidthMql.addEventListener('change', onDesktopWidthUiChange)
   document.addEventListener('keydown', onGlobalDocumentKeydown)
+  document.addEventListener('fullscreenchange', onDocumentFullscreenChange)
   if (typeof BroadcastChannel !== 'undefined') {
     try {
       libraryRefreshChannel = new BroadcastChannel('video-player-library')
@@ -3561,6 +3700,7 @@ onUnmounted(() => {
   }
   if (typeof document !== 'undefined') {
     document.removeEventListener('keydown', onGlobalDocumentKeydown)
+    document.removeEventListener('fullscreenchange', onDocumentFullscreenChange)
     document.body.style.overflow = ''
     document.documentElement.classList.remove('video-player-tv-catalog-assist')
   }
@@ -5227,6 +5367,11 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+/* Trailer único: o contentor de fullscreen tem de ocupar todo o 16:9 (senão requestFullscreen no div falha). */
+.video-shell:not(.video-shell--with-pins) {
+  align-items: stretch;
+}
+
 .video-shell--with-pins {
   flex-direction: column;
   align-items: stretch;
@@ -5405,6 +5550,64 @@ onUnmounted(() => {
   }
 }
 
+.stage-fullscreen-wrap {
+  position: relative;
+  align-self: stretch;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-shell-main .stage-fullscreen-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.stage-fullscreen-trailer-actions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  padding: 0.65rem 0.85rem 0.85rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.72), transparent);
+}
+
+.stage-fullscreen-trailer-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(12, 13, 16, 0.88);
+  color: #e8eaed;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.stage-fullscreen-trailer-btn:hover {
+  background: rgba(30, 33, 40, 0.95);
+  border-color: rgba(95, 157, 238, 0.55);
+}
+
+.stage-fullscreen-trailer-btn-ico {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex-shrink: 0;
+  opacity: 0.95;
+}
+
 .stage-video {
   width: 100%;
   height: 100%;
@@ -5414,7 +5617,22 @@ onUnmounted(() => {
   display: block;
 }
 
-.stage-video::-webkit-media-controls-panel {
+.stage-video--fast-play {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Reforço WebKit: alguns browsers ainda injectam UI em fullscreen após seek. */
+.stage-video--fast-play::-webkit-media-controls,
+.stage-video--fast-play::-webkit-media-controls-enclosure,
+.stage-video--fast-play::-webkit-media-controls-panel {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none;
+}
+
+.stage-video:not(.stage-video--fast-play)::-webkit-media-controls-panel {
   min-height: 44px;
 }
 
