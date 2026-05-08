@@ -1,6 +1,6 @@
 ' Arranque do servidor sem janela de consola (log em data\startup-server.log).
 
-Dim sh, fso, scriptDir, rootDir, logPath, errPath, rc, cmd
+Dim sh, fso, scriptDir, rootDir, logDir, logPath, errPath, rc, cmd
 
 Set sh = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
@@ -13,19 +13,77 @@ logPath = fso.BuildPath(rootDir, "data\startup-server.log")
 errPath = fso.BuildPath(rootDir, "data\startup-error.log")
 
 If Not fso.FolderExists(fso.BuildPath(rootDir, "data")) Then
+  On Error Resume Next
   fso.CreateFolder fso.BuildPath(rootDir, "data")
+  On Error GoTo 0
 End If
+
+logDir = fso.BuildPath(rootDir, "data")
+If Not CanWriteToFolder(logDir) Then
+  logDir = fso.BuildPath(sh.ExpandEnvironmentStrings("%LOCALAPPDATA%"), "video_player\data")
+  EnsureFolderTree logDir
+End If
+
+logPath = fso.BuildPath(logDir, "startup-server.log")
+errPath = fso.BuildPath(logDir, "startup-error.log")
 
 Sub AppendLog(path, msg)
   Dim f
+  On Error Resume Next
   Set f = fso.OpenTextFile(path, 8, True)
-  f.WriteLine "[" & Now & "] " & msg
-  f.Close
+  If Err.Number = 0 Then
+    f.WriteLine "[" & Now & "] " & msg
+    f.Close
+  End If
+  On Error GoTo 0
 End Sub
 
 Function Q(p)
   Q = Chr(34) & p & Chr(34)
 End Function
+
+Function CanWriteToFolder(folderPath)
+  Dim testPath, f
+  On Error Resume Next
+  testPath = fso.BuildPath(folderPath, ".write_test.tmp")
+  Set f = fso.OpenTextFile(testPath, 2, True)
+  If Err.Number = 0 Then
+    f.WriteLine "ok"
+    f.Close
+    fso.DeleteFile testPath, True
+    CanWriteToFolder = True
+  Else
+    CanWriteToFolder = False
+    Err.Clear
+  End If
+  On Error GoTo 0
+End Function
+
+Sub EnsureFolderTree(targetPath)
+  Dim parts, i, current
+  parts = Split(targetPath, "\")
+  If UBound(parts) < 1 Then Exit Sub
+
+  current = parts(0)
+  If Right(current, 1) = ":" Then
+    current = current & "\"
+  End If
+
+  For i = 1 To UBound(parts)
+    If Len(parts(i)) > 0 Then
+      If Right(current, 1) = "\" Then
+        current = current & parts(i)
+      Else
+        current = current & "\" & parts(i)
+      End If
+      If Not fso.FolderExists(current) Then
+        On Error Resume Next
+        fso.CreateFolder current
+        On Error GoTo 0
+      End If
+    End If
+  Next
+End Sub
 
 AppendLog logPath, "boot: a arrancar"
 

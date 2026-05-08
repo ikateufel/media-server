@@ -6,7 +6,9 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
   requireAdminToken(event)
 
-  const body = (await readBody(event).catch(() => null)) as { items?: unknown } | null
+  const body = (await readBody(event).catch(() => null)) as
+    | { items?: unknown; fastPlay?: unknown }
+    | null
   const rows = body?.items
   if (!Array.isArray(rows)) {
     throw createError({ statusCode: 400, statusMessage: 'Corpo JSON inválido: esperado { "items": [ { "path", "title" }, ... ] }.' })
@@ -21,7 +23,7 @@ export default defineEventHandler(async (event) => {
     .filter((r) => r.path)
 
   try {
-    await writeVideoMenuToDisk(items)
+    await writeVideoMenuToDisk(items, body?.fastPlay)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     throw createError({ statusCode: 400, statusMessage: msg })

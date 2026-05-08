@@ -9,8 +9,91 @@ export interface VideoMenuItem {
   title: string
 }
 
+export interface FastPlaySettings {
+  rate: number
+  stepSeconds: number
+  windowSeconds: number
+  lastMinuteSeconds: number
+}
+
+export const DEFAULT_FAST_PLAY_SETTINGS: FastPlaySettings = {
+  rate: 2,
+  stepSeconds: 60,
+  windowSeconds: 10,
+  lastMinuteSeconds: 60,
+}
+
 function menuFilePath() {
   return join(process.cwd(), 'data', 'video-menu.json')
+}
+
+function clampNumber(raw: unknown, min: number, max: number, fallback: number): number {
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(min, Math.min(max, n))
+}
+
+function normalizeFastPlaySettings(raw: unknown): FastPlaySettings {
+  const obj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  return {
+    rate: clampNumber(obj.rate, 0.5, 4, DEFAULT_FAST_PLAY_SETTINGS.rate),
+    stepSeconds: Math.round(
+      clampNumber(obj.stepSeconds, 10, 600, DEFAULT_FAST_PLAY_SETTINGS.stepSeconds),
+    ),
+    windowSeconds: Math.round(
+      clampNumber(obj.windowSeconds, 2, 120, DEFAULT_FAST_PLAY_SETTINGS.windowSeconds),
+    ),
+    lastMinuteSeconds: Math.round(
+      clampNumber(obj.lastMinuteSeconds, 10, 600, DEFAULT_FAST_PLAY_SETTINGS.lastMinuteSeconds),
+    ),
+  }
+}
+
+function parseMenuItemsFromUnknown(parsed: unknown): VideoMenuItem[] | null {
+  const rows: unknown = Array.isArray(parsed)
+    ? parsed
+    : parsed && typeof parsed === 'object' && parsed !== null && 'items' in parsed
+      ? (parsed as { items: unknown }).items
+      : null
+  if (!Array.isArray(rows) || !rows.length) return null
+  const out: VideoMenuItem[] = []
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue
+    const path = String((row as { path?: string }).path ?? '').trim()
+    if (!path) continue
+    let title = String((row as { title?: string }).title ?? '').trim()
+    if (!title) title = basename(resolve(path))
+    out.push({ path, title })
+  }
+  return out.length ? out : null
+}
+
+function parseMenuDocumentFromDisk(): { items: VideoMenuItem[] | null; fastPlay: FastPlaySettings } {
+  const file = menuFilePath()
+  if (!existsSync(file)) {
+    return { items: null, fastPlay: { ...DEFAULT_FAST_PLAY_SETTINGS } }
+  }
+  try {
+    const raw = readFileSync(file, 'utf8').trim()
+    if (!raw) return { items: null, fastPlay: { ...DEFAULT_FAST_PLAY_SETTINGS } }
+    const parsed = JSON.parse(raw) as unknown
+    const items = parseMenuItemsFromUnknown(parsed)
+    let fastPlayRaw: unknown = null
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const obj = parsed as Record<string, unknown>
+      fastPlayRaw =
+        obj.fastPlay ??
+        (obj.settings && typeof obj.settings === 'object'
+          ? (obj.settings as Record<string, unknown>).fastPlay
+          : null)
+    }
+    return {
+      items,
+      fastPlay: normalizeFastPlaySettings(fastPlayRaw),
+    }
+  } catch {
+    return { items: null, fastPlay: { ...DEFAULT_FAST_PLAY_SETTINGS } }
+  }
 }
 
 /**
@@ -19,31 +102,11 @@ function menuFilePath() {
  * Se o ficheiro não existir, estiver vazio ou inválido, devolve `null` para usar o fallback do `.env`.
  */
 export function tryLoadVideoMenuFromDisk(): VideoMenuItem[] | null {
-  const file = menuFilePath()
-  if (!existsSync(file)) return null
-  try {
-    const raw = readFileSync(file, 'utf8').trim()
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as unknown
-    const rows: unknown = Array.isArray(parsed)
-      ? parsed
-      : parsed && typeof parsed === 'object' && parsed !== null && 'items' in parsed
-        ? (parsed as { items: unknown }).items
-        : null
-    if (!Array.isArray(rows) || !rows.length) return null
-    const out: VideoMenuItem[] = []
-    for (const row of rows) {
-      if (!row || typeof row !== 'object') continue
-      const path = String((row as { path?: string }).path ?? '').trim()
-      if (!path) continue
-      let title = String((row as { title?: string }).title ?? '').trim()
-      if (!title) title = basename(resolve(path))
-      out.push({ path, title })
-    }
-    return out.length ? out : null
-  } catch {
-    return null
-  }
+  return parseMenuDocumentFromDisk().items
+}
+
+export function getFastPlaySettingsFromDisk(): FastPlaySettings {
+  return parseMenuDocumentFromDisk().fastPlay
 }
 
 /** Ordem e rótulos do menu; se não houver JSON válido, usa `runtimeConfig` + rótulos por pasta. */
@@ -75,7 +138,10 @@ export function getVideoRootsForCli(): string[] {
  * Grava `data/video-menu.json` com `{ "items": [...] }` (UTF-8).
  * Valida caminhos e títulos antes de escrever.
  */
-export async function writeVideoMenuToDisk(items: VideoMenuItem[]): Promise<void> {
+export async function writeVideoMenuToDisk(
+  items: VideoMenuItem[],
+  fastPlayRaw?: unknown,
+): Promise<void> {
   if (!Array.isArray(items) || !items.length) {
     throw new Error('Lista de pastas vazia.')
   }
@@ -102,7 +168,10 @@ export async function writeVideoMenuToDisk(items: VideoMenuItem[]): Promise<void
   }
   const file = menuFilePath()
   await mkdir(dirname(file), { recursive: true })
-  const payload = `${JSON.stringify({ items: normalized }, null, 2)}\n`
+  const fastPlay = normalizeFastPlaySettings(
+    fastPlayRaw === undefined ? getFastPlaySettingsFromDisk() : fastPlayRaw,
+  )
+  const payload = `${JSON.stringify({ items: normalized, fastPlay }, null, 2)}\n`
   await writeFile(file, payload, 'utf8')
 }
 

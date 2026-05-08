@@ -1,4 +1,8 @@
-import { getVideoMenuItems, tryLoadVideoMenuFromDisk } from '../../utils/videoMenu'
+import {
+  getFastPlaySettingsFromDisk,
+  getVideoMenuItems,
+  tryLoadVideoMenuFromDisk,
+} from '../../utils/videoMenu'
 import { requireAdminToken } from '../../utils/requireAdmin'
 
 export default defineEventHandler((event) => {
@@ -13,5 +17,6 @@ export default defineEventHandler((event) => {
     source,
     serverPlatform: process.platform,
     items: items.map((e) => ({ path: e.path, title: e.title })),
+    fastPlay: getFastPlaySettingsFromDisk(),
   }
 })

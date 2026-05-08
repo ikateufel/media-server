@@ -189,6 +189,30 @@
         </table>
       </div>
 
+      <h3 class="admin-h3">Fast Play (reprodutor)</h3>
+      <p class="admin-muted">
+        Define o comportamento do botão <strong>FAST</strong> no vídeo completo: velocidade, salto entre pontos,
+        tempo tocado por ponto e trecho final sem saltos.
+      </p>
+      <div class="admin-row admin-row--checks">
+        <label class="admin-check-label">
+          Velocidade
+          <input v-model.number="fastPlay.rate" type="number" class="admin-input" min="0.5" max="4" step="0.1" />
+        </label>
+        <label class="admin-check-label">
+          Salto (segundos)
+          <input v-model.number="fastPlay.stepSeconds" type="number" class="admin-input" min="10" max="600" step="1" />
+        </label>
+        <label class="admin-check-label">
+          Tocar por ponto (segundos)
+          <input v-model.number="fastPlay.windowSeconds" type="number" class="admin-input" min="2" max="120" step="1" />
+        </label>
+        <label class="admin-check-label">
+          Trecho final normal (segundos)
+          <input v-model.number="fastPlay.lastMinuteSeconds" type="number" class="admin-input" min="10" max="600" step="1" />
+        </label>
+      </div>
+
       <h3 class="admin-h3">Tags automáticas</h3>
       <p class="admin-muted">
         Equivalente a <code class="admin-code">npm run auto-tags</code>: exporta nomes, gera
@@ -466,8 +490,21 @@ interface MenuRow {
   title: string
 }
 
+interface FastPlaySettings {
+  rate: number
+  stepSeconds: number
+  windowSeconds: number
+  lastMinuteSeconds: number
+}
+
 const token = ref('')
 const rows = ref<MenuRow[]>([])
+const fastPlay = ref<FastPlaySettings>({
+  rate: 2,
+  stepSeconds: 60,
+  windowSeconds: 10,
+  lastMinuteSeconds: 60,
+})
 const source = ref<'file' | 'env' | ''>('')
 const loadError = ref('')
 const saveMsg = ref('')
@@ -757,10 +794,26 @@ async function loadMenu() {
       source: 'file' | 'env'
       serverPlatform: string
       items: MenuRow[]
+      fastPlay?: Partial<FastPlaySettings>
     }>('/api/admin/menu', { headers: h })
     source.value = data.source
     serverPlatform.value = data.serverPlatform || ''
     rows.value = data.items.map((e) => ({ path: e.path, title: e.title }))
+    const fp = data.fastPlay ?? {}
+    const nRate = Number(fp.rate)
+    const nStep = Number(fp.stepSeconds)
+    const nWindow = Number(fp.windowSeconds)
+    const nLast = Number(fp.lastMinuteSeconds)
+    fastPlay.value = {
+      rate: Number.isFinite(nRate) ? Math.max(0.5, Math.min(4, nRate)) : 2,
+      stepSeconds: Number.isFinite(nStep) ? Math.max(10, Math.min(600, Math.round(nStep))) : 60,
+      windowSeconds: Number.isFinite(nWindow)
+        ? Math.max(2, Math.min(120, Math.round(nWindow)))
+        : 10,
+      lastMinuteSeconds: Number.isFinite(nLast)
+        ? Math.max(10, Math.min(600, Math.round(nLast)))
+        : 60,
+    }
     if (!rows.value.length) {
       rows.value = [{ path: '', title: '' }]
     }
@@ -814,7 +867,7 @@ async function saveMenu() {
     await $fetch('/api/admin/menu', {
       method: 'PUT',
       headers: { ...h, 'Content-Type': 'application/json' },
-      body: { items: valid },
+      body: { items: valid, fastPlay: fastPlay.value },
     })
     saveMsg.value = 'Menu gravado. Recarregue o reprodutor para aplicar (ou mude de biblioteca).'
     await loadMenu()

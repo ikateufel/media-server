@@ -1,4 +1,9 @@
 @echo off
+REM Arranca o servidor de producao (npm run start) minimizado.
+REM - Executa desde qualquer lado: faz cd para a raiz do repo (%~dp0..).
+REM - Se aparecer erro de aspas/antigo: garante que atualizaste este ficheiro (usa start /D ...).
+REM - Depois do arranque, verifica data\startup-server.log e porta (por defeito 3000)
+REM - Para debug, edita abaixo e tira /MIN para ver a consola do Node.
 setlocal
 cd /d "%~dp0.."
 set "ROOT=%CD%"
@@ -29,9 +34,10 @@ if not exist ".output\server\index.mjs" (
 )
 
 call :log "a iniciar npm run start (processo separado — pode fechar esta janela)"
-REM Sem /B: novo processo na sua propria consola; ao fechar ESTA janela o servidor nao morre.
-REM /MIN minimiza a consola do Node (podes fechar pelo icone na barra de tarefas / Gestor de tarefas).
-start "" /MIN cmd /c "cd /d \"%ROOT%\" && npm run start >> \"%ROOT%\data\startup-server.log\" 2>&1"
+REM /D define o working directory (evita erro de quoting com cd + caminhos com espacos).
+REM Sem /MIN podes tirar para ver erros na consola do Node.
+REM A saida vai para startup-server.log; erros também (2>&1).
+start "" /MIN /D "%ROOT%" cmd /c "npm run start >> data\startup-server.log 2>&1"
 exit /b 0
 
 :log

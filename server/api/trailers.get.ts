@@ -7,7 +7,7 @@ import {
   scanTrailersCatalogInRoot,
   tagSuggestionsForSession,
 } from '../utils/trailerCatalogScan'
-import { getVideoRootsFromRuntime } from '../utils/videoMenu'
+import { getFastPlaySettingsFromDisk, getVideoRootsFromRuntime } from '../utils/videoMenu'
 import { getResolvedAdminToken } from '../utils/requireAdmin'
 import { parseSessionQuery } from '../utils/videoSession'
 
@@ -130,5 +130,6 @@ export default defineEventHandler(async (event) => {
     serverPlatform: process.platform,
     /** `true` quando VIDEO_ADMIN_TOKEN está definido — necessário para `/api/admin/reveal-in-explorer`. */
     adminRevealExplorer: adminToken.length > 0,
+    fastPlay: getFastPlaySettingsFromDisk(),
   }
 })

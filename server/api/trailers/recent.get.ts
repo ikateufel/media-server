@@ -9,7 +9,7 @@ import {
 } from '../../utils/trailerCatalogScan'
 import { isCatalogTrailerRelSuffix } from '../../utils/trailerNames'
 import { readRecentPlaybackList } from '../../utils/recentPlaybackDb'
-import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
+import { getFastPlaySettingsFromDisk, getVideoRootsFromRuntime } from '../../utils/videoMenu'
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
@@ -65,5 +65,6 @@ export default defineEventHandler(async (event) => {
     ),
     serverPlatform: process.platform,
     adminRevealExplorer: adminToken.length > 0,
+    fastPlay: getFastPlaySettingsFromDisk(),
   }
 })

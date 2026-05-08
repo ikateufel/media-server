@@ -124,6 +124,7 @@
             :preload="videoPreloadAttr"
             @loadedmetadata="onMainVideoLoadedMetadata"
             @timeupdate="onMainVideoTimeUpdate"
+            @seeking="onMainVideoSeeking"
             @ended="onMainVideoEnded"
             @ratechange="syncRateFromVideo"
             @error="onStageVideoError"
@@ -523,6 +524,21 @@
               <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M3 6h18M8 6V4h8v2m2 0v14a2 2 0 01-2 2H8a2 2 0 01-2-2V6h12M10 11v6M14 11v6" stroke-linecap="round" />
               </svg>
+            </button>
+            <button
+              v-if="activeIndex !== null && mainVideoEntry"
+              type="button"
+              class="icon-tool icon-tool--fast-play"
+              :class="{ 'icon-tool--on': fastPlayEnabled }"
+              :title="
+                fastPlayEnabled
+                  ? 'Fast Play activo: toca 10s por minuto e deixa o último minuto normal. Mexer na barra desliga.'
+                  : 'Fast Play: tocar 10s por minuto e deixar o último minuto normal.'
+              "
+              :aria-pressed="fastPlayEnabled"
+              @click="toggleFastPlay"
+            >
+              FAST
             </button>
             <div class="rate-block rate-block--inline">
               <label for="rate-select-main" class="rate-label rate-label--compact">Velocidade</label>
@@ -1111,9 +1127,6 @@
               </svg>
               {{ s.label }}
             </span>
-            <span v-if="(s.topTags?.length ?? 0) > 0" class="session-menu-item-top-tags">
-              {{ (s.topTags ?? []).slice(0, 5).join(' · ') }}
-            </span>
           </button>
         </nav>
       </aside>
@@ -1613,6 +1626,14 @@ const playerUrl = ref<string | null>(null)
 const mainVideoRef = ref<HTMLVideoElement | null>(null)
 
 const playbackRate = ref(1)
+const fastPlayEnabled = ref(false)
+
+const fastPlayRate = ref(2)
+const fastPlayStepSeconds = ref(60)
+const fastPlayWindowSeconds = ref(10)
+const fastPlayLastMinuteSeconds = ref(60)
+let fastPlaySegmentStartAt = 0
+let fastPlayProgrammaticSeek = false
 
 const PREVIEW_TRAILER_MUTED_KEY = 'video-player-preview-trailer-muted'
 
@@ -2430,6 +2451,7 @@ function onListItemClick(i: number) {
 
 /** Sai do vídeo completo e mostra outra vez só o trailer (previewUrl mantém-se) */
 async function closeFullVideo() {
+  stopFastPlay(false)
   await flushMainProgressIfAny()
   playerUrl.value = null
   activeIndex.value = null
@@ -2442,6 +2464,7 @@ function openFullFromPreview() {
 }
 
 async function openVideo(i: number) {
+  stopFastPlay(false)
   clearPinnedTrailers()
   gridInlinePreviewIndex.value = null
   catalogGalleryIndex.value = null
@@ -2526,21 +2549,91 @@ function onMainVideoLoadedMetadata() {
   const v = mainVideoRef.value
   const t = fullVideoResumeAt.value
   fullVideoResumeAt.value = null
-  if (!v || t == null || !Number.isFinite(t)) return
-  if (Number.isFinite(v.duration) && t < v.duration - 4) {
+  if (!v) return
+  if (t != null && Number.isFinite(t) && Number.isFinite(v.duration) && t < v.duration - 4) {
     try {
       v.currentTime = t
     } catch {
       /* */
     }
   }
+  fastPlaySegmentStartAt = Number.isFinite(v.currentTime) ? v.currentTime : 0
 }
 
 function onMainVideoTimeUpdate() {
+  applyFastPlayStepIfNeeded()
   void persistMainProgress(false)
 }
 
+function onMainVideoSeeking() {
+  if (!fastPlayEnabled.value) return
+  if (fastPlayProgrammaticSeek) return
+  // Intervenção manual (barra/seek do utilizador) desliga o modo automático.
+  stopFastPlay(false)
+}
+
+function stopFastPlay(keepEnabled: boolean) {
+  const v = mainVideoRef.value
+  if (v && Number.isFinite(playbackRate.value)) {
+    v.playbackRate = playbackRate.value
+  }
+  fastPlayProgrammaticSeek = false
+  fastPlaySegmentStartAt = 0
+  if (!keepEnabled) fastPlayEnabled.value = false
+}
+
+function toggleFastPlay() {
+  fastPlayEnabled.value = !fastPlayEnabled.value
+  const v = mainVideoRef.value
+  if (!fastPlayEnabled.value || !v) {
+    if (!fastPlayEnabled.value) stopFastPlay(false)
+    return
+  }
+  v.playbackRate = fastPlayRate.value
+  fastPlaySegmentStartAt = Number.isFinite(v.currentTime) ? v.currentTime : 0
+  if (v.paused) v.play().catch(() => {})
+}
+
+function applyFastPlayStepIfNeeded() {
+  if (!fastPlayEnabled.value || fastPlayProgrammaticSeek) return
+  const v = mainVideoRef.value
+  if (!v || !Number.isFinite(v.currentTime) || !Number.isFinite(v.duration)) return
+  if (v.paused || v.ended) return
+
+  const duration = v.duration
+  const current = v.currentTime
+  const lastMinuteStart = Math.max(0, duration - fastPlayLastMinuteSeconds.value)
+
+  // Último minuto toca contínuo sem mais saltos.
+  if (current >= lastMinuteStart) return
+
+  if (!Number.isFinite(fastPlaySegmentStartAt) || fastPlaySegmentStartAt < 0) {
+    fastPlaySegmentStartAt = current
+  }
+  const playedInSegment = current - fastPlaySegmentStartAt
+  if (playedInSegment < fastPlayWindowSeconds.value) return
+
+  const nextMinuteMark =
+    (Math.floor(current / fastPlayStepSeconds.value) + 1) * fastPlayStepSeconds.value
+  if (!Number.isFinite(nextMinuteMark) || nextMinuteMark <= current) return
+  if (nextMinuteMark >= lastMinuteStart) return
+
+  fastPlayProgrammaticSeek = true
+  try {
+    v.currentTime = nextMinuteMark
+    fastPlaySegmentStartAt = nextMinuteMark
+    if (v.paused) v.play().catch(() => {})
+  } catch {
+    /* */
+  } finally {
+    setTimeout(() => {
+      fastPlayProgrammaticSeek = false
+    }, 0)
+  }
+}
+
 function onMainVideoEnded() {
+  stopFastPlay(false)
   void (async () => {
     const i = activeIndex.value
     const entry = i !== null ? entries.value[i] ?? null : null
@@ -2927,6 +3020,8 @@ function setPlaybackRate(rate: number) {
 }
 
 function syncRateFromVideo() {
+  // Em FAST, a velocidade do vídeo completo é temporária e não deve sobrescrever o seletor global.
+  if (fastPlayEnabled.value && playerUrl.value) return
   const v = playerUrl.value ? mainVideoRef.value : previewVideoRef.value
   if (v && Number.isFinite(v.playbackRate)) {
     if (Math.abs(v.playbackRate - playbackRate.value) < 0.001) return
@@ -3086,10 +3181,32 @@ async function loadTrailers(opts?: { preserveFocusTrailerRel?: string | null }) 
       serverPlatform?: string
       adminRevealExplorer?: boolean
       catalogMode?: 'trailers' | 'main-only'
+      fastPlay?: {
+        rate?: number
+        stepSeconds?: number
+        windowSeconds?: number
+        lastMinuteSeconds?: number
+      }
     }>(trailerUrl)
     serverPlatform.value =
       typeof data.serverPlatform === 'string' ? data.serverPlatform : ''
     adminRevealExplorer.value = data.adminRevealExplorer === true
+    if (data.fastPlay && typeof data.fastPlay === 'object') {
+      const nRate = Number(data.fastPlay.rate)
+      const nStep = Number(data.fastPlay.stepSeconds)
+      const nWindow = Number(data.fastPlay.windowSeconds)
+      const nLast = Number(data.fastPlay.lastMinuteSeconds)
+      if (Number.isFinite(nRate) && nRate >= 0.5 && nRate <= 4) fastPlayRate.value = nRate
+      if (Number.isFinite(nStep) && nStep >= 10 && nStep <= 600) {
+        fastPlayStepSeconds.value = Math.round(nStep)
+      }
+      if (Number.isFinite(nWindow) && nWindow >= 2 && nWindow <= 120) {
+        fastPlayWindowSeconds.value = Math.round(nWindow)
+      }
+      if (Number.isFinite(nLast) && nLast >= 10 && nLast <= 600) {
+        fastPlayLastMinuteSeconds.value = Math.round(nLast)
+      }
+    }
     catalogMode.value =
       !isSearchSession && data.catalogMode === 'main-only' ? 'main-only' : 'trailers'
     fullEntries.value = data.items.map((e) => ({
@@ -3436,6 +3553,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  stopFastPlay(false)
   void flushMainProgressIfAny()
   if (gridChromeLongTimer) {
     clearTimeout(gridChromeLongTimer)
@@ -4792,7 +4910,7 @@ onUnmounted(() => {
   left: 0;
   bottom: 0;
   z-index: 241;
-  width: min(300px, 86vw);
+  width: min(380px, 94vw);
   max-width: 100%;
   background: #1a1d22;
   border-right: 1px solid #2d333b;
@@ -4807,13 +4925,13 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.65rem 0.75rem;
+  padding: 0.85rem 0.9rem;
   border-bottom: 1px solid #2d333b;
   flex-shrink: 0;
 }
 
 .session-menu-title {
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 700;
   color: #e8eaed;
   text-transform: uppercase;
@@ -4824,10 +4942,10 @@ onUnmounted(() => {
   border: none;
   background: transparent;
   color: #9aa0a6;
-  font-size: 1.5rem;
+  font-size: 1.8rem;
   line-height: 1;
   cursor: pointer;
-  padding: 0.2rem 0.45rem;
+  padding: 0.3rem 0.55rem;
   border-radius: 8px;
 }
 
@@ -4839,8 +4957,8 @@ onUnmounted(() => {
 .session-menu-list {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.65rem 0.6rem;
+  gap: 0.55rem;
+  padding: 0.85rem 0.8rem;
   overflow-y: auto;
   flex: 1;
   min-height: 0;
@@ -4848,10 +4966,10 @@ onUnmounted(() => {
 
 .session-menu-item {
   font: inherit;
-  font-size: 0.88rem;
+  font-size: 1rem;
   font-weight: 600;
   text-align: left;
-  padding: 0.55rem 0.65rem;
+  padding: 0.75rem 0.85rem;
   border-radius: 10px;
   border: 1px solid #3c4043;
   background: #1e2228;
@@ -4859,7 +4977,9 @@ onUnmounted(() => {
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.35;
+  min-height: 3rem;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -4869,14 +4989,16 @@ onUnmounted(() => {
   gap: 0.45rem;
 }
 
-.session-menu-item-top-tags {
-  display: block;
-  margin-top: 0.2rem;
-  font-size: 0.72rem;
-  font-weight: 500;
-  color: #8ea3b5;
-  overflow: hidden;
-  text-overflow: ellipsis;
+@media (pointer: coarse) {
+  .session-menu-panel {
+    width: min(430px, 96vw);
+  }
+
+  .session-menu-item {
+    font-size: 1.05rem;
+    padding: 0.88rem 0.95rem;
+    min-height: 3.4rem;
+  }
 }
 
 .session-menu-item-eye {
@@ -5425,6 +5547,14 @@ onUnmounted(() => {
   border-color: #5f9dee;
   background: #2a3f5f;
   color: #e8f1ff;
+}
+
+.icon-tool--fast-play {
+  min-width: 44px;
+  padding: 0 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .icon-tool--at-cap {

@@ -25,9 +25,22 @@ if not exist "%TRAILER_TEMP%" mkdir "%TRAILER_TEMP%" 2>nul
 if not exist "%TRAILER_TEMP%" (
   set "TRAILER_TEMP=%TEMP%\vp-trailer-%RANDOM%%RANDOM%%RANDOM%%RANDOM%"
 )
+:: Modo de coleta de segmentos (mantem sempre vel=!vel! pts=!pts! ou seja ~2x no timeline):
+::   default  = distribuicao antiga (?n pontos pelo filme + bloco final)
+::   minuto10 = 10s no segundo 0 de cada minuto (0:00,1:00,...) ate nao cortar sobre o ultimo minuto?
+::               + ate 60s finais continuos (?ltimo minuto do filme)
+:: Activar minuto10:   trailer.bat minuto10      ou   trailer.bat --minuto10
+:: ou variavel antes de chamar:  set TRAILER_MODE=minuto10
+set "TRAILER_COLLECT=default"
+if /I "%~1"=="minuto10" set "TRAILER_COLLECT=minuto10"
+if /I "%~1"=="--minuto10" set "TRAILER_COLLECT=minuto10"
+if /I "%~1"=="-minuto10" set "TRAILER_COLLECT=minuto10"
+if not "%TRAILER_MODE%"=="" if /I "%TRAILER_MODE%"=="minuto10" set "TRAILER_COLLECT=minuto10"
+
 echo ====================================================
-echo   TRAILER-MAKER v3.2 (mp4 mkv m4v avi mov webm na raiz - saida trailers\*.mp4)
+echo   TRAILER-MAKER v3.3 (mp4 mkv m4v avi mov webm na raiz - saida trailers\*.mp4)
 echo   TRAILER temp: %TRAILER_TEMP%
+if /I "%TRAILER_COLLECT%"=="minuto10" echo   Modo COLETA: minuto10 (10s/min + ate 60s finais\, 2x)
 echo ====================================================
 
 if not exist "%TRAILER_TEMP%" mkdir "%TRAILER_TEMP%"
@@ -85,6 +98,82 @@ for %%f in (*.mp4 *.mkv *.m4v *.avi *.mov *.webm) do (
 
         if defined DUR_INT if !DUR_INT! GTR 0 (
 
+            set "tid=!RANDOM!!RANDOM!!RANDOM!"
+            set "LISTA=!TRAILER_TEMP!\list_!tid!.txt"
+            set "SEG_COUNT=0"
+            if exist "!LISTA!" del "!LISTA!"
+
+            REM MKV sem audio ou com codec que atempo nao aceita: falhavam todos os cortes a seguir ao primeiro
+            set "HAS_A=0"
+            set "_pout=!TRAILER_TEMP!\probe_!random!_!random!.txt"
+            "!FFPROBE!" -v error -select_streams a:0 -show_entries stream=index -of csv=p=0 "!orig!" > "!_pout!" 2>nul
+            for /f "usebackq delims=" %%A in ("!_pout!") do set "HAS_A=1"
+            del "!_pout!" >nul 2>&1
+
+            REM scale so desce: min(ih,H) na altura, fica no-op se ja for <= H_TRAILER;
+            REM bilinear poupa muito CPU vs lanczos com diferenca imperceptivel num trailer.
+            REM \, escapa a virgula dentro do filter-graph (separador de filtros).
+            set "VF_CHAIN=setpts=%pts%*PTS,scale=-2:min(ih\,%H_TRAILER%):flags=bilinear"
+            set "AF_CHAIN=aresample=async=1:first_pts=0,atempo=%vel%"
+
+            if /I "!TRAILER_COLLECT!"=="minuto10" (
+                REM 10s a partir de mm:00 (cada minuto), sem invadir os ultimos 60s do filme; depois bloco final ate 60s.
+                set /a "f_ini=!DUR_INT!-60"
+                if !f_ini! LSS 0 set /a "f_ini=0"
+                set /a "f_len=!DUR_INT!-!f_ini!"
+                set /a "max_m=-1"
+                if !DUR_INT! GTR 60 (
+                    set /a "cut_lim=!DUR_INT!-60"
+                    if !cut_lim! GEQ 10 set /a "max_m=(!cut_lim!-10)/60"
+                )
+                set /a "npc=0"
+                if !max_m! GEQ 0 set /a "npc=!max_m!+1"
+                echo [META] minuto10: filme ~!DUR_INT!s ^(ffprobe !dur_raw!^) - !npc! x 10s ^(inicio de cada minuto^) + !f_len!s finais ^(ultimo minuto\, ate 60s^) ^| 2x ^(setpts=!pts!*PTS\, atempo=!vel!^)
+
+                for /L %%m in (0,1,!max_m!) do (
+                    set /a "st=%%m*60"
+                    set /a "seg_t=10"
+                    set /a "rem=!DUR_INT!-!st!"
+                    if !rem! LSS !seg_t! set /a "seg_t=!rem!"
+                    if !seg_t! GTR 0 (
+                        set "tmp=!TRAILER_TEMP!\tq_%%m_!tid!.mp4"
+                        if "!HAS_A!"=="1" (
+                            "!FFMPEG!" -y -ss !st! -t !seg_t! -i "!orig!" -filter_complex "[0:v]!VF_CHAIN![v];[0:a]!AF_CHAIN![a]" -map "[v]" -map "[a]" !VENC_ARGS! -c:a aac -b:a 128k -threads 0 "!tmp!" >nul 2>&1
+                        ) else (
+                            "!FFMPEG!" -y -ss !st! -t !seg_t! -i "!orig!" -vf "!VF_CHAIN!" -an !VENC_ARGS! -threads 0 "!tmp!" >nul 2>&1
+                        )
+                        if exist "!tmp!" (
+                            "!FFPROBE!" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "!tmp!" >nul 2>&1
+                            if errorlevel 1 (
+                                echo [AVISO] segmento invalido ignorado: !tmp!
+                                del "!tmp!" >nul 2>&1
+                            ) else (
+                                set "tmpSlash=!tmp:\=/!"
+                                echo file '!tmpSlash!' >> "!LISTA!"
+                                set /a "SEG_COUNT+=1"
+                            )
+                        )
+                    )
+                )
+
+                set "tmp_f=!TRAILER_TEMP!\t_fin_!tid!.mp4"
+                if "!HAS_A!"=="1" (
+                    "!FFMPEG!" -y -ss !f_ini! -t !f_len! -i "!orig!" -filter_complex "[0:v]!VF_CHAIN![v];[0:a]!AF_CHAIN![a]" -map "[v]" -map "[a]" !VENC_ARGS! -c:a aac -b:a 128k -threads 0 "!tmp_f!" >nul 2>&1
+                ) else (
+                    "!FFMPEG!" -y -ss !f_ini! -t !f_len! -i "!orig!" -vf "!VF_CHAIN!" -an !VENC_ARGS! -threads 0 "!tmp_f!" >nul 2>&1
+                )
+                if exist "!tmp_f!" (
+                    "!FFPROBE!" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "!tmp_f!" >nul 2>&1
+                    if errorlevel 1 (
+                        echo [AVISO] segmento final invalido ignorado: !tmp_f!
+                        del "!tmp_f!" >nul 2>&1
+                    ) else (
+                        set "tmpfSlash=!tmp_f:\=/!"
+                        echo file '!tmpfSlash!' >> "!LISTA!"
+                        set /a "SEG_COUNT+=1"
+                    )
+                )
+            ) else (
             if !DUR_INT! LEQ 1800 (set /a "T=52*!DUR_INT!/1800") else (set /a "T=52+(!DUR_INT!-1800)*37/1800")
             if !T! LSS 18 set /a "T=18"
             set /a "S=!T!*2"
@@ -107,23 +196,6 @@ for %%f in (*.mp4 *.mkv *.m4v *.avi *.mov *.webm) do (
             set /a "nm1=!n!-1"
             if !nm1! LSS 1 set /a "nm1=1"
             echo [META] filme ~!DUR_INT!s ^(ffprobe !dur_raw!^) - alvo ~!T!s ^| !n! x !tempo!s + final !final!s ^(origem ~!S!s^)
-            set "tid=!RANDOM!!RANDOM!!RANDOM!"
-            set "LISTA=!TRAILER_TEMP!\list_!tid!.txt"
-            set "SEG_COUNT=0"
-            if exist "!LISTA!" del "!LISTA!"
-
-            REM MKV sem audio ou com codec que atempo nao aceita: falhavam todos os cortes a seguir ao primeiro
-            set "HAS_A=0"
-            set "_pout=!TRAILER_TEMP!\probe_!random!_!random!.txt"
-            "!FFPROBE!" -v error -select_streams a:0 -show_entries stream=index -of csv=p=0 "!orig!" > "!_pout!" 2>nul
-            for /f "usebackq delims=" %%A in ("!_pout!") do set "HAS_A=1"
-            del "!_pout!" >nul 2>&1
-
-            REM scale so desce: min(ih,H) na altura, fica no-op se ja for <= H_TRAILER;
-            REM bilinear poupa muito CPU vs lanczos com diferenca imperceptivel num trailer.
-            REM \, escapa a virgula dentro do filter-graph (separador de filtros).
-            set "VF_CHAIN=setpts=%pts%*PTS,scale=-2:min(ih\,%H_TRAILER%):flags=bilinear"
-            set "AF_CHAIN=aresample=async=1:first_pts=0,atempo=%vel%"
 
             for /L %%i in (0,1,!nm1!) do (
                 set /a "pct=5+%%i*80/!nm1!"
@@ -170,6 +242,7 @@ for %%f in (*.mp4 *.mkv *.m4v *.avi *.mov *.webm) do (
                     set /a "SEG_COUNT+=1"
                 )
             )
+            )
 
             if !SEG_COUNT! GTR 0 (
                 if exist "!LISTA!" (
@@ -213,7 +286,7 @@ for %%f in (*.mp4 *.mkv *.m4v *.avi *.mov *.webm) do (
             ) else (
                 echo [ERRO] nenhum segmento valido foi gerado.
             )
-            del /q "!TRAILER_TEMP!\t_*_!tid!.mp4" "!TRAILER_TEMP!\t_fin_!tid!.mp4" >nul 2>&1
+            del /q "!TRAILER_TEMP!\t_*_!tid!.mp4" "!TRAILER_TEMP!\tq_*_!tid!.mp4" "!TRAILER_TEMP!\t_fin_!tid!.mp4" >nul 2>&1
             del /q "!LISTA!" >nul 2>&1
         )
     )

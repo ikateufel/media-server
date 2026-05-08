@@ -56,6 +56,17 @@ Opcional: **[várias pastas no menu]** — copie `data/video-menu.example.json` 
 
 Lista completa: ver `package.json` → `scripts`.
 
+## trailer.bat no Windows
+
+O script **distribui** cortes pelo filme e junta-os com aceleração ~2× (`setpts`/áudio já configurados em `scripts/trailer.bat`).
+
+Modo opcional **minuto10** (mantém os mesmos `vel` e `pts`, ou seja **2×**):
+
+- **`TRAILER_MODE=minuto10`** no ambiente quando o servidor dispara o job (Admin / `.env` se propagar ao `cmd`); ou
+- Na pasta da biblioteca: `scripts\trailer.bat minuto10` (também `--minuto10` / `-minuto10`).
+
+Nesse modo: **10 s** extraídos a partir de **cada minuto** do filme (0:00, 1:00, 2:00, …) **sem sobrepor** o bloco final; em seguida **até 60 s contínuos** do **fim** do filme. Vídeos com menos de 60 s usam só o trecho final disponível.
+
 ## Admin (`/admin`)
 
 Com **`VIDEO_ADMIN_TOKEN`** definido no servidor, guarda o token na página Admin e usa:
