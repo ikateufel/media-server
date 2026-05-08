@@ -1,0 +1,4 @@
+{
+  "items": [],
+  "_readme": "Coloca bibliotecas em items com path absoluto OU deixa [] e usa só VIDEO_ROOT / VIDEO_ROOTS no .env. Copia este ficheiro para data/video-menu.json (gitignored)."
+}

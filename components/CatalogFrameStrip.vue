@@ -1,0 +1,146 @@
+<script setup lang="ts">
+import { catalogPreviewFrameUrl } from '~/composables/useVideoFolder'
+
+const props = defineProps<{
+  previewRel: string
+  sessionIndex: number
+}>()
+
+const catalogFrameSlots = [0, 1, 2, 3] as const
+
+const rootEl = ref<HTMLElement | null>(null)
+/** Tile intersectou o scroll — mostra grelha (slots preenchem-se aos poucos). */
+const inView = ref(false)
+/** Quantos slots (0..4) têm `<img>` montado; 0 = só skeleton até IO. */
+const slotsToShow = ref(0)
+
+let io: IntersectionObserver | null = null
+let idleCbId: number | undefined
+let slotTimeoutId: ReturnType<typeof setTimeout> | undefined
+
+function cancelSlotBumps() {
+  if (idleCbId !== undefined && typeof cancelIdleCallback === 'function') {
+    cancelIdleCallback(idleCbId)
+    idleCbId = undefined
+  }
+  if (slotTimeoutId !== undefined) {
+    clearTimeout(slotTimeoutId)
+    slotTimeoutId = undefined
+  }
+}
+
+function armNextSlot() {
+  if (slotsToShow.value >= 4) return
+  const go = () => {
+    idleCbId = undefined
+    slotTimeoutId = undefined
+    if (slotsToShow.value >= 4) return
+    slotsToShow.value++
+    if (slotsToShow.value < 4) armNextSlot()
+  }
+  if (typeof requestIdleCallback !== 'undefined') {
+    idleCbId = requestIdleCallback(go, { timeout: 900 })
+  } else {
+    slotTimeoutId = setTimeout(go, 48)
+  }
+}
+
+function onImgError(ev: Event) {
+  const el = ev.target
+  if (el instanceof HTMLImageElement) el.style.visibility = 'hidden'
+}
+
+onMounted(() => {
+  const el = rootEl.value
+  if (!el) return
+  const scrollRoot = el.closest('.trailer-grid-scroll')
+  io = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) {
+          cancelSlotBumps()
+          inView.value = true
+          slotsToShow.value = 1
+          armNextSlot()
+          io?.disconnect()
+          io = null
+          break
+        }
+      }
+    },
+    {
+      root: scrollRoot instanceof Element ? scrollRoot : null,
+      rootMargin: '48px 0px',
+      threshold: 0,
+    },
+  )
+  io.observe(el)
+})
+
+onUnmounted(() => {
+  cancelSlotBumps()
+  io?.disconnect()
+  io = null
+})
+</script>
+
+<template>
+  <div ref="rootEl" class="catalog-frame-strip" role="presentation">
+    <template v-if="inView">
+      <template v-for="slot in catalogFrameSlots" :key="slot">
+        <img
+          v-if="slot < slotsToShow"
+          class="catalog-frame-img"
+          decoding="async"
+          :fetchpriority="slot === 0 ? 'high' : 'low'"
+          alt=""
+          :src="catalogPreviewFrameUrl(props.previewRel, props.sessionIndex, slot)"
+          @error="onImgError"
+        />
+        <div v-else class="catalog-frame-skeleton-cell" aria-hidden="true" />
+      </template>
+    </template>
+    <div v-else class="catalog-frame-skeleton" aria-hidden="true">
+      <span v-for="n in 4" :key="n" class="catalog-frame-skeleton-cell" />
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.catalog-frame-strip {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 1px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: #0a0a0c;
+}
+
+.catalog-frame-img {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  object-fit: cover;
+  display: block;
+}
+
+.catalog-frame-skeleton {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 1px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: #0a0a0c;
+}
+
+.catalog-frame-skeleton-cell {
+  min-height: 0;
+  min-width: 0;
+  background: linear-gradient(135deg, #12141a 0%, #1a1d24 50%, #12141a 100%);
+}
+</style>

@@ -1,0 +1,14 @@
+Scripts com prefixo tag-* (ordenacao alfabetica na pasta scripts/)
+
+=== Pipeline npm run auto-tags  (npm script: auto-tags → tag-pipeline.ts)
+  tag-clear-sqlite.ts       passo 1 — limpa tags automaticas na SQLite
+  tag-export-root-filenames.ts  passo 2 — CSV dos nomes na raiz de cada biblioteca
+  tag-run-from-names-all.ts    passo 3 — corre tag-from-names.py em todas as sessoes / trailers/
+  tag-import-file-lists.ts  passo 4 — importa CSV tags_* para a SQLite
+
+  tag-pipeline.ts           orquestra os quatro passos acima
+
+  tag-from-names.py          Python: nomes em trailers/ → tags_<sessao>.csv (regras JSON em data/tag-rules/)
+  tag-from-names.cmd         Launcher CMD local para tag-from-names.py
+
+Comandos npm: npm run auto-tags | clear-tags | export-files-csv | import-tags-filelists

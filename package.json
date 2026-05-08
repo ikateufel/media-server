@@ -1,0 +1,39 @@
+{
+  "name": "video_player",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "nuxt prepare && nuxt build",
+    "dev": "nuxt prepare && nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "start": "node --env-file-if-exists=.env .output/server/index.mjs",
+    "postinstall": "nuxt prepare",
+    "auto-tags": "tsx scripts/tag-pipeline.ts",
+    "export-files-csv": "tsx scripts/tag-export-root-filenames.ts",
+    "clear-tags": "tsx scripts/tag-clear-sqlite.ts",
+    "import-tags-filelists": "tsx scripts/tag-import-file-lists.ts",
+    "migrate-legacy-trailers": "tsx scripts/migrate-legacy-trailers-previews.ts",
+    "warm-preview-cache": "tsx scripts/warm-preview-frame-cache.ts",
+    "clear-thumb-caches": "tsx scripts/clear-thumb-caches.ts",
+    "refresh-thumbs": "npm run clear-thumb-caches && npm run warm-preview-cache -- --force",
+    "check-videos": "tsx scripts/check-videos-integrity.ts",
+    "analyze-no-trailer": "tsx scripts/move-no-trailer-to-analyze.ts",
+    "install-external-dependencies": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-external-dependencies.ps1",
+    "installer:prep": "nuxt prepare && nuxt build"
+  },
+  "dependencies": {
+    "nuxt": "^3.15.0",
+    "trash": "^9.0.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@nuxt/devtools": "^1.7.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0"
+  }
+}

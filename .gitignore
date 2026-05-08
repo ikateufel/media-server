@@ -1,0 +1,42 @@
+.nuxt
+.output
+node_modules
+dist
+*.log
+.env
+.DS_Store
+
+# CSV / regras locais de tags (copiar de *.example)
+/data/tag-rules/tags.json
+
+# Estado local (favoritos + posição do vídeo completo)
+/data/library-state.json
+/data/library-tags.sqlite
+/data/library-tags.sqlite-shm
+/data/library-tags.sqlite-wal
+
+# Menu local (pastas máquina); copiar de video-menu.example.json se precisares
+/data/video-menu.json
+
+# Ficheiros temporários dos .bat quando não definem TRAILER_TEMP / preview_work (projecto/repo)
+/data/bat-work/
+
+# JPEG em cache antigo (miniaturas do catálogo; agora em cada VIDEO_ROOT/.thumb_cache/)
+/data/preview-frame-cache/
+
+# Arranque automático Windows (npm run start)
+/data/startup-server.log
+/data/startup-error.log
+
+# Últimos [ERRO] dos jobs trailers.bat / preview.bat (Admin)
+/data/sync-last-failures.json
+
+# Log append ( trailer / preview: uma linha por ficheiro em processamento = caminho absoluto .mp4/.mkv/. )
+/data/sync-bat-processing.log
+
+# Segmentos/ffmpeg temporários dentro de cada VIDEO_ROOT (quando algo força pasta fora do repo)
+**/.trailer_temp_segments/
+**/.preview_work/
+
+# Export CSV (listagens para IA / Excel)
+/data/file-lists/
