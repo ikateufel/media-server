@@ -10,6 +10,11 @@ import { resolveSafeUnderRoot } from '../../utils/videoPaths'
 const execAsync = promisify(exec)
 
 const LOG = '[reveal-in-explorer]'
+const REVEAL_DEBUG = process.env.DEBUG_REVEAL_EXPLORER === '1'
+
+function debugLog(...args: unknown[]) {
+  if (REVEAL_DEBUG) console.error(...args)
+}
 
 function errMsg(e: unknown): string {
   return (e instanceof Error ? e.message : String(e)).trimEnd()
@@ -35,7 +40,7 @@ function spawnDetachedOnce(command: string, args: string[], hide = true): Promis
       ...(process.platform === 'win32' ? { windowsHide: hide } : {}),
     })
     const t = setTimeout(() => {
-      console.error(LOG, 'spawn: timeout 5s (resolver para não bloquear o pedido HTTP)', { command })
+      debugLog(LOG, 'spawn: timeout 5s (resolver para não bloquear o pedido HTTP)', { command })
       resolve()
     }, 5000)
     child.once('error', (e) => {
@@ -60,7 +65,7 @@ function spawnDetachedOnce(command: string, args: string[], hide = true): Promis
 async function spawnExplorerSelect(absPath: string): Promise<void> {
   const winPath = toWin32ExplorerPath(absPath)
   const command = `explorer.exe /select, "${winPath}"`
-  console.error(LOG, 'windows: exec', { command })
+  debugLog(LOG, 'windows: exec', { command })
   try {
     await execAsync(command, { windowsHide: true })
   } catch (e: unknown) {
@@ -81,10 +86,10 @@ async function spawnExplorerSelect(absPath: string): Promise<void> {
 /** macOS: abre a pasta do vídeo no Finder. */
 async function revealInMacosFinder(absolutePath: string): Promise<void> {
   const folder = normalize(dirname(absolutePath))
-  console.error(LOG, 'darwin: open pasta', { folder })
+  debugLog(LOG, 'darwin: open pasta', { folder })
   try {
     await spawnDetachedOnce('open', [folder], false)
-    console.error(LOG, 'darwin: spawn open OK')
+    debugLog(LOG, 'darwin: spawn open OK')
   } catch (e) {
     console.error(LOG, 'darwin: spawn open FALHOU', { folder, erro: errMsg(e) })
     throw e
@@ -104,9 +109,9 @@ async function revealOnLinux(absolutePath: string): Promise<void> {
   for (let i = 0; i < strategies.length; i++) {
     const [cmd, args] = strategies[i]!
     try {
-      console.error(LOG, `linux: tentativa ${i + 1}/${strategies.length}`, { cmd })
+      debugLog(LOG, `linux: tentativa ${i + 1}/${strategies.length}`, { cmd })
       await spawnDetachedOnce(cmd, args, false)
-      console.error(LOG, 'linux: spawn OK', { cmd })
+      debugLog(LOG, 'linux: spawn OK', { cmd })
       return
     } catch (e) {
       console.error(LOG, 'linux: comando falhou', { cmd, erro: errMsg(e) })
@@ -118,7 +123,7 @@ async function revealOnLinux(absolutePath: string): Promise<void> {
 
 async function revealInOsFileManager(absolutePath: string): Promise<void> {
   const p = process.platform
-  console.error(LOG, 'revealInOsFileManager', { platform: p })
+  debugLog(LOG, 'revealInOsFileManager', { platform: p })
   if (p === 'win32') {
     await spawnExplorerSelect(absolutePath)
     return
@@ -136,7 +141,7 @@ async function revealInOsFileManager(absolutePath: string): Promise<void> {
 
 export default defineEventHandler(async (event) => {
   const platform = process.platform
-  console.error(LOG, 'POST recebido', {
+  debugLog(LOG, 'POST recebido', {
     platform,
     url: event.path,
     temVideoAdminToken: Boolean((process.env.VIDEO_ADMIN_TOKEN ?? '').trim()),
@@ -155,7 +160,7 @@ export default defineEventHandler(async (event) => {
 
     const config = useRuntimeConfig(event)
     requireAdminToken(event)
-    console.error(LOG, 'token admin verificado OK')
+    debugLog(LOG, 'token admin verificado OK')
 
     const roots = getVideoRootsFromRuntime(config)
     if (!roots.length) {
@@ -222,11 +227,11 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: 'Caminho não autorizado para esta biblioteca.' })
     }
 
-    console.error(LOG, 'caminho resolvido', { session, target, root, rel, absPath })
+    debugLog(LOG, 'caminho resolvido', { session, target, root, rel, absPath })
 
     try {
       const st = await stat(absPath)
-      console.error(LOG, 'stat OK', { size: st.size, isFile: st.isFile() })
+      debugLog(LOG, 'stat OK', { size: st.size, isFile: st.isFile() })
     } catch (e) {
       console.error(LOG, 'FALHA: ficheiro não existe no disco', { absPath, erro: errMsg(e) })
       throw createError({
@@ -246,7 +251,7 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    console.error(LOG, 'SUCESSO — gestor devia ter aberto para', absPath)
+    debugLog(LOG, 'SUCESSO — gestor devia ter aberto para', absPath)
     return { ok: true as const }
   } catch (err) {
     const status =
