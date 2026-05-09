@@ -1,0 +1,33 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Anexar: Nuxt dev (porta 9230)",
+      "type": "node",
+      "request": "attach",
+      "port": 9230,
+      "restart": true,
+      "skipFiles": ["<node_internals>/**"],
+      "localRoot": "${workspaceFolder}",
+      "remoteRoot": "${workspaceFolder}"
+    },
+    {
+      "name": "Anexar: escolher processo Node",
+      "type": "node",
+      "request": "attach",
+      "processId": "${command:PickProcess}",
+      "skipFiles": ["<node_internals>/**"],
+      "localRoot": "${workspaceFolder}"
+    },
+    {
+      "name": "Lançar: servidor produção (.output)",
+      "type": "node",
+      "request": "launch",
+      "skipFiles": ["<node_internals>/**"],
+      "program": "${workspaceFolder}/.output/server/index.mjs",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "outFiles": ["${workspaceFolder}/**/*.js"]
+    }
+  ]
+}

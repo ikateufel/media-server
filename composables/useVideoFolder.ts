@@ -121,6 +121,24 @@ export function apiVideoUrl(rel: string, session: number) {
   return `/api/video?rel=${encodeURIComponent(rel)}&session=${s}`
 }
 
+/** Lê `rel` e `session` de um URL criado por {@link apiVideoUrl} (path relativo ou absoluto). */
+export function parseApiVideoUrl(href: string): { rel: string; session: number } | null {
+  if (!href || typeof href !== 'string') return null
+  try {
+    const u = new URL(href, 'http://video-player.local')
+    const pathOnly = u.pathname.replace(/\/+$/, '') || '/'
+    if (!pathOnly.endsWith('/api/video')) return null
+    const rel = u.searchParams.get('rel')
+    if (!rel) return null
+    const sRaw = u.searchParams.get('session')
+    const session =
+      sRaw != null && String(sRaw).length > 0 && Number.isFinite(Number(sRaw)) ? Math.floor(Number(sRaw)) : 0
+    return { rel, session }
+  } catch {
+    return null
+  }
+}
+
 /** Número de slots de JPEG estático por título na grelha (API `preview-frame`). */
 export const CATALOG_PREVIEW_FRAME_SLOTS = 4
 

@@ -9,6 +9,7 @@ import {
 } from '../../utils/trailerCatalogScan'
 import { isCatalogTrailerRelSuffix } from '../../utils/trailerNames'
 import { readRecentPlaybackList } from '../../utils/recentPlaybackDb'
+import { getResolvedAdminToken } from '../../utils/requireAdmin'
 import { getFastPlaySettingsFromDisk, getVideoRootsFromRuntime } from '../../utils/videoMenu'
 
 export default defineEventHandler(async (event) => {
@@ -54,7 +55,7 @@ export default defineEventHandler(async (event) => {
     for (const t of pair.entry.tags ?? []) tagSuggestions.add(t)
   }
 
-  const adminToken = String(config.adminToken ?? '').trim()
+  const adminToken = getResolvedAdminToken(event) ?? ''
 
   return {
     session: RECENTS_SESSION_ID,

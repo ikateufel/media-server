@@ -393,8 +393,8 @@
               v-if="revealExplorerEligible"
               type="button"
               class="icon-tool icon-tool--reveal-explorer"
-              title="Abrir no Explorador de ficheiros do Windows no PC do servidor (precisa de VIDEO_ADMIN_TOKEN no servidor e token guardado na página Admin)"
-              aria-label="Abrir pasta no Explorador Windows"
+              :title="revealInFolderButtonTitle"
+              :aria-label="revealInFolderAriaLabel"
               @click="revealPlayingFileInExplorer"
             >
               <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -602,8 +602,8 @@
               v-if="revealExplorerEligible"
               type="button"
               class="icon-tool icon-tool--reveal-explorer"
-              title="Abrir no Explorador de ficheiros do Windows no PC do servidor (precisa de VIDEO_ADMIN_TOKEN no servidor e token guardado na página Admin)"
-              aria-label="Abrir pasta no Explorador Windows"
+              :title="revealInFolderButtonTitle"
+              :aria-label="revealInFolderAriaLabel"
               @click="revealPlayingFileInExplorer"
             >
               <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1262,6 +1262,7 @@ import {
   SEARCH_SESSION_ID,
   TRAILER_WATCHED_TAG_NAME,
   apiVideoUrl,
+  parseApiVideoUrl,
   catalogPreviewFrameUrl,
   isEntryCompleted,
   isEntryMemorable,
@@ -1285,20 +1286,43 @@ const videoPreloadAttr = computed<'auto' | 'metadata'>(() => {
   return 'metadata'
 })
 
-/** Plataforma do servidor Node — só `win32` permite abrir o Explorador no PC onde corre o Node. */
+/** Plataforma do servidor Node (`process.platform` do host onde corre o Nuxt/Nitro). */
 const serverPlatform = ref('')
 /** Servidor tem VIDEO_ADMIN_TOKEN (útil para mensagens / futuro estado “desactivado”). */
 const adminRevealExplorer = ref(false)
 const catalogMode = ref<'trailers' | 'main-only'>('trailers')
 
+/** Onde o servidor abre a pasta (Finder / Explorador / Linux); o browser pode ser outro OS. */
+const revealInFolderButtonTitle = computed(() => {
+  const p = serverPlatform.value.toLowerCase()
+  const place =
+    p === 'darwin'
+      ? 'no Finder deste Mac (máquina do servidor Node)'
+      : p === 'win32'
+        ? 'no Explorador desse Windows (máquina do servidor)'
+        : p === 'linux'
+          ? 'no gestor de ficheiros desse Linux (servidor)'
+          : 'na pasta na máquina do servidor'
+  return `Abrir o ficheiro na pasta — ${place}. Requer VIDEO_ADMIN_TOKEN (ou NUXT_ADMIN_TOKEN) no servidor e «Guardar no browser» na página Admin.`
+})
+
+const revealInFolderAriaLabel = computed(() => {
+  const p = serverPlatform.value.toLowerCase()
+  if (p === 'darwin') return 'Abrir no Finder na máquina do servidor'
+  if (p === 'win32') return 'Abrir no Explorador na máquina do servidor'
+  if (p === 'linux') return 'Abrir pasta no gestor de ficheiros do servidor'
+  return 'Abrir pasta do ficheiro no servidor'
+})
+
 /**
- * Botão «Explorador»: servidor Windows + browser que não é Silk/Fire TV.
- * Não confunde com “desktop”: podes estar num Mac e o servidor ser Windows na LAN.
- * O token Admin (`VIDEO_ADMIN_TOKEN` + guardar na página Admin) só é preciso ao clicar.
+ * Botão «revelar pasta»: servidor Windows, macOS ou Linux; não mostrar em Silk/Fire TV.
+ * O ficheiro abre-se sempre na **máquina onde corre o Node**, não no teu browser remoto.
  */
-const revealExplorerEligible = computed(
-  () => serverPlatform.value.toLowerCase() === 'win32' && !isSilkTvLike.value,
-)
+const revealExplorerEligible = computed(() => {
+  if (isSilkTvLike.value) return false
+  const p = serverPlatform.value.toLowerCase()
+  return p === 'win32' || p === 'darwin' || p === 'linux'
+})
 
 /** Largura mínima para mostrar o botão «Mover de pasta» (evita em telemóvel / ecrã estreito). */
 const isWideDesktopUi = ref(false)
@@ -2162,8 +2186,17 @@ const playbackFolderCaption = computed(() => {
 const mainVideoEntry = computed(() => {
   if (!playerUrl.value) return null
   const i = activeIndex.value
-  if (i === null) return null
-  return entries.value[i] ?? null
+  if (i !== null) {
+    const fromIdx = entries.value[i]
+    if (fromIdx) return fromIdx
+  }
+  const parsed = parseApiVideoUrl(playerUrl.value)
+  if (!parsed) return null
+  const norm = (r: string) => r.replace(/\\/g, '/').replace(/^\/+/, '')
+  const want = norm(parsed.rel)
+  return (
+    fullEntries.value.find((e) => norm(e.mainRel) === want && libSession(e) === parsed.session) ?? null
+  )
 })
 
 function formatSize(bytes: number) {
@@ -2182,21 +2215,33 @@ async function revealPlayingFileInExplorer() {
   const tok = sessionStorage.getItem('video_admin_token')?.trim() ?? ''
   if (!tok) {
     errorMsg.value =
-      'Para abrir no Explorador, abre a página Admin e clica em «Guardar no browser» com o mesmo token (VIDEO_ADMIN_TOKEN).'
+      'Para abrir a pasta no servidor, abre a página Admin e clica em «Guardar no browser» com o mesmo token (VIDEO_ADMIN_TOKEN).'
     return
   }
   if (!adminRevealExplorer.value) {
     errorMsg.value =
-      'No servidor não está definido VIDEO_ADMIN_TOKEN — o Explorador só funciona com esse token configurado (.env) e reinício da app.'
+      'O servidor não reportou token admin activo. Coloca VIDEO_ADMIN_TOKEN ou NUXT_ADMIN_TOKEN no .env na raiz do projecto, guarda o ficheiro, reinicia o npm run dev/start e recarrega a lista (muda de biblioteca e volta).'
     return
   }
 
   let target: 'main' | 'trailer' | 'preview'
   let rel: string
+  let sessionForReveal: number
 
   if (playerUrl.value && mainVideoEntry.value) {
     target = 'main'
     rel = mainVideoEntry.value.mainRel
+    sessionForReveal = libSession(mainVideoEntry.value)
+  } else if (playerUrl.value) {
+    const p = parseApiVideoUrl(playerUrl.value)
+    if (!p) {
+      errorMsg.value =
+        'Não foi possível determinar o ficheiro em reprodução para abrir na pasta no servidor.'
+      return
+    }
+    target = 'main'
+    rel = p.rel
+    sessionForReveal = p.session
   } else if (!playerUrl.value && previewUrl.value && selectedEntry.value) {
     const e = selectedEntry.value
     if (e.hasMain) {
@@ -2206,7 +2251,9 @@ async function revealPlayingFileInExplorer() {
       target = 'trailer'
       rel = e.trailerRel
     }
+    sessionForReveal = libSession(e)
   } else {
+    errorMsg.value = 'Não há ficheiro seleccionado para mostrar na pasta no servidor.'
     return
   }
 
@@ -2218,9 +2265,7 @@ async function revealPlayingFileInExplorer() {
         'Content-Type': 'application/json',
       },
       body: {
-        session: libSession(
-          playerUrl.value && mainVideoEntry.value ? mainVideoEntry.value : selectedEntry.value ?? undefined,
-        ),
+        session: sessionForReveal,
         target,
         rel,
       },
@@ -2229,7 +2274,7 @@ async function revealPlayingFileInExplorer() {
   } catch (err: unknown) {
     const ex = err as { data?: { statusMessage?: string }; message?: string }
     errorMsg.value =
-      ex?.data?.statusMessage || ex?.message || 'Não foi possível abrir no Explorador.'
+      ex?.data?.statusMessage || ex?.message || 'Não foi possível abrir a pasta no servidor.'
   }
 }
 
@@ -3754,10 +3799,19 @@ onUnmounted(() => {
 }
 
 @media (min-width: 960px) {
+  /**
+   * Ancorar à viewport evita que a cadeia flex/`min-height` do `#__nuxt` crie altura extra
+   * e rolagem na página — o scroll fica só nas áreas internas (grelha, diálogos).
+   */
   .layout {
-    height: 100dvh;
-    max-height: 100dvh;
+    position: fixed;
+    inset: 0;
+    width: auto;
+    max-width: none;
+    height: auto;
+    max-height: none;
     overflow: hidden;
+    overscroll-behavior: none;
     padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
   }
 

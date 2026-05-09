@@ -1,6 +1,7 @@
 import { getQuery } from 'h3'
 import type { TrailerListEntry } from '~/composables/useVideoFolder'
 import { enrichTrailerListForSession, scanTrailersCatalogInRoot } from '../../utils/trailerCatalogScan'
+import { getResolvedAdminToken } from '../../utils/requireAdmin'
 import { getVideoMenuItems } from '../../utils/videoMenu'
 
 interface SearchRankedEntry {
@@ -52,8 +53,17 @@ function toSearchRankedEntry(
 export default defineEventHandler(async (event) => {
   const q = normalizeSearchTerm(getQuery(event).q)
   const mode = normalizeSearchMode(getQuery(event).mode)
+  const adminToken = getResolvedAdminToken(event) ?? ''
+  const adminRevealExplorer = adminToken.length > 0
   if (q.length < 2) {
-    return { query: q, mode, items: [] as TrailerListEntry[], tagSuggestions: [] as string[] }
+    return {
+      query: q,
+      mode,
+      items: [] as TrailerListEntry[],
+      tagSuggestions: [] as string[],
+      serverPlatform: process.platform,
+      adminRevealExplorer,
+    }
   }
 
   const config = useRuntimeConfig(event)
@@ -96,5 +106,7 @@ export default defineEventHandler(async (event) => {
     tagSuggestions: [...tagSuggestions].sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: 'base' }),
     ),
+    serverPlatform: process.platform,
+    adminRevealExplorer,
   }
 })
