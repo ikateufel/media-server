@@ -7,9 +7,19 @@ import { requireAdminToken } from '../../utils/requireAdmin'
 
 const OUTPUT_CAP_CHARS = 400_000
 
-function resolveTsxBin(projectRoot: string): string {
-  const bin = join(projectRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'tsx.cmd' : 'tsx')
-  return existsSync(bin) ? bin : 'tsx'
+/** Evita spawn em `.cmd` no Windows (EINVAL com shell:false); usa o entrypoint .mjs do pacote. */
+function resolveTsxCommand(projectRoot: string): { command: string; argvPrefix: string[] } {
+  const cliMjs = join(projectRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs')
+  if (existsSync(cliMjs)) {
+    return { command: process.execPath, argvPrefix: [cliMjs] }
+  }
+  if (process.platform !== 'win32') {
+    const bin = join(projectRoot, 'node_modules', '.bin', 'tsx')
+    if (existsSync(bin)) {
+      return { command: bin, argvPrefix: [] }
+    }
+  }
+  return { command: 'tsx', argvPrefix: [] }
 }
 
 function runAutoTagsPipeline(
@@ -17,9 +27,9 @@ function runAutoTagsPipeline(
   pipelineArgs: string[],
 ): Promise<{ exitCode: number; stdout: string; stderr: string; truncated: boolean }> {
   return new Promise((resolve, reject) => {
-    const tsx = resolveTsxBin(projectRoot)
+    const { command, argvPrefix } = resolveTsxCommand(projectRoot)
     const script = join(projectRoot, 'scripts', 'tag-pipeline.ts')
-    const child = spawn(tsx, [script, ...pipelineArgs], {
+    const child = spawn(command, [...argvPrefix, script, ...pipelineArgs], {
       cwd: projectRoot,
       env: process.env,
       windowsHide: true,

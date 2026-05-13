@@ -348,7 +348,7 @@
               </svg>
             </button>
             <button
-              v-if="focusedIndex !== null && selectedEntry"
+              v-if="focusedIndex !== null && selectedEntry && !isSilkTvLike"
               type="button"
               class="icon-tool"
               :class="{ 'icon-tool--on': trailerTagPanelOpen }"
@@ -413,7 +413,7 @@
             </p>
           </div>
           <div
-            v-if="focusedIndex !== null && selectedEntry"
+            v-if="focusedIndex !== null && selectedEntry && !isSilkTvLike"
             class="toolbar-tags-panel"
             :class="{ 'toolbar-tags-panel--input-open': trailerTagPanelOpen }"
           >
@@ -1344,16 +1344,8 @@ interface VideoSessionTab {
 const route = useRoute()
 const router = useRouter()
 
-/** Força modo «TV» na UI do catálogo (botões ▲▼ e CSS global da barra), útil se o UA não for detectado como Silk. */
-const tvCatalogAssistQuery = computed(() => {
-  const v = route.query.tv
-  if (v === undefined || v === null) return false
-  const raw = Array.isArray(v) ? v[0] : v
-  const n = String(raw).toLowerCase()
-  return n === '1' || n === 'true' || n === 'yes'
-})
-
-const showTvCatalogScrollAssist = computed(() => isSilkTvLike.value || tvCatalogAssistQuery.value)
+/** Botões ▲▼ e classe em document.documentElement — mesmo critério que layout--tv-silk (UA ou ?tv=1). */
+const showTvCatalogScrollAssist = computed(() => isSilkTvLike.value)
 
 const sessions = ref<VideoSessionTab[]>([])
 const sessionIndex = ref(0)
@@ -3789,13 +3781,10 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 
-/** Silk no Fire TV: barra superior do browser sobrepõe conteúdo; safe-area costuma vir a zero. */
+/** Silk / TV: menos margens; topo mínimo para o chrome do browser / safe-area. */
 .layout--tv-silk {
-  padding-top: max(
-    clamp(0.5rem, 1.5vw, 1rem),
-    env(safe-area-inset-top, 0px),
-    2.75rem
-  );
+  padding: 0.35rem 0.45rem calc(0.45rem + env(safe-area-inset-bottom, 0px));
+  padding-top: max(0.35rem, env(safe-area-inset-top, 0px), 1.1rem);
 }
 
 @media (min-width: 960px) {
@@ -3816,7 +3805,8 @@ onUnmounted(() => {
   }
 
   .layout--tv-silk {
-    padding-top: max(0.75rem, env(safe-area-inset-top, 0px), 2.75rem);
+    padding: 0.3rem 0.5rem 0.35rem;
+    padding-top: max(0.3rem, env(safe-area-inset-top, 0px), 0.95rem);
   }
 }
 
@@ -5604,6 +5594,149 @@ onUnmounted(() => {
   }
 }
 
+/* Silk (Fire TV): ~2× área útil do vídeo, coluna do catálogo ~½, sem chips/listas de tags. */
+.layout--tv-silk .toolbar-full-tags,
+.layout--tv-silk .grid-tile-tags,
+.layout--tv-silk .catalog-top-tags {
+  display: none !important;
+}
+
+.layout--tv-silk .video-shell-pane-badge {
+  display: none !important;
+}
+
+.layout--tv-silk .main-stack {
+  gap: 0.35rem;
+}
+
+.layout--tv-silk .media-card {
+  gap: 0.35rem;
+  padding: 0.4rem 0.45rem 0.45rem;
+  border-radius: 10px;
+}
+
+.layout--tv-silk .media-card-top {
+  min-height: 1.6rem;
+  gap: 0.35rem;
+}
+
+.layout--tv-silk .toolbar {
+  gap: 0.35rem;
+}
+
+.layout--tv-silk .toolbar--trailer-compact {
+  gap: 0.28rem;
+}
+
+.layout--tv-silk .toolbar-trailer-icons {
+  gap: 0.28rem;
+}
+
+.layout--tv-silk .catalog-head {
+  padding: 0.28rem 0.45rem 0.18rem;
+  gap: 0.28rem 0.4rem;
+}
+
+.layout--tv-silk .trailer-grid-scroll {
+  padding: 0 0.12rem 0.28rem;
+}
+
+.layout--tv-silk .catalog-scroll-assist {
+  padding: 0.4rem 0.32rem;
+  gap: 0.55rem;
+  justify-content: stretch;
+  align-items: stretch;
+  width: clamp(60px, 12vw, 86px);
+  min-width: clamp(60px, 12vw, 86px);
+}
+
+.layout--tv-silk .catalog-scroll-assist-btn {
+  flex: 1 1 0;
+  min-height: 6.5rem;
+  width: 100%;
+  max-width: none;
+  font-size: clamp(1.6rem, 4.2vw, 2.4rem);
+  border-radius: 12px;
+}
+
+.layout--tv-silk .video-shell--with-pins {
+  gap: 5px;
+  padding: 5px;
+}
+
+.layout--tv-silk .media-card-playback-name-row {
+  gap: 0.3rem;
+}
+
+.layout--tv-silk .toolbar--full-main {
+  gap: 0.35rem;
+}
+
+.layout--tv-silk .video-shell {
+  max-height: min(88vh, 1040px);
+}
+
+@media (max-width: 959px) {
+  .layout--tv-silk .video-shell {
+    max-height: min(72vh, 800px);
+  }
+}
+
+@media (min-width: 960px) {
+  .layout--tv-silk .main-stack:not(.main-stack--catalog-collapsed) {
+    grid-template-columns: minmax(0, 1fr) minmax(140px, min(27vw, 550px));
+    column-gap: 0.35rem;
+  }
+
+  .layout--tv-silk .main-stack--catalog-collapsed {
+    column-gap: 0.28rem;
+  }
+
+  .layout--tv-silk .video-shell {
+    max-height: min(calc(100dvh - 3.25rem), 92dvh, min(1920px, 100dvh));
+  }
+
+  .layout--tv-silk .video-shell--with-pins {
+    max-height: min(calc(100dvh - 2.75rem), 94dvh, min(1920px, 100dvh));
+  }
+
+  .layout--tv-silk .video-shell--with-pins.video-shell--catalog-collapsed-layout {
+    max-height: min(calc(100dvh - 5rem), 82dvh, 1200px);
+  }
+
+  .layout--tv-silk
+    .video-shell--with-pins.video-shell--catalog-collapsed-layout
+    .video-shell-main,
+  .layout--tv-silk
+    .video-shell--with-pins.video-shell--catalog-collapsed-layout
+    .video-shell-pane {
+    max-height: min(calc(100dvh - 5.75rem), 74dvh, 1040px);
+  }
+
+  .layout--tv-silk .video-shell--with-pins:not(.video-shell--catalog-collapsed-layout) .video-shell-main,
+  .layout--tv-silk .video-shell--with-pins:not(.video-shell--catalog-collapsed-layout) .video-shell-pane {
+    max-height: min(calc(100dvh - 9.5rem), 76dvh, 1040px);
+  }
+
+  .layout--tv-silk .video-shell-main {
+    max-height: min(calc(100dvh - 6rem), 90dvh, min(1920px, 100dvh));
+  }
+}
+
+@media (min-width: 1400px) {
+  .layout--tv-silk .video-shell {
+    max-height: min(calc(100dvh - 3rem), 94dvh, min(1920px, 100dvh));
+  }
+
+  .layout--tv-silk .video-shell--with-pins:not(.video-shell--catalog-collapsed-layout) {
+    max-height: min(calc(100dvh - 3.5rem), 94dvh, min(1920px, 100dvh));
+  }
+
+  .layout--tv-silk .video-shell--with-pins.video-shell--catalog-collapsed-layout {
+    max-height: min(calc(100dvh - 5rem), 82dvh, 1200px);
+  }
+}
+
 .stage-fullscreen-wrap {
   position: relative;
   align-self: stretch;
@@ -5879,6 +6012,30 @@ onUnmounted(() => {
   gap: 0.5rem;
   width: 100%;
   min-width: 0;
+}
+
+/* Silk/Fire TV: evita o bloco de velocidade "escapar" à direita em toolbars muito cheias. */
+.layout--tv-silk .toolbar-full-main-row {
+  flex-wrap: wrap;
+  row-gap: 0.35rem;
+}
+
+.layout--tv-silk .toolbar-full-main-row > .rate-block--inline {
+  flex: 1 1 100%;
+  width: 100%;
+  max-width: 100%;
+  justify-content: flex-start;
+  gap: 0.35rem;
+  order: 100;
+  padding-top: 0.35rem;
+  margin-top: 0.05rem;
+  border-top: 1px solid #2d333b;
+}
+
+.layout--tv-silk .toolbar-full-main-row > .rate-block--inline .rate-select--compact {
+  flex: 0 1 auto;
+  min-width: 3.6rem;
+  max-width: min(44vw, 7rem);
 }
 
 .toolbar-full-tags {

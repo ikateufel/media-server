@@ -105,7 +105,13 @@ export async function scanTrailersCatalogInRoot(root: string): Promise<{
 }> {
   const rootTrim = root.trim()
   const trailersDir = join(rootTrim, 'trailers')
-  const dirents = await readdir(trailersDir, { withFileTypes: true })
+  /** Sem `trailers/` na raiz ainda há catálogo legado em `<pasta>/trailers/` (ex.: pastas por atriz). */
+  let dirents: Awaited<ReturnType<typeof readdir>>
+  try {
+    dirents = await readdir(trailersDir, { withFileTypes: true })
+  } catch {
+    dirents = []
+  }
   const items: TrailerListEntry[] = []
   const mainStatsByRel = new Map<string, Stats>()
 

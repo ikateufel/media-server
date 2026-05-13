@@ -1,5 +1,4 @@
 import { stat } from 'node:fs/promises'
-import { join } from 'node:path'
 import { createError } from 'h3'
 import type { TrailerListEntry } from '~/composables/useVideoFolder'
 import { RECENTS_SESSION_ID } from '~/composables/useVideoFolder'
@@ -31,12 +30,6 @@ export default defineEventHandler(async (event) => {
     const root = roots[row.session]!.trim()
     try {
       await stat(root)
-    } catch {
-      continue
-    }
-    const trailersDir = join(root, 'trailers')
-    try {
-      await stat(trailersDir)
     } catch {
       continue
     }

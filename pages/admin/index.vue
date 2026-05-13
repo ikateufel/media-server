@@ -212,6 +212,18 @@
           <input v-model.number="fastPlay.lastMinuteSeconds" type="number" class="admin-input" min="10" max="600" step="1" />
         </label>
       </div>
+      <div class="admin-row">
+        <button
+          type="button"
+          class="admin-btn admin-btn--primary"
+          :disabled="fastPlaySaveBusy"
+          @click="saveFastPlayOnly"
+        >
+          Gravar Fast Play
+        </button>
+        <p v-if="fastPlaySaveMsg" class="admin-ok admin-inline-msg">{{ fastPlaySaveMsg }}</p>
+        <p v-if="fastPlaySaveErr" class="admin-err admin-inline-msg">{{ fastPlaySaveErr }}</p>
+      </div>
 
       <h3 class="admin-h3">Tags automáticas</h3>
       <p class="admin-muted">
@@ -510,6 +522,9 @@ const loadError = ref('')
 const saveMsg = ref('')
 const saveErr = ref('')
 const saveBusy = ref(false)
+const fastPlaySaveMsg = ref('')
+const fastPlaySaveErr = ref('')
+const fastPlaySaveBusy = ref(false)
 
 /** Linha de texto: contagens (R/T/P); segunda linha: cruzamento preview. */
 interface LibraryFolderStatsApiResult {
@@ -851,6 +866,27 @@ function removeRow(i: number) {
     if (!confirm(`Remover esta pasta do menu?\n\n${label}\n\n(Apenas remove a entrada — não apaga ficheiros. Lembre-se de gravar o menu no fim.)`)) return
   }
   rows.value.splice(i, 1)
+}
+
+async function saveFastPlayOnly() {
+  fastPlaySaveErr.value = ''
+  fastPlaySaveMsg.value = ''
+  fastPlaySaveBusy.value = true
+  try {
+    const h = await adminHeaders()
+    await $fetch('/api/admin/menu', {
+      method: 'PUT',
+      headers: { ...h, 'Content-Type': 'application/json' },
+      body: { fastPlay: fastPlay.value },
+    })
+    fastPlaySaveMsg.value = 'Fast Play gravado. Recarregue o reprodutor para aplicar (ou mude de biblioteca).'
+    await loadMenu()
+  } catch (e: unknown) {
+    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    fastPlaySaveErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao gravar.'
+  } finally {
+    fastPlaySaveBusy.value = false
+  }
 }
 
 async function saveMenu() {
@@ -1515,6 +1551,12 @@ async function checkFolderStatsAll(mode: 'counts' | 'pairing') {
   color: #81c995;
   margin: 0.5rem 0 0;
   font-size: 0.88rem;
+}
+
+.admin-inline-msg {
+  margin: 0;
+  flex: 1;
+  min-width: 10rem;
 }
 
 .admin-table-wrap {

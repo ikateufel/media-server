@@ -6,14 +6,12 @@ export interface RecentPlaybackRow {
   touchedAt: string
 }
 
-const RECENT_PLAYBACK_MAX = 5
-
 export function normalizeTrailerRel(rel: unknown): string {
   if (typeof rel !== 'string') return ''
   return rel.trim().replace(/\\/g, '/')
 }
 
-/** Até os últimos N títulos distintos (session + trailer Rel), mais recente primeiro — guardado em SQLite (`library-tags.sqlite`). */
+/** Títulos distintos (session + trailer Rel), mais recente primeiro — sem limite de quantidade; SQLite `library-tags.sqlite`. */
 export function pushRecentPlayback(session: number, trailerRel: string): void {
   const rel = normalizeTrailerRel(trailerRel)
   if (!rel.startsWith('trailers/')) return
@@ -28,14 +26,6 @@ export function pushRecentPlayback(session: number, trailerRel: string): void {
       rel,
       touched,
     )
-    const rows = d
-      .prepare('SELECT session, trailer_rel FROM recent_playback ORDER BY touched_at DESC')
-      .all() as { session: number; trailer_rel: string }[]
-    if (rows.length <= RECENT_PLAYBACK_MAX) return
-    const del = d.prepare('DELETE FROM recent_playback WHERE session = ? AND trailer_rel = ?')
-    for (const r of rows.slice(RECENT_PLAYBACK_MAX)) {
-      del.run(r.session, r.trailer_rel)
-    }
   })
 }
 
@@ -45,10 +35,9 @@ export function readRecentPlaybackList(): RecentPlaybackRow[] {
     .prepare(
       `SELECT session, trailer_rel AS trailerRel, touched_at AS touchedAt
        FROM recent_playback
-       ORDER BY touched_at DESC
-       LIMIT ?`,
+       ORDER BY touched_at DESC`,
     )
-    .all(RECENT_PLAYBACK_MAX) as RecentPlaybackRow[]
+    .all() as RecentPlaybackRow[]
   return rows
 }
 

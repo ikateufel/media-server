@@ -19,41 +19,24 @@ body {
 }
 
 /*
- * Catálogo em Fire TV / Amazon Silk: o WebView muitas vezes ignora `::-webkit-scrollbar` em CSS scoped
- * ou usa overlay fino. Estes selectores são globais e incluem `.catalog-grid-scroll-wrap` para maior especificidade.
- * A classe `video-player-tv-catalog-assist` é aplicada em runtime (UA Silk/Fire TV ou `?tv=1`).
+ * Catálogo em Fire TV / Amazon Silk: scroll fiável com toque; barra nativa escondida — usa os botões ▲▼ na UI.
+ * A classe `video-player-tv-catalog-assist` é aplicada em runtime (UA Silk/Fire TV ou modo TV
+ * manual com `?tv=1`, que pode ficar guardado em `localStorage` até `?tv=0`).
  */
 html.video-player-tv-catalog-assist .catalog-grid-scroll-wrap .trailer-grid-scroll {
-  scroll-padding-top: 1.25rem;
-  scroll-padding-bottom: 1rem;
+  scroll-padding-top: 0.45rem;
+  scroll-padding-bottom: 0.35rem;
   overflow-y: scroll;
   touch-action: pan-y;
   overscroll-behavior-y: contain;
-  padding-right: max(0.5rem, 8px);
-  scrollbar-color: #8c939e #14161c;
-  scrollbar-width: auto;
+  padding-right: 0.2rem;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 html.video-player-tv-catalog-assist .catalog-grid-scroll-wrap .trailer-grid-scroll::-webkit-scrollbar {
-  width: 44px;
-}
-
-html.video-player-tv-catalog-assist .catalog-grid-scroll-wrap .trailer-grid-scroll::-webkit-scrollbar-track {
-  background: #14161c;
-  border-radius: 16px;
-  margin: 8px 5px;
-}
-
-html.video-player-tv-catalog-assist .catalog-grid-scroll-wrap .trailer-grid-scroll::-webkit-scrollbar-thumb {
-  border-radius: 16px;
-  background: #6f7784;
-  border: 6px solid #14161c;
-  min-height: 72px;
-}
-
-html.video-player-tv-catalog-assist .catalog-grid-scroll-wrap .trailer-grid-scroll::-webkit-scrollbar-thumb:hover,
-html.video-player-tv-catalog-assist .catalog-grid-scroll-wrap .trailer-grid-scroll::-webkit-scrollbar-thumb:active {
-  background: #8ab4f8;
+  width: 0;
+  height: 0;
 }
 
 html.video-player-tv-catalog-assist .catalog-grid-scroll-wrap .trailer-grid-scroll::-webkit-scrollbar-corner {

@@ -9,7 +9,29 @@ export default defineEventHandler(async (event) => {
   const body = (await readBody(event).catch(() => null)) as
     | { items?: unknown; fastPlay?: unknown }
     | null
-  const rows = body?.items
+
+  if (!body || typeof body !== 'object') {
+    throw createError({ statusCode: 400, statusMessage: 'Corpo JSON inválido.' })
+  }
+
+  const fastPlayOnly = !('items' in body) && 'fastPlay' in body
+
+  if (fastPlayOnly) {
+    try {
+      const menuItems = getVideoMenuItems(config)
+      await writeVideoMenuToDisk(menuItems, body.fastPlay)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      throw createError({ statusCode: 400, statusMessage: msg })
+    }
+    const merged = getVideoMenuItems(config)
+    return {
+      ok: true,
+      items: merged.map((e) => ({ path: e.path, title: e.title })),
+    }
+  }
+
+  const rows = body.items
   if (!Array.isArray(rows)) {
     throw createError({ statusCode: 400, statusMessage: 'Corpo JSON inválido: esperado { "items": [ { "path", "title" }, ... ] }.' })
   }

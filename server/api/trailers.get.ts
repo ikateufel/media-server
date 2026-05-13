@@ -95,17 +95,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 503, statusMessage: `VIDEO_ROOT inexistente ou inacessível: ${root}` })
   }
 
-  const trailersDir = join(root, 'trailers')
   let items: TrailerListEntry[] = []
   let catalogMode: 'trailers' | 'main-only' = 'trailers'
 
   try {
-    await stat(trailersDir)
     const scanned = await scanTrailersCatalogInRoot(root)
     items = scanned.items
     await enrichTrailerListForSession(session, items, scanned.mainStatsByRel)
   } catch {
-    // Sem trailers/preview ainda: mostra o catálogo de vídeos completos para não “matar” a sessão.
+    // Catálogo em trailers/ ou pastas legado inacessível: tenta só vídeos completos na raiz.
     items = await collectMainOnlyEntries(root)
     catalogMode = 'main-only'
   }
