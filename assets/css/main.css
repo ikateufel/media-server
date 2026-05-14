@@ -19,9 +19,8 @@ body {
 }
 
 /*
- * Catálogo em Fire TV / Amazon Silk: scroll fiável com toque; barra nativa escondida — usa os botões ▲▼ na UI.
- * A classe `video-player-tv-catalog-assist` é aplicada em runtime (UA Silk/Fire TV ou modo TV
- * manual com `?tv=1`, que pode ficar guardado em `localStorage` até `?tv=0`).
+ * Catálogo com scrollbar nativa escondida — só com modo manual `?tv=1` (classe no html).
+ * Com `tv=0` ou sem o modo, a barra fica visível e não se usam os botões ▲▼ da app.
  */
 html.video-player-tv-catalog-assist .catalog-grid-scroll-wrap .trailer-grid-scroll {
   scroll-padding-top: 0.45rem;

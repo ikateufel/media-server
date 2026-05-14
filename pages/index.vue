@@ -1,5 +1,5 @@
 <template>
-  <div class="layout" :class="{ 'layout--tv-silk': isSilkTvLike }">
+  <div class="layout" :class="{ 'layout--tv-silk': isTvLayout }">
     <div v-if="errorMsg" class="error" role="alert">{{ errorMsg }}</div>
 
     <div
@@ -74,20 +74,51 @@
                   @error="onStageVideoError"
                 />
                 <div
-                  v-show="trailerStageFullscreen && entries.length > 0"
+                  v-show="trailerStageFullscreen && !trailerPreviewVideoFullscreen && entries.length > 0"
                   class="stage-fullscreen-trailer-actions"
                   aria-label="Controlo no trailer em ecrã inteiro"
                 >
                   <button
                     type="button"
                     class="stage-fullscreen-trailer-btn"
+                    title="Trailer anterior"
+                    aria-label="Trailer anterior"
+                    :disabled="entries.length < 2"
+                    @click.stop="goToPrevTrailer"
+                  >
+                    <svg class="stage-fullscreen-trailer-btn-ico" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                      <g transform="scale(-1 1) translate(-24 0)">
+                        <path d="M7 6v12l7-6-7-6zm9 0v12h2V6h-2z" />
+                      </g>
+                    </svg>
+                    <span>Voltar trailer</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="stage-fullscreen-trailer-btn"
                     title="Próximo trailer"
+                    aria-label="Próximo trailer"
+                    :disabled="entries.length < 2"
                     @click.stop="goToNextTrailer"
                   >
                     <span>Próximo trailer</span>
                     <svg class="stage-fullscreen-trailer-btn-ico" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
                       <path d="M7 6v12l7-6-7-6zm9 0v12h2V6h-2z" />
                     </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="stage-fullscreen-trailer-btn stage-fullscreen-trailer-btn--primary"
+                    :disabled="selectedEntry ? !selectedEntry.hasMain : true"
+                    :title="selectedEntry && !selectedEntry.hasMain ? 'Completo em falta' : 'Vídeo completo'"
+                    aria-label="Tocar vídeo completo"
+                    @click.stop="openFullFromPreview"
+                  >
+                    <svg class="stage-fullscreen-trailer-btn-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="2" y="4" width="20" height="14" rx="2" />
+                      <path d="M10 9l5 3-5 3V9z" fill="currentColor" stroke="none" />
+                    </svg>
+                    <span>Tocar completo</span>
                   </button>
                 </div>
               </div>
@@ -137,20 +168,51 @@
               @error="onStageVideoError"
             />
             <div
-              v-show="trailerStageFullscreen && entries.length > 0"
+              v-show="trailerStageFullscreen && !trailerPreviewVideoFullscreen && entries.length > 0"
               class="stage-fullscreen-trailer-actions"
               aria-label="Controlo no trailer em ecrã inteiro"
             >
               <button
                 type="button"
                 class="stage-fullscreen-trailer-btn"
+                title="Trailer anterior"
+                aria-label="Trailer anterior"
+                :disabled="entries.length < 2"
+                @click.stop="goToPrevTrailer"
+              >
+                <svg class="stage-fullscreen-trailer-btn-ico" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                  <g transform="scale(-1 1) translate(-24 0)">
+                    <path d="M7 6v12l7-6-7-6zm9 0v12h2V6h-2z" />
+                  </g>
+                </svg>
+                <span>Voltar trailer</span>
+              </button>
+              <button
+                type="button"
+                class="stage-fullscreen-trailer-btn"
                 title="Próximo trailer"
+                aria-label="Próximo trailer"
+                :disabled="entries.length < 2"
                 @click.stop="goToNextTrailer"
               >
                 <span>Próximo trailer</span>
                 <svg class="stage-fullscreen-trailer-btn-ico" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
                   <path d="M7 6v12l7-6-7-6zm9 0v12h2V6h-2z" />
                 </svg>
+              </button>
+              <button
+                type="button"
+                class="stage-fullscreen-trailer-btn stage-fullscreen-trailer-btn--primary"
+                :disabled="selectedEntry ? !selectedEntry.hasMain : true"
+                :title="selectedEntry && !selectedEntry.hasMain ? 'Completo em falta' : 'Vídeo completo'"
+                aria-label="Tocar vídeo completo"
+                @click.stop="openFullFromPreview"
+              >
+                <svg class="stage-fullscreen-trailer-btn-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="4" width="20" height="14" rx="2" />
+                  <path d="M10 9l5 3-5 3V9z" fill="currentColor" stroke="none" />
+                </svg>
+                <span>Tocar completo</span>
               </button>
             </div>
           </div>
@@ -348,7 +410,7 @@
               </svg>
             </button>
             <button
-              v-if="focusedIndex !== null && selectedEntry && !isSilkTvLike"
+              v-if="focusedIndex !== null && selectedEntry && !isTvLayout"
               type="button"
               class="icon-tool"
               :class="{ 'icon-tool--on': trailerTagPanelOpen }"
@@ -413,7 +475,7 @@
             </p>
           </div>
           <div
-            v-if="focusedIndex !== null && selectedEntry && !isSilkTvLike"
+            v-if="focusedIndex !== null && selectedEntry && !isTvLayout"
             class="toolbar-tags-panel"
             :class="{ 'toolbar-tags-panel--input-open': trailerTagPanelOpen }"
           >
@@ -1206,6 +1268,57 @@
 
     <Teleport to="body">
       <div
+        v-show="trailerPreviewVideoFullscreen && entries.length > 0"
+        class="stage-fullscreen-trailer-actions stage-fullscreen-trailer-actions--body-fs"
+        aria-label="Controlo no trailer em ecrã inteiro"
+      >
+        <button
+          type="button"
+          class="stage-fullscreen-trailer-btn"
+          title="Trailer anterior"
+          aria-label="Trailer anterior"
+          :disabled="entries.length < 2"
+          @click.stop="goToPrevTrailer"
+        >
+          <svg class="stage-fullscreen-trailer-btn-ico" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+            <g transform="scale(-1 1) translate(-24 0)">
+              <path d="M7 6v12l7-6-7-6zm9 0v12h2V6h-2z" />
+            </g>
+          </svg>
+          <span>Voltar trailer</span>
+        </button>
+        <button
+          type="button"
+          class="stage-fullscreen-trailer-btn"
+          title="Próximo trailer"
+          aria-label="Próximo trailer"
+          :disabled="entries.length < 2"
+          @click.stop="goToNextTrailer"
+        >
+          <span>Próximo trailer</span>
+          <svg class="stage-fullscreen-trailer-btn-ico" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+            <path d="M7 6v12l7-6-7-6zm9 0v12h2V6h-2z" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="stage-fullscreen-trailer-btn stage-fullscreen-trailer-btn--primary"
+          :disabled="selectedEntry ? !selectedEntry.hasMain : true"
+          :title="selectedEntry && !selectedEntry.hasMain ? 'Completo em falta' : 'Vídeo completo'"
+          aria-label="Tocar vídeo completo"
+          @click.stop="openFullFromPreview"
+        >
+          <svg class="stage-fullscreen-trailer-btn-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="4" width="20" height="14" rx="2" />
+            <path d="M10 9l5 3-5 3V9z" fill="currentColor" stroke="none" />
+          </svg>
+          <span>Tocar completo</span>
+        </button>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
         v-show="moveTitleDialogOpen"
         class="move-title-backdrop"
         @click="moveTitleDialogOpen = false"
@@ -1273,11 +1386,11 @@ import {
 import IconTrailerRandom from '~/components/IconTrailerRandom.vue'
 import { useSilkTvLayout } from '~/composables/useSilkTvLayout'
 
-const { isSilkTvLike } = useSilkTvLayout()
+const { manualTvAssist, isTvLayout } = useSilkTvLayout()
 
 const videoPreloadAttr = computed<'auto' | 'metadata'>(() => {
   if (!import.meta.client) return 'metadata'
-  if (isSilkTvLike.value) return 'auto'
+  if (isTvLayout.value) return 'auto'
   try {
     if (window.matchMedia('(pointer: coarse)').matches) return 'auto'
   } catch {
@@ -1319,7 +1432,7 @@ const revealInFolderAriaLabel = computed(() => {
  * O ficheiro abre-se sempre na **máquina onde corre o Node**, não no teu browser remoto.
  */
 const revealExplorerEligible = computed(() => {
-  if (isSilkTvLike.value) return false
+  if (isTvLayout.value) return false
   const p = serverPlatform.value.toLowerCase()
   return p === 'win32' || p === 'darwin' || p === 'linux'
 })
@@ -1329,7 +1442,7 @@ const isWideDesktopUi = ref(false)
 const realLibrarySessionCount = computed(() => sessions.value.filter((s) => s.id >= 0).length)
 /** Sessões (além da actual). */
 const moveTitleDesktopEligible = computed(
-  () => !isSilkTvLike.value && realLibrarySessionCount.value > 1 && isWideDesktopUi.value,
+  () => !isTvLayout.value && realLibrarySessionCount.value > 1 && isWideDesktopUi.value,
 )
 const moveTitleDialogOpen = ref(false)
 const moveTitleBusy = ref(false)
@@ -1344,8 +1457,8 @@ interface VideoSessionTab {
 const route = useRoute()
 const router = useRouter()
 
-/** Botões ▲▼ e classe em document.documentElement — mesmo critério que layout--tv-silk (UA ou ?tv=1). */
-const showTvCatalogScrollAssist = computed(() => isSilkTvLike.value)
+/** Botões ▲▼ + «Topo da lista» + scrollbar escondida: só `?tv=1` (ou guardado em localStorage até `?tv=0`). */
+const showTvCatalogScrollAssist = computed(() => manualTvAssist.value)
 
 const sessions = ref<VideoSessionTab[]>([])
 const sessionIndex = ref(0)
@@ -1672,7 +1785,10 @@ const previewUrl = ref<string | null>(null)
 const previewVideoRef = ref<HTMLVideoElement | null>(null)
 /** Contentor do trailer para fullscreen com overlay (não só o elemento vídeo). */
 const previewFullscreenWrapRef = ref<HTMLElement | null>(null)
+/** Trailer em ecrã inteiro no contentor: overlay quando `fullscreenElement` é o wrap. */
 const trailerStageFullscreen = ref(false)
+/** Mobile / fallback: fullscreen só no `<video>` — overlay em `Teleport` para o `body`. */
+const trailerPreviewVideoFullscreen = ref(false)
 
 /** Máximo de trailers fixos por baixo do principal (grelha + 2 = 3 vídeos). */
 const MAX_PINNED_TRAILERS = 2
@@ -1814,7 +1930,7 @@ function clampCatalogPaneWidth(px: number): number {
 }
 
 const catalogSplitterInLayout = computed(
-  () => isWideDesktopUi.value && !isSilkTvLike.value && !catalogGridCollapsed.value,
+  () => isWideDesktopUi.value && !isTvLayout.value && !catalogGridCollapsed.value,
 )
 
 const mainStackGridStyle = computed((): Record<string, string> => {
@@ -1827,7 +1943,7 @@ const mainStackGridStyle = computed((): Record<string, string> => {
     }
   }
 
-  if (isSilkTvLike.value) {
+  if (isTvLayout.value) {
     return {}
   }
 
@@ -2045,15 +2161,7 @@ function handleCatalogRemoteScrollKeys(e: KeyboardEvent): boolean {
   if (documentTargetIsFormField(e.target)) return false
   if (!entries.value.length) return false
 
-  let tvLikeScroll = isSilkTvLike.value
-  if (!tvLikeScroll && typeof window !== 'undefined') {
-    try {
-      tvLikeScroll = window.matchMedia('(pointer: coarse)').matches
-    } catch {
-      tvLikeScroll = false
-    }
-  }
-  if (!tvLikeScroll) return false
+  if (!manualTvAssist.value) return false
 
   const k = e.key
   let dir: 1 | -1 | null = null
@@ -2090,7 +2198,7 @@ function handleCatalogRemoteScrollKeys(e: KeyboardEvent): boolean {
 function onGlobalDocumentKeydown(e: KeyboardEvent) {
   if (handleCatalogRemoteScrollKeys(e)) return
 
-  if (isSilkTvLike.value) {
+  if (isTvLayout.value) {
     if (!documentTargetIsFormField(e.target)) {
       const k = e.key
       if (k === 'MediaFastForward' || k === 'MediaTrackNext') {
@@ -2510,12 +2618,16 @@ function fullscreenTargetForAutorient(): HTMLElement | null {
   return previewFullscreenWrapRef.value ?? previewVideoRef.value
 }
 
-async function tryEnterFullscreen(el: HTMLElement | null) {
+async function tryEnterFullscreen(
+  el: HTMLElement | null,
+  opts?: { allowDescendantVideoFullscreen?: boolean },
+) {
   if (!el) return
+  const allowDescendantVideoFs = opts?.allowDescendantVideoFullscreen !== false
   const innerVideo =
     el instanceof HTMLVideoElement ? el : (el.querySelector('video') as HTMLVideoElement | null)
 
-  /** Primeiro: contentor (overlay «próximo»); se falhar, o mesmo fluxo no elemento vídeo (compat mobile). */
+  /** Primeiro: contentor (overlay); se falhar, opcionalmente o elemento vídeo (mobile). */
   if (!(el instanceof HTMLVideoElement) && typeof el.requestFullscreen === 'function') {
     try {
       await el.requestFullscreen()
@@ -2539,6 +2651,10 @@ async function tryEnterFullscreen(el: HTMLElement | null) {
     return
   }
 
+  if (!allowDescendantVideoFs) {
+    return
+  }
+
   if (innerVideo) {
     try {
       if (innerVideo.requestFullscreen) {
@@ -2554,25 +2670,46 @@ async function tryEnterFullscreen(el: HTMLElement | null) {
 }
 
 async function tryEnterVideoFullscreen(el: HTMLVideoElement) {
-  await tryEnterFullscreen(el)
+  await tryEnterFullscreen(el, { allowDescendantVideoFullscreen: true })
+}
+
+function docFullscreenElement(): Element | null {
+  if (typeof document === 'undefined') return null
+  return (
+    document.fullscreenElement ??
+    (document as Document & { webkitFullscreenElement?: Element | null }).webkitFullscreenElement ??
+    null
+  )
 }
 
 function syncTrailerStageFullscreenFlag() {
   if (!import.meta.client || typeof document === 'undefined') return
+  const fe = docFullscreenElement()
   const wrap = previewFullscreenWrapRef.value
-  trailerStageFullscreen.value = !!wrap && document.fullscreenElement === wrap
+  const previewVid = previewVideoRef.value
+
+  trailerStageFullscreen.value = !!(wrap && fe === wrap)
+
+  trailerPreviewVideoFullscreen.value = Boolean(
+    !playerUrl.value &&
+      previewUrl.value &&
+      wrap &&
+      previewVid &&
+      fe === previewVid &&
+      wrap.contains(previewVid),
+  )
 }
 
 function onDocumentFullscreenChange() {
   syncTrailerStageFullscreenFlag()
 }
 
-/** Sai de fullscreen só se o elemento activo for o vídeo completo (ex.: ao desligar FAST). */
 function exitFullscreenIfMainVideo() {
   if (!import.meta.client || typeof document === 'undefined') return
   const v = mainVideoRef.value
   if (!v) return
-  if (document.fullscreenElement !== v) return
+  const fe = docFullscreenElement()
+  if (fe !== v) return
   document.exitFullscreen?.().catch(() => {})
 }
 
@@ -2582,8 +2719,22 @@ function onLandscapeOrientationChange() {
   if (landscape) {
     const attempt = () => {
       const el = fullscreenTargetForAutorient()
-      if (el) return tryEnterFullscreen(el)
-      return Promise.resolve()
+      if (!el) return Promise.resolve()
+      const wrap = previewFullscreenWrapRef.value
+      let previewTrailerContainerTarget =
+        !playerUrl.value && !!previewUrl.value && !!wrap && el === wrap
+      if (previewTrailerContainerTarget && typeof window !== 'undefined') {
+        try {
+          if (window.matchMedia('(pointer: coarse)').matches) {
+            previewTrailerContainerTarget = false
+          }
+        } catch {
+          /* */
+        }
+      }
+      return tryEnterFullscreen(el, {
+        allowDescendantVideoFullscreen: !previewTrailerContainerTarget,
+      })
     }
     void attempt().then(() => {
       if (typeof document === 'undefined' || document.fullscreenElement) return
@@ -3094,6 +3245,12 @@ async function deleteTitleAtIndex(i: number) {
   ].filter(Boolean)
   if (!confirm(parts.join('\n'))) return
 
+  const focusAfterDeleteRel =
+    entries.value[i + 1]?.trailerRel ?? entries.value[i - 1]?.trailerRel ?? null
+
+  const L = entries.value.length
+  const focusSlotAfterDelete = L > 0 ? (i < L - 1 ? i : Math.max(0, i - 1)) : 0
+
   if (playerUrl.value && activeIndex.value === i) {
     await closeFullVideo()
   }
@@ -3104,7 +3261,10 @@ async function deleteTitleAtIndex(i: number) {
       body: { session: libSession(e), trailerRel: e.trailerRel },
     })
     errorMsg.value = ''
-    await loadTrailers()
+    await loadTrailers({
+      preserveFocusTrailerRel: focusAfterDeleteRel,
+      focusSlotAfterDelete,
+    })
   } catch (err: unknown) {
     const ex = err as { data?: { statusMessage?: string }; message?: string }
     errorMsg.value =
@@ -3295,14 +3455,24 @@ async function selectSession(id: number, opts?: { preserveFocusTrailerRel?: stri
   await loadTrailers(opts)
 }
 
+function trailerRelMatchesFocus(a: string, b: string): boolean {
+  const na = a.trim().replace(/\\/g, '/').toLowerCase()
+  const nb = b.trim().replace(/\\/g, '/').toLowerCase()
+  return na === nb
+}
+
 /** Fallback quando não há URL nem entrada preservada: aleatório em desktop; primeiro item em Silk/Fire TV. */
 function fallbackCatalogStartIndex(len: number): number {
   if (len <= 0) return 0
-  if (isSilkTvLike.value) return 0
+  if (isTvLayout.value) return 0
   return Math.floor(Math.random() * len)
 }
 
-async function loadTrailers(opts?: { preserveFocusTrailerRel?: string | null }) {
+async function loadTrailers(opts?: {
+  preserveFocusTrailerRel?: string | null
+  /** Após apagar: se preserveFocusTrailerRel não existir na nova lista, focar este índice (clamp), em vez de aleatório. */
+  focusSlotAfterDelete?: number | null
+}) {
   if (!sessions.value.length) {
     fullEntries.value = []
     tagSuggestions.value = []
@@ -3327,7 +3497,7 @@ async function loadTrailers(opts?: { preserveFocusTrailerRel?: string | null }) 
       ? entries.value[activeIndex.value].trailerRel
       : null
   const keepFullPlayback = Boolean(
-    preserveRel && playingMainRel && playingMainRel === preserveRel,
+    preserveRel && playingMainRel && trailerRelMatchesFocus(playingMainRel, preserveRel),
   )
   const isSearchSession = sessionIndex.value === SEARCH_SESSION_ID
   const searchQ = searchSessionQuery.value.trim()
@@ -3406,8 +3576,17 @@ async function loadTrailers(opts?: { preserveFocusTrailerRel?: string | null }) 
 
     if (list.length) {
       if (preserveRel) {
-        const ni = list.findIndex((e) => e.trailerRel === preserveRel)
-        focusedIndex.value = ni >= 0 ? ni : fallbackCatalogStartIndex(list.length)
+        const ni = list.findIndex((e) => trailerRelMatchesFocus(e.trailerRel, preserveRel))
+        if (ni >= 0) {
+          focusedIndex.value = ni
+        } else {
+          const slotRaw = opts?.focusSlotAfterDelete
+          const slot =
+            typeof slotRaw === 'number' && Number.isFinite(slotRaw)
+              ? Math.min(Math.max(0, Math.trunc(slotRaw)), list.length - 1)
+              : 0
+          focusedIndex.value = slot
+        }
       } else if (shareRelForThisSession) {
         const ei = list.findIndex((e) => e.trailerRel === shareRelForThisSession)
         focusedIndex.value = ei >= 0 ? ei : fallbackCatalogStartIndex(list.length)
@@ -3419,10 +3598,10 @@ async function loadTrailers(opts?: { preserveFocusTrailerRel?: string | null }) 
     }
 
     if (keepFullPlayback && preserveRel) {
-      const ni = list.findIndex((e) => e.trailerRel === preserveRel)
-      if (ni >= 0) {
-        activeIndex.value = ni
-        focusedIndex.value = ni
+      const niFull = list.findIndex((e) => trailerRelMatchesFocus(e.trailerRel, preserveRel))
+      if (niFull >= 0) {
+        activeIndex.value = niFull
+        focusedIndex.value = niFull
       } else {
         activeIndex.value = null
         playerUrl.value = null
@@ -3562,7 +3741,7 @@ function catalogScrollRootEl(): HTMLElement | null {
 
 /** Alíneas extra para cabeçalhos / chrome do browser (Silk no Fire TV quase não usa safe-area). */
 function catalogScrollInsets(): { top: number; bottom: number } {
-  return isSilkTvLike.value
+  return isTvLayout.value
     ? { top: 36, bottom: 28 }
     : { top: 12, bottom: 14 }
 }
@@ -3594,7 +3773,7 @@ function scrollCatalogGridToTrailerRel(trailerRel: string) {
 
   scrollRoot.scrollTo({
     top: nextTop,
-    behavior: isSilkTvLike.value ? 'auto' : 'smooth',
+    behavior: isTvLayout.value ? 'auto' : 'smooth',
   })
 }
 
@@ -3679,7 +3858,7 @@ watch([sessionIndex, focusedIndex, activeIndex, playerUrl], () => {
 }, { flush: 'post' })
 
 watch(
-  showTvCatalogScrollAssist,
+  manualTvAssist,
   (on) => {
     if (!import.meta.client) return
     document.documentElement.classList.toggle('video-player-tv-catalog-assist', on)
@@ -3718,6 +3897,10 @@ onMounted(async () => {
   desktopWidthMql.addEventListener('change', onDesktopWidthUiChange)
   document.addEventListener('keydown', onGlobalDocumentKeydown)
   document.addEventListener('fullscreenchange', onDocumentFullscreenChange)
+  document.addEventListener('webkitfullscreenchange', onDocumentFullscreenChange as EventListener)
+  void nextTick(() => {
+    syncTrailerStageFullscreenFlag()
+  })
   if (typeof BroadcastChannel !== 'undefined') {
     try {
       libraryRefreshChannel = new BroadcastChannel('video-player-library')
@@ -3738,6 +3921,7 @@ onUnmounted(() => {
   if (typeof document !== 'undefined') {
     document.removeEventListener('keydown', onGlobalDocumentKeydown)
     document.removeEventListener('fullscreenchange', onDocumentFullscreenChange)
+    document.removeEventListener('webkitfullscreenchange', onDocumentFullscreenChange as EventListener)
     document.body.style.overflow = ''
     document.documentElement.classList.remove('video-player-tv-catalog-assist')
   }
@@ -5748,6 +5932,11 @@ onUnmounted(() => {
   justify-content: center;
 }
 
+.stage-fullscreen-wrap > .stage-video {
+  position: relative;
+  z-index: 1;
+}
+
 .video-shell-main .stage-fullscreen-wrap {
   flex: 1 1 auto;
   min-height: 0;
@@ -5758,13 +5947,21 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 5;
+  z-index: 20;
   padding: 0.65rem 0.85rem 0.85rem;
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   align-items: center;
+  gap: 0.45rem;
   pointer-events: none;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.72), transparent);
+}
+
+/* Fullscreen nativo só no <video> (ex.: mobile): overlay em Teleport — position fixed por cima do vídeo. */
+.stage-fullscreen-trailer-actions--body-fs {
+  position: fixed;
+  z-index: 2147483000;
 }
 
 .stage-fullscreen-trailer-btn {
@@ -5783,9 +5980,24 @@ onUnmounted(() => {
   -webkit-tap-highlight-color: transparent;
 }
 
-.stage-fullscreen-trailer-btn:hover {
+.stage-fullscreen-trailer-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.stage-fullscreen-trailer-btn:hover:not(:disabled) {
   background: rgba(30, 33, 40, 0.95);
   border-color: rgba(95, 157, 238, 0.55);
+}
+
+.stage-fullscreen-trailer-btn--primary {
+  border-color: rgba(95, 157, 238, 0.55);
+  background: rgba(32, 44, 68, 0.92);
+}
+
+.stage-fullscreen-trailer-btn--primary:hover:not(:disabled) {
+  background: rgba(42, 58, 88, 0.96);
+  border-color: rgba(120, 175, 255, 0.65);
 }
 
 .stage-fullscreen-trailer-btn-ico {

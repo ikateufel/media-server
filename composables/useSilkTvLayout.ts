@@ -23,7 +23,9 @@ function writeTvAssistStored(on: boolean) {
 }
 
 /**
- * `?tv=1` (ou true/yes) força o modo UX TV/Silk e grava em `localStorage` até `?tv=0`.
+ * `?tv=1` (ou true/yes) grava em `localStorage` até `?tv=0`. Esse modo manual controla **só** o
+ * assistente de rolagem do catálogo (▲▼, «Topo da lista», scrollbar escondida). O layout alargado
+ * (`layout--tv-silk`) usa `isTvLayout` (manual **ou** UA Silk/Fire TV).
  */
 function parseTvAssistFromQuery(query: RouteLocationNormalizedLoaded['query']): boolean {
   const v = query.tv
@@ -44,7 +46,7 @@ function parseTvOffFromQuery(query: RouteLocationNormalizedLoaded['query']): boo
 
 /**
  * Heurística para Amazon Silk / Fire TV e variantes. Não é segurança — só UX/CSS.
- * Alguns WebViews omit "Silk" no userAgent; use `?tv=1` como fallback (persiste até `?tv=0`).
+ * Alguns WebViews omitem «Silk» no userAgent; o layout TV manual continua disponível com `?tv=1`.
  */
 function detectSilkTvLikeUa(): boolean {
   if (typeof navigator === 'undefined') return false
@@ -76,10 +78,9 @@ function detectSilkTvLikeUa(): boolean {
 }
 
 /**
- * Amazon Silk no Fire TV: safe-area fraca, scroll do catálogo especial, layout alargado.
- *
- * - `isSilkTvLike`: UA Silk/Fire TV **ou** modo TV manual (`?tv=1`, persistido em `localStorage` até `?tv=0`).
- * - Reavalia o UA em `onMounted`.
+ * - `manualTvAssist`: `?tv=1` / preferência guardada (até `?tv=0`) — botões ▲▼ + scrollbar do grelha escondida.
+ * - `isSilkTvUa`: só User-Agent Silk / Fire TV (para outras heurísticas; rolagem do catálogo **não** depende disto).
+ * - `isTvLayout`: UA Silk/Fire TV **ou** `manualTvAssist` — classe `layout--tv-silk`, margens, grelha.
  */
 export function useSilkTvLayout() {
   const route = useRoute()
@@ -109,12 +110,13 @@ export function useSilkTvLayout() {
     return tvStoredOn.value
   })
 
-  const isSilkTvLike = computed(() => uaSilkRef.value || manualTvAssist.value)
+  const isSilkTvUa = computed(() => uaSilkRef.value)
+  const isTvLayout = computed(() => uaSilkRef.value || manualTvAssist.value)
 
   onMounted(() => {
     uaSilkRef.value = detectSilkTvLikeUa()
     tvStoredOn.value = readTvAssistStored()
   })
 
-  return { isSilkTvLike }
+  return { manualTvAssist, isSilkTvUa, isTvLayout }
 }
