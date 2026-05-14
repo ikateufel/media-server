@@ -7,8 +7,31 @@
 html,
 body {
   margin: 0;
-  height: 100%;
   overflow-x: hidden;
+}
+
+/* Rato / precisão: mantém a cadeia de altura fixa (evita rolagem no documento em desktop). */
+@media (pointer: fine) {
+  html,
+  body {
+    height: 100%;
+  }
+}
+
+/* Toque: o documento pode crescer e rolar ligeiramente — em muitos browsers a barra de URL recolhe como numa página normal ao fazer scroll. */
+@media (pointer: coarse) {
+  html {
+    height: auto;
+    min-height: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body {
+    height: auto;
+    min-height: 100%;
+    min-height: 100dvh;
+  }
 }
 
 #__nuxt {
@@ -16,6 +39,12 @@ body {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+}
+
+@media (pointer: coarse) {
+  #__nuxt {
+    min-height: calc(100dvh + 2px);
+  }
 }
 
 /*

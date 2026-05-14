@@ -1,5 +1,5 @@
 <template>
-  <div class="layout" :class="{ 'layout--tv-silk': isTvLayout }">
+  <div class="layout" :class="{ 'layout--tv-silk': isTvLayout, 'layout--theater': theaterMode }">
     <div v-if="errorMsg" class="error" role="alert">{{ errorMsg }}</div>
 
     <div
@@ -17,6 +17,7 @@
       :class="{
         'main-stack--catalog-collapsed': catalogGridCollapsed,
         'main-stack--with-catalog-split': catalogSplitterInLayout,
+        'main-stack--theater': theaterMode,
       }"
       :style="mainStackGridStyle"
     >
@@ -239,6 +240,22 @@
 
         <div v-if="!playerUrl && previewUrl" class="toolbar toolbar--trailer toolbar--trailer-compact">
           <div class="toolbar-trailer-icons">
+            <button
+              type="button"
+              class="icon-tool icon-tool--theater"
+              :class="{ 'icon-tool--on': theaterMode }"
+              :title="theaterMode ? 'Sair do modo cinema' : 'Modo cinema (só vídeo e barra inferior)'"
+              :aria-pressed="theaterMode"
+              aria-label="Alternar modo cinema"
+              @click="theaterMode = !theaterMode"
+            >
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z" />
+                <path d="m6.2 5.3 3.1 3.9" />
+                <path d="m12.4 3.4 3.1 4" />
+                <path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+              </svg>
+            </button>
             <button
               v-if="focusedIndex !== null && selectedEntry"
               type="button"
@@ -523,6 +540,22 @@
             <button type="button" class="icon-tool" title="Voltar ao trailer" @click="closeFullVideo">
               <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="icon-tool icon-tool--theater"
+              :class="{ 'icon-tool--on': theaterMode }"
+              :title="theaterMode ? 'Sair do modo cinema' : 'Modo cinema (só vídeo e barra inferior)'"
+              :aria-pressed="theaterMode"
+              aria-label="Alternar modo cinema"
+              @click="theaterMode = !theaterMode"
+            >
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z" />
+                <path d="m6.2 5.3 3.1 3.9" />
+                <path d="m12.4 3.4 3.1 4" />
+                <path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
               </svg>
             </button>
             <button
@@ -1891,6 +1924,7 @@ function onCatalogThumbClick(i: number) {
   gridInlinePreviewIndex.value = i
 }
 
+const theaterMode = ref(false)
 const sessionMenuOpen = ref(false)
 const trailerTagPanelOpen = ref(false)
 const searchSessionInput = ref('')
@@ -1935,6 +1969,13 @@ const catalogSplitterInLayout = computed(
 
 const mainStackGridStyle = computed((): Record<string, string> => {
   if (!import.meta.client || !isWideDesktopUi.value) return {}
+
+  if (theaterMode.value && !isTvLayout.value) {
+    return {
+      gridTemplateColumns: 'minmax(0, 1fr)',
+      columnGap: '0',
+    }
+  }
 
   if (catalogGridCollapsed.value) {
     return {
@@ -2232,7 +2273,14 @@ function onGlobalDocumentKeydown(e: KeyboardEvent) {
       closeCatalogGalleryDialog()
       return
     }
-    if (sessionMenuOpen.value) sessionMenuOpen.value = false
+    if (sessionMenuOpen.value) {
+      sessionMenuOpen.value = false
+      return
+    }
+    if (theaterMode.value) {
+      theaterMode.value = false
+      return
+    }
     return
   }
   if (e.key === 'Home') {
@@ -2250,6 +2298,10 @@ watch([catalogGalleryIndex, sessionMenuOpen], () => {
   if (typeof document === 'undefined') return
   document.body.style.overflow =
     catalogGalleryIndex.value !== null || sessionMenuOpen.value ? 'hidden' : ''
+})
+
+watch([previewUrl, playerUrl], ([p, pl]) => {
+  if (!p && !pl) theaterMode.value = false
 })
 
 const selectedEntry = computed(() => {
@@ -4032,6 +4084,55 @@ onUnmounted(() => {
   background: rgba(88, 32, 32, 0.96);
   border: 1px solid rgba(220, 105, 100, 0.45);
   color: #ffe8e4;
+}
+
+/* Modo cinema: palco + barra inferior (sem topo, nome, tags; catálogo escondido só fora do layout TV). */
+.layout--theater .media-card-top {
+  display: none !important;
+}
+
+.layout--theater:not(.layout--tv-silk) .catalog-pane-splitter,
+.layout--theater:not(.layout--tv-silk) .sidebar {
+  display: none !important;
+}
+
+.layout--theater .media-card-playback-name-row,
+.layout--theater .toolbar-tags-panel,
+.layout--theater .toolbar-full-tags {
+  display: none !important;
+}
+
+@media (min-width: 960px) {
+  .layout--theater:not(.layout--tv-silk) .main-stack {
+    grid-template-columns: minmax(0, 1fr) !important;
+    column-gap: 0 !important;
+  }
+
+  .layout--theater:not(.layout--tv-silk) .media-card {
+    grid-column: 1 / -1 !important;
+  }
+}
+
+.layout--theater .media-card {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.layout--theater .video-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.layout--theater .video-shell:not(.video-shell--with-pins) {
+  max-height: min(calc(100dvh - 7rem), 88dvh, 1080px);
+}
+
+.layout--theater .video-shell--with-pins {
+  max-height: min(calc(100dvh - 6.5rem), 90dvh, 1100px);
+}
+
+.layout--theater .video-shell-main {
+  max-height: min(calc(100dvh - 8rem), 82dvh, 960px);
 }
 
 .main-stack {
