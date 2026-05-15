@@ -192,8 +192,14 @@
       <h3 class="admin-h3">Fast Play (reprodutor)</h3>
       <p class="admin-muted">
         Define o comportamento do botão <strong>FAST</strong> no vídeo completo: velocidade, salto entre pontos,
-        tempo tocado por ponto e trecho final sem saltos.
+        tempo tocado por ponto, trecho final sem saltos e se entra em ecrã inteiro ao activar.
       </p>
+      <div class="admin-row admin-row--checks">
+        <label class="admin-check-label">
+          <input v-model="fastPlay.fullscreenOnFastPlay" type="checkbox" />
+          Ecrã inteiro ao activar FAST (vídeo completo)
+        </label>
+      </div>
       <div class="admin-row admin-row--checks">
         <label class="admin-check-label">
           Velocidade
@@ -507,6 +513,7 @@ interface FastPlaySettings {
   stepSeconds: number
   windowSeconds: number
   lastMinuteSeconds: number
+  fullscreenOnFastPlay: boolean
 }
 
 const token = ref('')
@@ -516,6 +523,7 @@ const fastPlay = ref<FastPlaySettings>({
   stepSeconds: 60,
   windowSeconds: 10,
   lastMinuteSeconds: 60,
+  fullscreenOnFastPlay: true,
 })
 const source = ref<'file' | 'env' | ''>('')
 const loadError = ref('')
@@ -819,6 +827,7 @@ async function loadMenu() {
     const nStep = Number(fp.stepSeconds)
     const nWindow = Number(fp.windowSeconds)
     const nLast = Number(fp.lastMinuteSeconds)
+    const fs = fp.fullscreenOnFastPlay
     fastPlay.value = {
       rate: Number.isFinite(nRate) ? Math.max(0.5, Math.min(4, nRate)) : 2,
       stepSeconds: Number.isFinite(nStep) ? Math.max(10, Math.min(600, Math.round(nStep))) : 60,
@@ -828,6 +837,7 @@ async function loadMenu() {
       lastMinuteSeconds: Number.isFinite(nLast)
         ? Math.max(10, Math.min(600, Math.round(nLast)))
         : 60,
+      fullscreenOnFastPlay: typeof fs === 'boolean' ? fs : true,
     }
     if (!rows.value.length) {
       rows.value = [{ path: '', title: '' }]

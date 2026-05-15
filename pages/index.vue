@@ -229,7 +229,9 @@
             :preload="videoPreloadAttr"
             @loadedmetadata="onMainVideoLoadedMetadata"
             @timeupdate="onMainVideoTimeUpdate"
-            @seeking="onMainVideoSeeking"
+            @seeked="onMainVideoSeeked"
+            @play="syncMainVideoPausedForUi"
+            @pause="syncMainVideoPausedForUi"
             @ended="onMainVideoEnded"
             @ratechange="syncRateFromVideo"
             @click="onMainVideoSurfaceClick"
@@ -670,8 +672,8 @@
               :class="{ 'icon-tool--on': fastPlayEnabled }"
               :title="
                 fastPlayEnabled
-                  ? 'Fast Play: ecrã inteiro; saltos automáticos; último trecho normal. No telemóvel a barra fica oculta — toque no vídeo para pausar. Desligue o FAST para sair do ecrã inteiro e voltar à barra.'
-                  : 'Fast Play: entra em ecrã inteiro, saltos automáticos no vídeo completo (parâmetros no Admin). No telemóvel, sem barra nativa durante o FAST.'
+                  ? 'Fast Play activo: saltos automáticos; em pausa mostra a barra para mover o progresso (não desliga o FAST). Volte a premir FAST para desligar e sair do ecrã inteiro se estiver activo.'
+                  : 'Fast Play: ao activar, ecrã inteiro (se configurado), saltos automáticos no vídeo completo (Admin). Em pausa aparece a barra nativa; mover o progresso mantém o FAST até voltar a premir o botão.'
               "
               :aria-pressed="fastPlayEnabled"
               @click="toggleFastPlay"
@@ -1006,6 +1008,8 @@
                 'grid-tile--full': activeIndex === i,
                 'grid-tile--no-main': !entry.hasMain,
                 'grid-tile--fav': entry.isFavorite,
+                'grid-tile--in-destaques':
+                  sessionIndex !== RECENTS_SESSION_ID && isPlaybackTitleInRecentList(entry),
               }"
               :title="
                 sessionIndex === RECENTS_SESSION_ID
@@ -1043,6 +1047,26 @@
                   <line x1="1" y1="1" x2="23" y2="23" />
                 </svg>
               </button>
+              <span
+                v-if="sessionIndex !== RECENTS_SESSION_ID && isPlaybackTitleInRecentList(entry)"
+                class="grid-tile-destaques-eye"
+                title="Na lista Destaques"
+                aria-label="Na lista Destaques"
+              >
+                <svg
+                  class="grid-tile-destaques-eye-svg"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                  <circle cx="12" cy="12" r="3.5" />
+                </svg>
+              </span>
               <span
                 v-if="isEntryMemorable(entry)"
                 class="watch-badge watch-badge--memorable"
@@ -1499,7 +1523,9 @@ const sessionIndex = ref(0)
 function libSession(entry: TrailerListEntry | null | undefined): number {
   const n = entry?.librarySession
   if (typeof n === 'number' && Number.isFinite(n) && n >= 0) return Math.floor(n)
-  return sessionIndex.value >= 0 ? sessionIndex.value : 0
+  const si = sessionIndex.value
+  if (typeof si === 'number' && Number.isFinite(si) && si >= 0) return Math.floor(si)
+  return 0
 }
 
 /** Rótulo da pasta/biblioteca no menu (`sessions`), por índice real da sessão (≥0). */
@@ -1516,8 +1542,14 @@ const recentsMutationBusy = ref(false)
 /** Chaves `session:trailerRel` (= estado em SQLite) para ícone olho aberto/fechado. */
 const recentPlaybackKeys = ref<Set<string>>(new Set())
 
+/** Mesma normalização que `server/utils/recentPlaybackDb.normalizeTrailerRel` para bater com SQLite. */
+function normalizeTrailerRelForRecentKey(rel: string): string {
+  return String(rel ?? '').trim().replace(/\\/g, '/')
+}
+
 function playbackRecentKey(session: number, trailerRel: string): string {
-  return `${Math.max(0, Math.floor(session))}:${String(trailerRel).trim().replace(/\\/g, '/')}`
+  const s = Math.max(0, Math.floor(session))
+  return `${s}:${normalizeTrailerRelForRecentKey(trailerRel)}`
 }
 
 function isPlaybackTitleInRecentList(entry: TrailerListEntry | null | undefined): boolean {
@@ -1843,15 +1875,25 @@ const fastPlayRate = ref(2)
 const fastPlayStepSeconds = ref(60)
 const fastPlayWindowSeconds = ref(10)
 const fastPlayLastMinuteSeconds = ref(60)
+const fastPlayFullscreenOn = ref(true)
 let fastPlaySegmentStartAt = 0
 let fastPlayProgrammaticSeek = false
 
-/**
- * Com FAST activo, sem `controls` no vídeo completo (desktop fullscreen incluído): seeks programáticos
- * fazem vários browsers mostrarem a barra nativa. Usa a toolbar e toque no vídeo para pausar/continuar;
- * desligue o FAST para voltar à barra nativa e poder arrastar.
- */
-const mainVideoNativeControls = computed(() => !fastPlayEnabled.value)
+/** FAST: sem controlos nativos enquanto toca; com pausa mostra a barra (progresso / seek). */
+const mainVideoPausedForUi = ref(false)
+
+function syncMainVideoPausedForUi() {
+  const v = mainVideoRef.value
+  if (!v) {
+    mainVideoPausedForUi.value = false
+    return
+  }
+  mainVideoPausedForUi.value = v.paused || v.ended
+}
+
+const mainVideoNativeControls = computed(
+  () => !fastPlayEnabled.value || mainVideoPausedForUi.value,
+)
 
 const PREVIEW_TRAILER_MUTED_KEY = 'video-player-preview-trailer-muted'
 
@@ -2920,6 +2962,7 @@ function onMainVideoLoadedMetadata() {
     }
   }
   fastPlaySegmentStartAt = Number.isFinite(v.currentTime) ? v.currentTime : 0
+  syncMainVideoPausedForUi()
 }
 
 function onMainVideoTimeUpdate() {
@@ -2927,11 +2970,13 @@ function onMainVideoTimeUpdate() {
   void persistMainProgress(false)
 }
 
-function onMainVideoSeeking() {
+/** Seek manual na barra: mantém FAST e repõe a janela de tempo por segmento. */
+function onMainVideoSeeked() {
   if (!fastPlayEnabled.value) return
   if (fastPlayProgrammaticSeek) return
-  // Intervenção manual (barra/seek do utilizador) desliga o modo automático.
-  stopFastPlay(false)
+  const v = mainVideoRef.value
+  if (!v) return
+  fastPlaySegmentStartAt = Number.isFinite(v.currentTime) ? v.currentTime : 0
 }
 
 /** Com controlos nativos ocultos (FAST em touch), toque no vídeo = pausar / continuar. */
@@ -2954,6 +2999,7 @@ function stopFastPlay(keepEnabled: boolean) {
     fastPlayEnabled.value = false
     exitFullscreenIfMainVideo()
   }
+  syncMainVideoPausedForUi()
 }
 
 function toggleFastPlay() {
@@ -2967,8 +3013,10 @@ function toggleFastPlay() {
   fastPlaySegmentStartAt = Number.isFinite(v.currentTime) ? v.currentTime : 0
   if (v.paused) v.play().catch(() => {})
   void nextTick(() => {
+    syncMainVideoPausedForUi()
     const el = mainVideoRef.value
-    if (el && fastPlayEnabled.value) tryEnterVideoFullscreen(el).catch(() => {})
+    if (el && fastPlayEnabled.value && fastPlayFullscreenOn.value)
+      tryEnterVideoFullscreen(el).catch(() => {})
   })
 }
 
@@ -3583,6 +3631,7 @@ async function loadTrailers(opts?: {
         stepSeconds?: number
         windowSeconds?: number
         lastMinuteSeconds?: number
+        fullscreenOnFastPlay?: boolean
       }
     }>(trailerUrl)
     serverPlatform.value =
@@ -3603,6 +3652,8 @@ async function loadTrailers(opts?: {
       if (Number.isFinite(nLast) && nLast >= 10 && nLast <= 600) {
         fastPlayLastMinuteSeconds.value = Math.round(nLast)
       }
+      const fsOn = data.fastPlay.fullscreenOnFastPlay
+      fastPlayFullscreenOn.value = typeof fsOn === 'boolean' ? fsOn : true
     }
     catalogMode.value =
       !isSearchSession && data.catalogMode === 'main-only' ? 'main-only' : 'trailers'
@@ -4853,6 +4904,34 @@ onUnmounted(() => {
   width: 1.02rem;
   height: 1.02rem;
   display: block;
+}
+
+.grid-tile-destaques-eye {
+  position: absolute;
+  top: 2.5rem;
+  right: 0.3rem;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.6rem;
+  padding: 0.2rem;
+  border-radius: 8px;
+  border: 1px solid rgba(120, 170, 240, 0.45);
+  background: rgba(22, 32, 48, 0.92);
+  color: #8eb8ff;
+  pointer-events: none;
+}
+
+.grid-tile-destaques-eye-svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  display: block;
+}
+
+.grid-tile--in-destaques {
+  border-color: color-mix(in srgb, #6b9ae8 32%, #2d333b);
 }
 
 .watch-badge {
@@ -6122,10 +6201,10 @@ onUnmounted(() => {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Reforço WebKit: alguns browsers ainda injectam UI em fullscreen após seek. */
-.stage-video--fast-play::-webkit-media-controls,
-.stage-video--fast-play::-webkit-media-controls-enclosure,
-.stage-video--fast-play::-webkit-media-controls-panel {
+/* FAST a tocar: esconder UI nativa (evita flash em seek); em pausa deixa a barra para progresso. */
+.stage-video--fast-play:not(:paused)::-webkit-media-controls,
+.stage-video--fast-play:not(:paused)::-webkit-media-controls-enclosure,
+.stage-video--fast-play:not(:paused)::-webkit-media-controls-panel {
   display: none !important;
   opacity: 0 !important;
   visibility: hidden !important;

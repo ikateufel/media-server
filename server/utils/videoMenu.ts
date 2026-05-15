@@ -14,6 +14,8 @@ export interface FastPlaySettings {
   stepSeconds: number
   windowSeconds: number
   lastMinuteSeconds: number
+  /** Se verdadeiro, activar FAST no vídeo completo entra em ecrã inteiro no elemento de vídeo. */
+  fullscreenOnFastPlay: boolean
 }
 
 export const DEFAULT_FAST_PLAY_SETTINGS: FastPlaySettings = {
@@ -21,6 +23,7 @@ export const DEFAULT_FAST_PLAY_SETTINGS: FastPlaySettings = {
   stepSeconds: 60,
   windowSeconds: 10,
   lastMinuteSeconds: 60,
+  fullscreenOnFastPlay: true,
 }
 
 function menuFilePath() {
@@ -31,6 +34,18 @@ function clampNumber(raw: unknown, min: number, max: number, fallback: number): 
   const n = typeof raw === 'number' ? raw : Number(raw)
   if (!Number.isFinite(n)) return fallback
   return Math.max(min, Math.min(max, n))
+}
+
+function normalizeBoolean(raw: unknown, fallback: boolean): boolean {
+  if (raw === undefined || raw === null) return fallback
+  if (typeof raw === 'boolean') return raw
+  if (typeof raw === 'number') return raw !== 0
+  if (typeof raw === 'string') {
+    const t = raw.trim().toLowerCase()
+    if (t === '0' || t === 'false' || t === 'no' || t === 'off') return false
+    if (t === '1' || t === 'true' || t === 'yes' || t === 'on') return true
+  }
+  return fallback
 }
 
 function normalizeFastPlaySettings(raw: unknown): FastPlaySettings {
@@ -45,6 +60,10 @@ function normalizeFastPlaySettings(raw: unknown): FastPlaySettings {
     ),
     lastMinuteSeconds: Math.round(
       clampNumber(obj.lastMinuteSeconds, 10, 600, DEFAULT_FAST_PLAY_SETTINGS.lastMinuteSeconds),
+    ),
+    fullscreenOnFastPlay: normalizeBoolean(
+      obj.fullscreenOnFastPlay,
+      DEFAULT_FAST_PLAY_SETTINGS.fullscreenOnFastPlay,
     ),
   }
 }
