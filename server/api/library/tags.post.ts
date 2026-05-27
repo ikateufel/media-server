@@ -1,4 +1,5 @@
 import { createError, readBody } from 'h3'
+import { resolveTrailerRelForTagMutation } from '../../utils/catalogTagMutation'
 import { TAG_MAX_LEN, addTagToVideo, normalizeTagInput } from '../../utils/videoTagsDb'
 import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
 
@@ -29,6 +30,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const tags = addTagToVideo(session, trailerRel, nameRaw, true)
+  const canonicalRel = await resolveTrailerRelForTagMutation(event, session, trailerRel)
+  const tags = addTagToVideo(session, canonicalRel, nameRaw, true)
   return { tags }
 })

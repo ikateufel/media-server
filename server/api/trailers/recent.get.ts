@@ -44,6 +44,8 @@ export default defineEventHandler(async (event) => {
 
     await enrichSingleTrailerEntryForSession(row.session, pair.entry, pair.mainStat)
     pair.entry.librarySession = row.session
+    const touchedMs = Date.parse(row.touchedAt)
+    if (Number.isFinite(touchedMs)) pair.entry.highlightedAtMs = touchedMs
     items.push(pair.entry)
     for (const t of pair.entry.tags ?? []) tagSuggestions.add(t)
   }

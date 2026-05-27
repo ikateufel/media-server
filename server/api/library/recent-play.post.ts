@@ -1,4 +1,5 @@
 import { createError, readBody } from 'h3'
+import { resolveTrailerRelForTagMutation } from '../../utils/catalogTagMutation'
 import { pushRecentPlayback } from '../../utils/recentPlaybackDb'
 import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
 
@@ -21,6 +22,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'session inválido' })
   }
 
-  pushRecentPlayback(Math.floor(session), trailerRel)
+  const canonicalRel = await resolveTrailerRelForTagMutation(event, Math.floor(session), trailerRel)
+  pushRecentPlayback(Math.floor(session), canonicalRel)
   return { ok: true }
 })

@@ -1,4 +1,5 @@
 import { createError, readBody } from 'h3'
+import { resolveTrailerRelForTagMutation } from '../../utils/catalogTagMutation'
 import {
   MEMORABLE_TAG_NAME,
   markTrailerMemorable,
@@ -45,9 +46,10 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const canonicalRel = await resolveTrailerRelForTagMutation(event, session, trailerRel)
   const tags = memorable
-    ? markTrailerMemorable(session, trailerRel)
-    : unmarkTrailerMemorable(session, trailerRel)
+    ? markTrailerMemorable(session, canonicalRel)
+    : unmarkTrailerMemorable(session, canonicalRel)
 
   return { memorable, memorableTagName: MEMORABLE_TAG_NAME, tags }
 })

@@ -1,5 +1,9 @@
 import { execFile } from 'node:child_process'
+import { writeFile, unlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { platform } from 'node:process'
+import { randomBytes } from 'node:crypto'
 import { promisify } from 'node:util'
 
 const pExecFile = promisify(execFile)
@@ -9,20 +13,18 @@ function powershellExe(): string {
   return root ? `${root}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe` : 'powershell.exe'
 }
 
-/** Aspas simples PowerShell: escapar com ''. */
-function escapePsSingleQuoted(path: string): string {
-  return path.replace(/'/g, "''")
+async function writeRecyclePathList(paths: string[]): Promise<string> {
+  const listPath = join(tmpdir(), `vp-recycle-${randomBytes(8).toString('hex')}.txt`)
+  const body = paths
+    .map((p) => p.trim().replace(/[\r\n]+/g, ''))
+    .filter(Boolean)
+    .join('\r\n')
+  await writeFile(listPath, body, 'utf8')
+  return listPath
 }
 
-/**
- * Layout compatível com `SHFILEOPSTRUCTW` em Win32 x64/x86:
- * - `BOOL` = int32 (não `bool` CLR de 1 byte)
- * - `lpszProgressTitle` = ponteiro (não `string`)
- *
- * Versões anteriores usavam `bool`/`string` e corrompiam offsets → falhas silenciosas ou sem mover ficheiros.
- */
-function buildRecycleBinPsScript(paths: string[]): string {
-  const quoted = paths.map((fp) => `'${escapePsSingleQuoted(fp)}'`).join(', ')
+/** Script PS: lista em ficheiro (env) + VB SendToRecycleBin; fallback SHFileOperation. */
+function buildRecycleBinPsScript(): string {
   const csharp = `
 using System;
 using System.Runtime.InteropServices;
@@ -49,9 +51,19 @@ namespace RB {
   return `
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+Add-Type -AssemblyName Microsoft.VisualBasic
 Add-Type -TypeDefinition @'
 ${csharp}
 '@
+
+function Move-OneFileToRecycleVb([string]$fullPath) {
+  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
+    $fullPath,
+    [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
+    [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin
+  )
+}
+
 function Move-OneFileToRecycleSh([string]$fullPath) {
   $dn = [char]0 + [char]0
   $ptr = [Runtime.InteropServices.Marshal]::StringToHGlobalUni($fullPath + $dn)
@@ -73,33 +85,29 @@ function Move-OneFileToRecycleSh([string]$fullPath) {
     [Runtime.InteropServices.Marshal]::FreeHGlobal($ptr)
   }
 }
-function Move-OneFileToRecycleCom([string]$fullPath) {
-  $shell = New-Object -ComObject Shell.Application
-  # PS 5.1: Split-Path -LiteralPath -Parent dá AmbiguousParameterSet; Path API é literal-safe.
-  $parent = [System.IO.Path]::GetDirectoryName($fullPath)
-  $leaf = [System.IO.Path]::GetFileName($fullPath)
-  if ([string]::IsNullOrEmpty($parent)) { throw "Caminho sem pasta pai: $fullPath" }
-  $folder = $shell.Namespace($parent)
-  if ($null -eq $folder) { throw "Shell.Namespace falhou para '$parent'" }
-  $item = $folder.ParseName($leaf)
-  if ($null -eq $item) { throw "Shell.ParseName falhou para '$leaf'" }
-  $item.InvokeVerb('delete')
-}
-$paths = @(${quoted})
-foreach ($p in $paths) {
-  if (-not (Test-Path -LiteralPath $p)) { continue }
-  $fullPath = (Resolve-Path -LiteralPath $p).Path
+
+function Move-OnePathToRecycle([string]$rawPath) {
+  $p = [string]$rawPath.Trim()
+  if ([string]::IsNullOrWhiteSpace($p)) { return }
+  if (-not (Test-Path -LiteralPath $p)) { return }
+  $fullPath = [string](Resolve-Path -LiteralPath $p).Path
   try {
-    Move-OneFileToRecycleSh $fullPath
+    Move-OneFileToRecycleVb $fullPath
   } catch {
-    # SHFileOperation falhou; se o ficheiro existir, tenta COM abaixo.
-  }
-  if (Test-Path -LiteralPath $fullPath) {
-    Move-OneFileToRecycleCom $fullPath
+    Move-OneFileToRecycleSh $fullPath
   }
   if (Test-Path -LiteralPath $fullPath) {
     throw "Ficheiro ainda existe após Lixeira: $fullPath"
   }
+}
+
+$listPath = [string]$env:VP_RECYCLE_LIST
+if ([string]::IsNullOrWhiteSpace($listPath) -or -not (Test-Path -LiteralPath $listPath)) {
+  throw 'Lista de caminhos inválida (VP_RECYCLE_LIST).'
+}
+
+Get-Content -LiteralPath $listPath -Encoding UTF8 | ForEach-Object {
+  Move-OnePathToRecycle -rawPath $_
 }
 `.trim()
 }
@@ -111,8 +119,8 @@ function encodedPsCommand(script: string): string {
 /**
  * Envia ficheiros para a Lixeira do SO.
  *
- * Windows: PowerShell + `SHFileOperation` (shell32, `FOF_ALLOWUNDO`), com fallback **COM**
- * `Shell.Application` + `InvokeVerb('delete')` se o primeiro método falhar (estruturas/PowerShell variam).
+ * Windows: ficheiro temporário com caminhos (UTF-8) + PowerShell
+ * (`Microsoft.VisualBasic` SendToRecycleBin, fallback `SHFileOperation`).
  *
  * macOS/Linux: pacote `trash`.
  */
@@ -120,10 +128,23 @@ export async function movePathsToRecycleBin(paths: string[]): Promise<void> {
   if (!paths.length) return
 
   if (platform === 'win32') {
+    const listPath = await writeRecyclePathList(paths)
     const psBin = powershellExe()
-    const script = buildRecycleBinPsScript(paths)
+    const script = buildRecycleBinPsScript()
     const enc = encodedPsCommand(script)
-    await pExecFile(psBin, ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', enc])
+    try {
+      await pExecFile(
+        psBin,
+        ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', enc],
+        {
+          env: { ...process.env, VP_RECYCLE_LIST: listPath },
+          maxBuffer: 16 * 1024 * 1024,
+          windowsHide: true,
+        },
+      )
+    } finally {
+      await unlink(listPath).catch(() => {})
+    }
     return
   }
 

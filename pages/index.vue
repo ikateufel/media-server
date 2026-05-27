@@ -396,7 +396,7 @@
             <button
               type="button"
               class="icon-tool"
-              :class="{ 'icon-tool--on': shuffleForwardEnabled }"
+              :class="{ 'icon-tool--shuffle-on': shuffleForwardEnabled }"
               title="Aleatório ao avançar (próximo trailer, fim do preview ou FF). Voltar é sempre pela ordem; depois de voltar, um único avanço segue na fila antes do aleatório voltar."
               :disabled="entries.length < 2"
               :aria-pressed="shuffleForwardEnabled"
@@ -865,7 +865,7 @@
                 type="button"
                 class="catalog-sort-btn"
                 :class="{ 'catalog-sort-btn--active': catalogSortKey === 'date' }"
-                title="Ordenar por data do ficheiro completo (criação quando disponível). Voltar a clicar inverte."
+                :title="catalogSortDateTitle"
                 @click="cycleCatalogSort('date')"
               >
                 Data<span v-if="catalogSortKey === 'date'" class="catalog-sort-dir" aria-hidden="true">{{
@@ -911,19 +911,66 @@
             <button
               type="button"
               class="watched-filter-toggle watched-filter-toggle--fav"
-              :class="{ 'watched-filter-toggle--on': showOnlyFavorites }"
-              :aria-pressed="showOnlyFavorites"
-              :disabled="!showOnlyFavorites && favoriteCount === 0"
-              :title="showOnlyFavorites
-                ? 'Mostrar todos novamente'
-                : favoriteCount === 0
-                  ? 'Ainda não há vídeos marcados como favoritos'
-                  : `Mostrar apenas vídeos favoritos (${favoriteCount})`"
-              @click="toggleShowOnlyFavorites"
+              :class="{
+                'watched-filter-toggle--on': favoriteCatalogFilter === 'only',
+                'watched-filter-toggle--exclude': favoriteCatalogFilter === 'exclude',
+              }"
+              :aria-pressed="favoriteCatalogFilter !== 'all'"
+              :title="favoriteCatalogFilterTitle"
+              @click="cycleFavoriteCatalogFilter"
             >
-              <span aria-hidden="true">{{ showOnlyFavorites ? '★' : '☆' }}</span>
-              <span>Só favoritos</span>
-              <span v-if="favoriteCount > 0" class="watched-filter-count">{{ favoriteCount }}</span>
+              <span aria-hidden="true">{{ favoriteCatalogFilterIcon }}</span>
+              <span>{{ favoriteCatalogFilterLabel }}</span>
+              <span v-if="favoriteCount > 0 && favoriteCatalogFilter === 'all'" class="watched-filter-count">{{
+                favoriteCount
+              }}</span>
+            </button>
+            <button
+              v-if="sessionIndex !== RECENTS_SESSION_ID"
+              type="button"
+              class="watched-filter-toggle watched-filter-toggle--destaques"
+              :class="{
+                'watched-filter-toggle--on': destaquesCatalogFilter === 'only',
+                'watched-filter-toggle--exclude': destaquesCatalogFilter === 'exclude',
+              }"
+              :aria-pressed="destaquesCatalogFilter !== 'all'"
+              :title="destaquesCatalogFilterTitle"
+              @click="cycleDestaquesCatalogFilter"
+            >
+              <svg
+                v-if="destaquesCatalogFilter !== 'exclude'"
+                class="watched-filter-toggle-svg"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                <circle cx="12" cy="12" r="3.5" />
+              </svg>
+              <svg
+                v-else
+                class="watched-filter-toggle-svg"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.25"
+                stroke-linecap="round"
+              >
+                <path
+                  d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+                />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+              <span>{{ destaquesCatalogFilterLabel }}</span>
+              <span
+                v-if="destaquesCount > 0 && destaquesCatalogFilter === 'all'"
+                class="watched-filter-count"
+              >{{ destaquesCount }}</span>
             </button>
             <button
               v-if="catalogTagFilter"
@@ -977,9 +1024,33 @@
           Nenhum vídeo marcado como concluído ou memorável aqui.
           <button type="button" class="empty-hint-link" @click="toggleShowOnlyWatched">Mostrar todos</button>
         </div>
-        <div v-else-if="showOnlyFavorites && !entries.length && !loading && fullEntries.length" class="empty-hint">
+        <div
+          v-else-if="favoriteCatalogFilter === 'only' && !entries.length && !loading && fullEntries.length"
+          class="empty-hint"
+        >
           Nenhum vídeo marcado como favorito aqui.
-          <button type="button" class="empty-hint-link" @click="toggleShowOnlyFavorites">Mostrar todos</button>
+          <button type="button" class="empty-hint-link" @click="resetFavoriteCatalogFilter">Mostrar todos</button>
+        </div>
+        <div
+          v-else-if="destaquesCatalogFilter === 'only' && !entries.length && !loading && fullEntries.length"
+          class="empty-hint"
+        >
+          Nenhum título na lista Destaques nesta biblioteca.
+          <button type="button" class="empty-hint-link" @click="resetDestaquesCatalogFilter">Mostrar todos</button>
+        </div>
+        <div
+          v-else-if="favoriteCatalogFilter === 'exclude' && !entries.length && !loading && fullEntries.length"
+          class="empty-hint"
+        >
+          Todos os títulos aqui são favoritos — não há nada a mostrar com «sem favoritos».
+          <button type="button" class="empty-hint-link" @click="resetFavoriteCatalogFilter">Mostrar todos</button>
+        </div>
+        <div
+          v-else-if="destaquesCatalogFilter === 'exclude' && !entries.length && !loading && fullEntries.length"
+          class="empty-hint"
+        >
+          Todos os títulos aqui estão em Destaques — não há nada a mostrar com «sem destaques».
+          <button type="button" class="empty-hint-link" @click="resetDestaquesCatalogFilter">Mostrar todos</button>
         </div>
         <div v-else-if="sessionIndex === RECENTS_SESSION_ID && !entries.length && !loading" class="empty-hint">
           Ainda não há títulos em Destaques. No trailer ou no vídeo completo, usa o botão do <strong>olho</strong>
@@ -1683,17 +1754,44 @@ const catalogTagFilter = ref<string | null>(null)
  * tag `concluido` OU `memoravel`. Combina com `catalogTagFilter` (AND).
  */
 const showOnlyWatched = ref(false)
-const showOnlyFavorites = ref(false)
+
+/** Filtro triplo no catálogo: todos → só → excluir → todos. */
+type CatalogTriFilter = 'all' | 'only' | 'exclude'
+
+const favoriteCatalogFilter = ref<CatalogTriFilter>('all')
+const destaquesCatalogFilter = ref<CatalogTriFilter>('all')
+
+function cycleCatalogTriFilter(current: CatalogTriFilter): CatalogTriFilter {
+  if (current === 'all') return 'only'
+  if (current === 'only') return 'exclude'
+  return 'all'
+}
 
 type CatalogSortKey = 'name' | 'date' | 'size'
 const catalogSortKey = ref<CatalogSortKey>('name')
 const catalogSortDir = ref<'asc' | 'desc'>('asc')
 
+function applyDestaquesCatalogSortDefaults() {
+  catalogSortKey.value = 'date'
+  catalogSortDir.value = 'desc'
+}
+
 function compareCatalogEntries(a: TrailerListEntry, b: TrailerListEntry): number {
+  const isRecentsSession = sessionIndex.value === RECENTS_SESSION_ID
+
   // "Vistos" = concluído OU memorável → empurrados para o fim, em qualquer caso.
   const wa = isEntryWatchedClass(a)
   const wb = isEntryWatchedClass(b)
   if (wa !== wb) return wa ? 1 : -1
+
+  // Em Destaques: ignorar marcação de favorito para ordenar e ordenar SEMPRE por inserção (mais recente primeiro).
+  if (isRecentsSession) {
+    const ta = a.highlightedAtMs ?? 0
+    const tb = b.highlightedAtMs ?? 0
+    if (ta !== tb) return ta < tb ? 1 : -1
+    return a.mainRel.localeCompare(b.mainRel, undefined, { sensitivity: 'base' })
+  }
+
   const fa = a.isFavorite === true
   const fb = b.isFavorite === true
   if (fa !== fb) return fa ? -1 : 1
@@ -1728,8 +1826,15 @@ const entries = computed(() => {
   if (showOnlyWatched.value) {
     filtered = filtered.filter(isEntryWatchedClass)
   }
-  if (showOnlyFavorites.value) {
+  if (favoriteCatalogFilter.value === 'only') {
     filtered = filtered.filter((e) => e.isFavorite === true)
+  } else if (favoriteCatalogFilter.value === 'exclude') {
+    filtered = filtered.filter((e) => e.isFavorite !== true)
+  }
+  if (destaquesCatalogFilter.value === 'only') {
+    filtered = filtered.filter((e) => isPlaybackTitleInRecentList(e))
+  } else if (destaquesCatalogFilter.value === 'exclude') {
+    filtered = filtered.filter((e) => !isPlaybackTitleInRecentList(e))
   }
   return sortCatalogList(filtered)
 })
@@ -1751,6 +1856,60 @@ const moveTitleTargetSessions = computed(() =>
 
 const watchedCount = computed(() => fullEntries.value.filter(isEntryWatchedClass).length)
 const favoriteCount = computed(() => fullEntries.value.filter((e) => e.isFavorite === true).length)
+const destaquesCount = computed(() =>
+  fullEntries.value.filter((e) => isPlaybackTitleInRecentList(e)).length,
+)
+
+const favoriteCatalogFilterIcon = computed(() => {
+  if (favoriteCatalogFilter.value === 'only') return '★'
+  if (favoriteCatalogFilter.value === 'exclude') return '☆'
+  return '☆'
+})
+
+const favoriteCatalogFilterLabel = computed(() => {
+  if (favoriteCatalogFilter.value === 'only') return 'Só favoritos'
+  if (favoriteCatalogFilter.value === 'exclude') return 'Sem favoritos'
+  return 'Favoritos'
+})
+
+const favoriteCatalogFilterTitle = computed(() => {
+  const n = favoriteCount.value
+  if (favoriteCatalogFilter.value === 'all') {
+    return n > 0
+      ? `Filtrar favoritos (${n}): clicar para mostrar só favoritos`
+      : 'Filtrar favoritos: clicar para mostrar só favoritos'
+  }
+  if (favoriteCatalogFilter.value === 'only') {
+    return 'A mostrar só favoritos — clicar para ocultar favoritos'
+  }
+  return 'A ocultar favoritos — clicar para mostrar todos'
+})
+
+const destaquesCatalogFilterLabel = computed(() => {
+  if (destaquesCatalogFilter.value === 'only') return 'Só destaques'
+  if (destaquesCatalogFilter.value === 'exclude') return 'Sem destaques'
+  return 'Destaques'
+})
+
+const destaquesCatalogFilterTitle = computed(() => {
+  const n = destaquesCount.value
+  if (destaquesCatalogFilter.value === 'all') {
+    return n > 0
+      ? `Filtrar Destaques (${n}): clicar para mostrar só destaques`
+      : 'Filtrar Destaques: clicar para mostrar só destaques'
+  }
+  if (destaquesCatalogFilter.value === 'only') {
+    return 'A mostrar só Destaques — clicar para ocultar destaques'
+  }
+  return 'A ocultar Destaques — clicar para mostrar todos'
+})
+
+const catalogSortDateTitle = computed(() =>
+  sessionIndex.value === RECENTS_SESSION_ID
+    ? 'Ordenar por data em que o título foi adicionado a Destaques. Voltar a clicar inverte.'
+    : 'Ordenar por data do ficheiro completo (criação quando disponível). Voltar a clicar inverte.',
+)
+
 const sessionMenuTopTags = computed(() => {
   const counts = new Map<string, number>()
   for (const entry of fullEntries.value) {
@@ -1781,17 +1940,40 @@ function toggleShowOnlyWatched() {
   void refocusAfterTagFilterChange(prevFocusedRel, wasFullRel)
 }
 
-/** Alterna o filtro "Só favoritos" mantendo foco/playback quando possível. */
-function toggleShowOnlyFavorites() {
-  const prevFocusedRel =
-    focusedIndex.value !== null && entries.value[focusedIndex.value]
-      ? entries.value[focusedIndex.value].trailerRel
-      : null
-  const wasFullRel =
-    playerUrl.value && activeIndex.value !== null && entries.value[activeIndex.value]
-      ? entries.value[activeIndex.value].trailerRel
-      : null
-  showOnlyFavorites.value = !showOnlyFavorites.value
+function captureCatalogFilterFocusSnapshot() {
+  return {
+    prevFocusedRel:
+      focusedIndex.value !== null && entries.value[focusedIndex.value]
+        ? entries.value[focusedIndex.value].trailerRel
+        : null,
+    wasFullRel:
+      playerUrl.value && activeIndex.value !== null && entries.value[activeIndex.value]
+        ? entries.value[activeIndex.value].trailerRel
+        : null,
+  }
+}
+
+function cycleFavoriteCatalogFilter() {
+  const { prevFocusedRel, wasFullRel } = captureCatalogFilterFocusSnapshot()
+  favoriteCatalogFilter.value = cycleCatalogTriFilter(favoriteCatalogFilter.value)
+  void refocusAfterTagFilterChange(prevFocusedRel, wasFullRel)
+}
+
+function resetFavoriteCatalogFilter() {
+  const { prevFocusedRel, wasFullRel } = captureCatalogFilterFocusSnapshot()
+  favoriteCatalogFilter.value = 'all'
+  void refocusAfterTagFilterChange(prevFocusedRel, wasFullRel)
+}
+
+function cycleDestaquesCatalogFilter() {
+  const { prevFocusedRel, wasFullRel } = captureCatalogFilterFocusSnapshot()
+  destaquesCatalogFilter.value = cycleCatalogTriFilter(destaquesCatalogFilter.value)
+  void refocusAfterTagFilterChange(prevFocusedRel, wasFullRel)
+}
+
+function resetDestaquesCatalogFilter() {
+  const { prevFocusedRel, wasFullRel } = captureCatalogFilterFocusSnapshot()
+  destaquesCatalogFilter.value = 'all'
   void refocusAfterTagFilterChange(prevFocusedRel, wasFullRel)
 }
 
@@ -1801,6 +1983,12 @@ function captureEntryRel(idx: number | null): string | null {
 }
 
 function cycleCatalogSort(key: CatalogSortKey) {
+  // Em Destaques a ordenação é fixa: data de inserção (desc).
+  if (sessionIndex.value === RECENTS_SESSION_ID) {
+    applyDestaquesCatalogSortDefaults()
+    return
+  }
+
   const relFocus = captureEntryRel(focusedIndex.value)
   const relActive = playerUrl.value ? captureEntryRel(activeIndex.value) : null
   const relInline = captureEntryRel(gridInlinePreviewIndex.value)
@@ -3104,6 +3292,33 @@ function splitTagInputToParts(raw: string): string[] {
     .filter((s) => s.length > 0 && s.length <= TAG_INPUT_MAX_LEN)
 }
 
+function findFullEntryIndex(trailerRel: string, libS: number): number {
+  return fullEntries.value.findIndex((x) => x.trailerRel === trailerRel && libSession(x) === libS)
+}
+
+function sortTags(tags: string[]): string[] {
+  return [...tags].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+}
+
+function applyEntryTagsLocal(trailerRel: string, libS: number, tags: string[]): void {
+  const idx = findFullEntryIndex(trailerRel, libS)
+  if (idx < 0) return
+  fullEntries.value[idx].tags = sortTags(tags)
+}
+
+function mergeTagSuggestions(...names: string[]): void {
+  if (!names.length) return
+  const set = new Set(tagSuggestions.value)
+  let added = false
+  for (const n of names) {
+    if (!set.has(n)) {
+      set.add(n)
+      added = true
+    }
+  }
+  if (added) tagSuggestions.value = sortTags([...set])
+}
+
 const TAG_LONGPRESS_MS = 2000
 
 let tagPointer: { t: number; trailerRel: string; tagName: string; libSession: number } | null = null
@@ -3226,21 +3441,30 @@ async function addTagFromInput() {
   if (!e) return
   const parts = [...new Set(splitTagInputToParts(newTagInput.value))]
   if (!parts.length) return
+  const trailerRel = e.trailerRel
+  const ls = libSession(e)
+  const idx = findFullEntryIndex(trailerRel, ls)
+  const prevTags = idx >= 0 ? [...(fullEntries.value[idx].tags ?? [])] : []
+
+  if (idx >= 0) {
+    applyEntryTagsLocal(trailerRel, ls, [...new Set([...prevTags, ...parts])])
+  }
+  mergeTagSuggestions(...parts)
+  newTagInput.value = ''
+
   try {
+    let serverTags = prevTags
     for (const name of parts) {
-      await $fetch('/api/library/tags', {
+      const res = await $fetch<{ tags?: string[] }>('/api/library/tags', {
         method: 'POST',
-        body: {
-          session: libSession(e),
-          trailerRel: e.trailerRel,
-          name,
-        },
+        body: { session: ls, trailerRel, name },
       })
+      if (Array.isArray(res.tags)) serverTags = res.tags
     }
-    newTagInput.value = ''
+    applyEntryTagsLocal(trailerRel, ls, serverTags)
     errorMsg.value = ''
-    await loadTrailers({ preserveFocusTrailerRel: e.trailerRel })
   } catch (err: unknown) {
+    applyEntryTagsLocal(trailerRel, ls, prevTags)
     const ex = err as { data?: { statusMessage?: string }; message?: string }
     errorMsg.value =
       ex?.data?.statusMessage || ex?.message || 'Não foi possível gravar a tag (servidor).'
@@ -3248,14 +3472,27 @@ async function addTagFromInput() {
 }
 
 async function removeTagFromEntry(trailerRel: string, tagName: string, libS: number) {
+  const idx = findFullEntryIndex(trailerRel, libS)
+  const prevTags = idx >= 0 ? [...(fullEntries.value[idx].tags ?? [])] : []
+  const tagLower = tagName.trim().toLowerCase()
+
+  if (idx >= 0) {
+    applyEntryTagsLocal(
+      trailerRel,
+      libS,
+      prevTags.filter((t) => t.trim().toLowerCase() !== tagLower),
+    )
+  }
+
   try {
-    await $fetch(
+    const res = await $fetch<{ tags?: string[] }>(
       `/api/library/tags?session=${libS}&trailerRel=${encodeURIComponent(trailerRel)}&name=${encodeURIComponent(tagName)}`,
       { method: 'DELETE' },
     )
+    if (Array.isArray(res.tags)) applyEntryTagsLocal(trailerRel, libS, res.tags)
     errorMsg.value = ''
-    await loadTrailers({ preserveFocusTrailerRel: trailerRel })
   } catch (err: unknown) {
+    applyEntryTagsLocal(trailerRel, libS, prevTags)
     const ex = err as { data?: { statusMessage?: string }; message?: string }
     errorMsg.value =
       ex?.data?.statusMessage || ex?.message || 'Não foi possível remover a tag (servidor).'
@@ -3661,6 +3898,7 @@ async function loadTrailers(opts?: {
       ...e,
       mainSizeBytes: e.mainSizeBytes ?? 0,
       mainSortTimeMs: e.mainSortTimeMs ?? 0,
+      highlightedAtMs: e.highlightedAtMs,
     }))
     tagSuggestions.value = Array.isArray(data.tagSuggestions) ? data.tagSuggestions : []
     const tag = catalogTagFilter.value
@@ -3748,6 +3986,13 @@ function routeQueryString(q: unknown): string {
   return String(q)
 }
 
+function parseCatalogTriFilterQuery(raw: unknown): CatalogTriFilter | null {
+  const s = routeQueryString(raw).trim().toLowerCase()
+  if (s === '') return null
+  if (s === 'all' || s === 'only' || s === 'exclude') return s
+  return null
+}
+
 function normalizeShareRelQuery(raw: unknown): string {
   const t = routeQueryString(raw).trim().replace(/\\/g, '/')
   if (!t || t.includes('..')) return ''
@@ -3780,9 +4025,13 @@ function focusEntryByTrailerRel(trailerRel: string): boolean {
 function shareRouteQueryMatchesDesired(desired: Record<string, string>): boolean {
   const curS = routeQueryString(route.query.session)
   const curR = normalizeShareRelQuery(route.query.rel)
+  const curFav = routeQueryString(route.query.fav).trim().toLowerCase()
+  const curDst = routeQueryString(route.query.dst).trim().toLowerCase()
   const wantS = desired.session ?? ''
   const wantR = desired.rel ? normalizeShareRelQuery(desired.rel) : ''
-  return curS === wantS && curR === wantR
+  const wantFav = (desired.fav ?? '').trim().toLowerCase()
+  const wantDst = (desired.dst ?? '').trim().toLowerCase()
+  return curS === wantS && curR === wantR && curFav === wantFav && curDst === wantDst
 }
 
 /**
@@ -3795,17 +4044,23 @@ function buildDesiredShareQuery(justClosedFull: boolean): Record<string, string>
   const sessionStr = String(sessionIndex.value)
   const isFull = Boolean(playerUrl.value && activeIndex.value !== null)
 
+  const fav = favoriteCatalogFilter.value
+  const dst = destaquesCatalogFilter.value
+  const filterQuery: Record<string, string> = {}
+  if (fav !== 'all') filterQuery.fav = fav
+  if (dst !== 'all') filterQuery.dst = dst
+
   if (isFull) {
     const e = entries.value[activeIndex.value!]
-    if (!e) return { session: sessionStr }
-    return { session: sessionStr, rel: e.trailerRel }
+    if (!e) return { session: sessionStr, ...filterQuery }
+    return { session: sessionStr, rel: e.trailerRel, ...filterQuery }
   }
 
   if (justClosedFull) {
-    return { session: sessionStr }
+    return { session: sessionStr, ...filterQuery }
   }
 
-  const out: Record<string, string> = { session: sessionStr }
+  const out: Record<string, string> = { session: sessionStr, ...filterQuery }
   const rr = normalizeShareRelQuery(route.query.rel)
   const fr =
     focusedIndex.value !== null ? entries.value[focusedIndex.value]?.trailerRel ?? '' : ''
@@ -3894,10 +4149,17 @@ function scrollCatalogGridToTopAndFocusFirst() {
 async function applyShareQueryFromRoute() {
   const qSession = parseShareSessionQuery(route.query.session)
   const rel = normalizeShareRelQuery(route.query.rel)
-  if (rel === '' && qSession === null) return
+  const qFav = parseCatalogTriFilterQuery(route.query.fav)
+  const qDst = parseCatalogTriFilterQuery(route.query.dst)
+  if (rel === '' && qSession === null && qFav === null && qDst === null) return
 
   suppressShareUrlSync = true
   try {
+    if (qFav !== null) favoriteCatalogFilter.value = qFav
+    else favoriteCatalogFilter.value = 'all'
+    if (qDst !== null) destaquesCatalogFilter.value = qDst
+    else destaquesCatalogFilter.value = 'all'
+
     if (
       qSession !== null &&
       sessions.value.some((s) => s.id === qSession) &&
@@ -3948,7 +4210,7 @@ async function applyShareQueryFromRoute() {
 }
 
 watch(
-  () => [route.query.session, route.query.rel],
+  () => [route.query.session, route.query.rel, route.query.fav, route.query.dst],
   async () => {
     if (ignoreNextRouteQueryWatch) return
     if (!sessions.value.length) return
@@ -3956,9 +4218,13 @@ watch(
   },
 )
 
-watch([sessionIndex, focusedIndex, activeIndex, playerUrl], () => {
+watch([sessionIndex, focusedIndex, activeIndex, playerUrl, favoriteCatalogFilter, destaquesCatalogFilter], () => {
   syncShareUrlFromState()
 }, { flush: 'post' })
+
+watch(sessionIndex, (si) => {
+  if (si === RECENTS_SESSION_ID) applyDestaquesCatalogSortDefaults()
+})
 
 watch(
   manualTvAssist,
@@ -4274,7 +4540,8 @@ onUnmounted(() => {
 
   .sidebar--catalog-collapsed .tag-filter-clear,
   .sidebar--catalog-collapsed .watched-filter-toggle,
-  .sidebar--catalog-collapsed .watched-filter-toggle--fav {
+  .sidebar--catalog-collapsed .watched-filter-toggle--fav,
+  .sidebar--catalog-collapsed .watched-filter-toggle--destaques {
     display: none;
   }
 
@@ -4666,6 +4933,40 @@ onUnmounted(() => {
 .watched-filter-toggle--fav.watched-filter-toggle--on:hover:not(:disabled) {
   background: #274169;
   color: #e7f2ff;
+}
+
+.watched-filter-toggle--exclude {
+  background: #2a1a1a;
+  border-color: #8a4a4a;
+  color: #f0b8b0;
+}
+
+.watched-filter-toggle--exclude:hover:not(:disabled) {
+  background: #3a2222;
+  color: #ffd4cc;
+}
+
+.watched-filter-toggle--fav.watched-filter-toggle--exclude {
+  background: #2a1f28;
+  border-color: #7a5a6a;
+  color: #e8c8d4;
+}
+
+.watched-filter-toggle--destaques.watched-filter-toggle--on {
+  background: #1a2838;
+  border-color: #5a8ec8;
+  color: #b8d8ff;
+}
+
+.watched-filter-toggle--destaques.watched-filter-toggle--on:hover:not(:disabled) {
+  background: #223548;
+  color: #d4e8ff;
+}
+
+.watched-filter-toggle--destaques.watched-filter-toggle--exclude {
+  background: #2a1a1a;
+  border-color: #8a4a4a;
+  color: #f0b8b0;
 }
 
 .watched-filter-toggle-svg {
@@ -6344,6 +6645,18 @@ onUnmounted(() => {
   border-color: #5f9dee;
   background: #2a3f5f;
   color: #e8f1ff;
+}
+
+.icon-tool--shuffle-on {
+  border-color: #2e7d32;
+  background: #18321b;
+  color: #c8f3d0;
+}
+
+.icon-tool--shuffle-on:hover:not(:disabled) {
+  border-color: #34a853;
+  background: #1c3b20;
+  color: #eaffef;
 }
 
 .icon-tool--fast-play {

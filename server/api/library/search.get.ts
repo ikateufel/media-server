@@ -1,5 +1,7 @@
 import { getQuery } from 'h3'
 import type { TrailerListEntry } from '~/composables/useVideoFolder'
+import { dedupeCatalogItemsByPhysicalVideo } from '../../utils/catalogPhysicalKey'
+import { repairSessionTrailerRelDuplicates } from '../../utils/catalogTagRepair'
 import { enrichTrailerListForSession, scanTrailersCatalogInRoot } from '../../utils/trailerCatalogScan'
 import { getResolvedAdminToken } from '../../utils/requireAdmin'
 import { getVideoMenuItems } from '../../utils/videoMenu'
@@ -17,8 +19,31 @@ function normalizeSearchTerm(raw: unknown): string {
   return q.trim().toLowerCase()
 }
 
-function includesNeedle(hay: string, needle: string): boolean {
-  return hay.toLowerCase().includes(needle)
+function searchNeedleParts(needle: string): string[] {
+  return needle
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((p) => p.length > 0)
+}
+
+/** Qualquer token no texto basta (OR); ordem irrelevante. */
+function matchesSearchNeedle(hay: string, needle: string): boolean {
+  const parts = searchNeedleParts(needle)
+  if (!parts.length) return false
+  const hayL = hay.toLowerCase()
+  return parts.some((part) => hayL.includes(part))
+}
+
+function countMatchingTags(tags: string[], needle: string): number {
+  const parts = searchNeedleParts(needle)
+  if (!parts.length) return 0
+
+  let count = 0
+  for (const t of tags) {
+    if (matchesSearchNeedle(t, needle)) count++
+  }
+  return count
 }
 
 function normalizeSearchMode(raw: unknown): SearchMode {
@@ -33,11 +58,10 @@ function toSearchRankedEntry(
   mode: SearchMode,
 ): SearchRankedEntry | null {
   const tags = entry.tags ?? []
-  const matchedTagsCount =
-    mode === 'tags' ? tags.reduce((acc, t) => (includesNeedle(t, needle) ? acc + 1 : acc), 0) : 0
+  const matchedTagsCount = mode === 'tags' ? countMatchingTags(tags, needle) : 0
   const nameMatched =
     mode === 'files' &&
-    (includesNeedle(entry.label, needle) || includesNeedle(entry.mainFilename, needle))
+    (matchesSearchNeedle(entry.label, needle) || matchesSearchNeedle(entry.mainFilename, needle))
 
   if (!nameMatched && matchedTagsCount === 0) return null
   return {
@@ -77,7 +101,13 @@ export default defineEventHandler(async (event) => {
     const root = row.path.trim()
     if (!root) continue
     try {
-      const { items, mainStatsByRel } = await scanTrailersCatalogInRoot(root)
+      const { items: scanned, mainStatsByRel } = await scanTrailersCatalogInRoot(root)
+      await repairSessionTrailerRelDuplicates(
+        session,
+        root,
+        scanned.map((e) => e.trailerRel),
+      )
+      const items = dedupeCatalogItemsByPhysicalVideo(scanned)
       await enrichTrailerListForSession(session, items, mainStatsByRel)
       for (const entry of items) {
         const hit = toSearchRankedEntry(entry, session, q, mode)

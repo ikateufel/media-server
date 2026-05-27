@@ -16,6 +16,7 @@
     "auto-tags": "tsx scripts/tag-pipeline.ts",
     "export-files-csv": "tsx scripts/tag-export-root-filenames.ts",
     "clear-tags": "tsx scripts/tag-clear-sqlite.ts",
+    "repair-catalog-duplicates": "tsx scripts/repair-catalog-duplicate-tags.ts",
     "import-tags-filelists": "tsx scripts/tag-import-file-lists.ts",
     "migrate-legacy-trailers": "tsx scripts/migrate-legacy-trailers-previews.ts",
     "warm-preview-cache": "tsx scripts/warm-preview-frame-cache.ts",
@@ -23,6 +24,7 @@
     "refresh-thumbs": "npm run clear-thumb-caches && npm run warm-preview-cache -- --force",
     "check-videos": "tsx scripts/check-videos-integrity.ts",
     "analyze-no-trailer": "tsx scripts/move-no-trailer-to-analyze.ts",
+    "find-orphan-trailers-previews": "tsx scripts/find-orphan-trailers-previews.ts",
     "install-external-dependencies": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-external-dependencies.ps1",
     "installer:prep": "nuxt prepare && nuxt build"
   },

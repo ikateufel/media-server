@@ -2,6 +2,8 @@ import { readdir, stat } from 'node:fs/promises'
 import { basename, extname, join, resolve } from 'node:path'
 import { createError, getQuery } from 'h3'
 import type { TrailerListEntry } from '~/composables/useVideoFolder'
+import { ensureSessionCatalogTagRepair } from '../utils/catalogTagRepair'
+import { dedupeCatalogItemsByPhysicalVideo } from '../utils/catalogPhysicalKey'
 import {
   enrichTrailerListForSession,
   scanTrailersCatalogInRoot,
@@ -100,7 +102,12 @@ export default defineEventHandler(async (event) => {
 
   try {
     const scanned = await scanTrailersCatalogInRoot(root)
-    items = scanned.items
+    await ensureSessionCatalogTagRepair(
+      session,
+      root,
+      scanned.items.map((e) => e.trailerRel),
+    )
+    items = dedupeCatalogItemsByPhysicalVideo(scanned.items)
     await enrichTrailerListForSession(session, items, scanned.mainStatsByRel)
   } catch {
     // Catálogo em trailers/ ou pastas legado inacessível: tenta só vídeos completos na raiz.

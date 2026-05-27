@@ -1,13 +1,13 @@
-import { stat } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { createError, readBody } from 'h3'
 import { purgeTitleFromLibraryState } from '../../utils/libraryState'
-import { purgeVideoTags } from '../../utils/videoTagsDb'
-import { resolvePreviewTrailerRel } from '../../utils/previewTrailer'
-import { findMainFileInSessionRootSync, trailerToMainFilename } from '../../utils/trailerNames'
-import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
-import { resolveSafeUnderRoot } from '../../utils/videoPaths'
 import { movePathsToRecycleBin } from '../../utils/moveToRecycleBin'
+import {
+  collectTitleVideoPathsForDeletion,
+  purgePreviewThumbCacheForTitle,
+} from '../../utils/titleFileCleanup'
+import { purgeVideoTags } from '../../utils/videoTagsDb'
+import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
@@ -23,67 +23,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'session e trailerRel são obrigatórios.' })
   }
 
-  const trailerRel = trailerRelRaw.replace(/\\/g, '/')
   const root = roots[Math.floor(session)]!.trim()
-
-  let trailerFull: string
-  try {
-    trailerFull = resolveSafeUnderRoot(root, trailerRel)
-  } catch {
-    throw createError({ statusCode: 400, statusMessage: 'Caminho do trailer inválido.' })
-  }
-
-  const trailerSuffix = trailerRel.replace(/^trailers\//i, '').trim()
-  if (!trailerSuffix || trailerSuffix.includes('..')) {
-    throw createError({ statusCode: 400, statusMessage: 'Caminho do trailer inválido.' })
-  }
-
-  const guessedMain = trailerToMainFilename(trailerSuffix)
-  if (!guessedMain) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Nome de trailer não reconhecido (esperado ficheiro de vídeo em trailers/ ou legado zz_*_acelerado.*).',
-    })
-  }
-
-  const foundMain = findMainFileInSessionRootSync(root, trailerSuffix)
-  const mainFilename = foundMain?.mainFilename ?? guessedMain
-  const mainRel = mainFilename.replace(/\\/g, '/')
-  let mainFull: string
-  try {
-    mainFull = resolveSafeUnderRoot(root, mainRel)
-  } catch {
-    throw createError({ statusCode: 400, statusMessage: 'Caminho do vídeo principal inválido.' })
-  }
-
-  const previewRel = await resolvePreviewTrailerRel(root, trailerSuffix)
-  let previewFull: string | null = null
-  if (previewRel) {
-    try {
-      previewFull = resolveSafeUnderRoot(root, previewRel)
-    } catch {
-      previewFull = null
-    }
-  }
-
-  const candidates = [previewFull, trailerFull, mainFull].filter((p): p is string => !!p)
-  const paths: string[] = []
-  const seen = new Set<string>()
-  for (const p of candidates) {
-    try {
-      const st = await stat(p)
-      if (st.isFile() && !seen.has(p)) {
-        seen.add(p)
-        paths.push(p)
-      }
-    } catch {
-      /* ficheiro em falta */
-    }
-  }
-
-  if (paths.length === 0) {
+  const collected = await collectTitleVideoPathsForDeletion(root, trailerRelRaw)
+  if (!collected?.paths.length) {
     throw createError({ statusCode: 404, statusMessage: 'Nenhum ficheiro encontrado para enviar à Lixeira.' })
   }
+
+  const { paths, trailerRel, mainRel, previewRel } = collected
+  const cacheRels = [...new Set([previewRel, trailerRel].filter((r): r is string => !!r))]
+  const thumbsRemoved = await purgePreviewThumbCacheForTitle(root, cacheRels)
 
   try {
     await movePathsToRecycleBin(paths)
@@ -101,6 +49,7 @@ export default defineEventHandler(async (event) => {
   return {
     ok: true,
     moved: paths.length,
+    thumbsRemoved,
     names: paths.map((p) => basename(p)),
   }
 })

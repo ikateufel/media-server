@@ -1,4 +1,5 @@
 import { createError, readBody } from 'h3'
+import { resolveTrailerRelForTagMutation } from '../../utils/catalogTagMutation'
 import {
   COMPLETED_TAG_NAME,
   markTrailerCompleted,
@@ -41,9 +42,10 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const canonicalRel = await resolveTrailerRelForTagMutation(event, session, trailerRel)
   const tags = completed
-    ? markTrailerCompleted(session, trailerRel)
-    : unmarkTrailerCompleted(session, trailerRel)
+    ? markTrailerCompleted(session, canonicalRel)
+    : unmarkTrailerCompleted(session, canonicalRel)
 
   return { completed, completedTagName: COMPLETED_TAG_NAME, tags }
 })

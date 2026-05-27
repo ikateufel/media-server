@@ -88,6 +88,8 @@ export interface TrailerListEntry {
   mainSizeBytes: number
   /** Epoch ms para ordenar por data: birthtime do main quando fiável, senão mtime. */
   mainSortTimeMs: number
+  /** Epoch ms em que o título entrou em Destaques (`recent_playback.touched_at`); só na sessão Destaques. */
+  highlightedAtMs?: number
   /** Definido no servidor (`data/library-state.json`). */
   isFavorite?: boolean
   /** Tags SQLite (`data/library-tags.sqlite`), por sessão + `trailerRel`. */

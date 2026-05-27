@@ -132,7 +132,27 @@ export async function getFavoriteSet(session: number): Promise<Set<string>> {
 
 }
 
-
+/** Move favorito de um `trailer_rel` alias para o canónico (mesmo vídeo físico). */
+export async function remapFavoriteTrailerRel(
+  session: number,
+  fromRel: string,
+  toRel: string,
+): Promise<void> {
+  const from = fromRel.replace(/\\/g, '/').trim()
+  const to = toRel.replace(/\\/g, '/').trim()
+  if (!from || from === to) return
+  const state = await readLibraryState()
+  const k = sessionKey(session)
+  const arr = state.favorites[k] ?? []
+  const hadFrom = arr.includes(from)
+  const hadTo = arr.includes(to)
+  if (!hadFrom && !hadTo) return
+  const next = new Set(arr)
+  next.delete(from)
+  if (hadFrom || hadTo) next.add(to)
+  state.favorites[k] = [...next].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  await writeLibraryState(state)
+}
 
 export async function getFullProgress(
 

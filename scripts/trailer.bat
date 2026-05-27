@@ -174,72 +174,65 @@ for %%f in (*.mp4 *.mkv *.m4v *.avi *.mov *.webm) do (
                     )
                 )
             ) else (
-            if !DUR_INT! LEQ 1800 (set /a "T=52*!DUR_INT!/1800") else (set /a "T=52+(!DUR_INT!-1800)*37/1800")
-            if !T! LSS 18 set /a "T=18"
-            set /a "S=!T!*2"
-            set /a "n=5+!DUR_INT!*4/1800"
-            if !n! LSS 6 set /a "n=6"
-            if !n! GTR 16 set /a "n=16"
-            set /a "final=!S!*28/100"
-            set /a "tempo=(!S!-!final!)/!n!"
+            REM Novo default: 15s a cada 45s (trailers maiores), em 2x (setpts/atempo já definidos).
+            set /a "STEP=90"
+            set /a "tempo=25"
+            set /a "max_i=( !DUR_INT! - 1 ) / !STEP!"
+            if !max_i! LSS 0 set /a "max_i=0"
+            echo [META] default: filme ~!DUR_INT!s ^(ffprobe !dur_raw!^) - cortes de !tempo!s a cada !STEP!s ^| 2x ^(setpts=!pts!*PTS\, atempo=!vel!^)
 
-            if !tempo! LSS 3 set /a "tempo=3"
-            
-            set /a "final=!S!-!n!*!tempo!"
+            set "LAST_START=-1"
+            for /L %%i in (0,1,!max_i!) do (
+                set /a "start=%%i*!STEP!"
+                set /a "seg_t=!tempo!"
+                set /a "rem=!DUR_INT!-!start!"
+                if !rem! LSS !seg_t! set /a "seg_t=!rem!"
+                if !seg_t! GTR 0 (
+                    set "tmp=!TRAILER_TEMP!\t_%%i_!tid!.mp4"
+                    REM -ss antes de -i = fast seek por keyframe (preciso porque estamos a re-codificar).
+                    if "!HAS_A!"=="1" (
+                        "!FFMPEG!" -y -ss !start! -t !seg_t! -i "!orig!" -filter_complex "[0:v]!VF_CHAIN![v];[0:a]!AF_CHAIN![a]" -map "[v]" -map "[a]" !VENC_ARGS! -c:a aac -b:a 128k -threads 0 "!tmp!" >nul 2>&1
+                    ) else (
+                        "!FFMPEG!" -y -ss !start! -t !seg_t! -i "!orig!" -vf "!VF_CHAIN!" -an !VENC_ARGS! -threads 0 "!tmp!" >nul 2>&1
+                    )
 
-            if !final! LSS 6 (
-                set /a "final=6"
-                set /a "tempo=(!S!-!final!)/!n!"
-                if !tempo! LSS 3 set /a "tempo=3"
-                set /a "final=!S!-!n!*!tempo!"
+                    if exist "!tmp!" (
+                        "!FFPROBE!" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "!tmp!" >nul 2>&1
+                        if errorlevel 1 (
+                            echo [AVISO] segmento invalido ignorado: !tmp!
+                            del "!tmp!" >nul 2>&1
+                        ) else (
+                            set "tmpSlash=!tmp:\=/!"
+                            echo file '!tmpSlash!' >> "!LISTA!"
+                            set /a "SEG_COUNT+=1"
+                        )
+                    )
+
+                    set "LAST_START=!start!"
+                )
             )
-            set /a "nm1=!n!-1"
-            if !nm1! LSS 1 set /a "nm1=1"
-            echo [META] filme ~!DUR_INT!s ^(ffprobe !dur_raw!^) - alvo ~!T!s ^| !n! x !tempo!s + final !final!s ^(origem ~!S!s^)
 
-            for /L %%i in (0,1,!nm1!) do (
-                set /a "pct=5+%%i*80/!nm1!"
-                set /a "start=(!pct! * !DUR_INT!) / 100"
-                set "tmp=!TRAILER_TEMP!\t_%%i_!tid!.mp4"
-                REM -ss antes de -i = fast seek por keyframe (preciso porque estamos a re-codificar).
+            REM Garantir um corte final (últimos 15s) se o passo não aterrar no fim.
+            set /a "f_ini=!DUR_INT! - !tempo!"
+            if !f_ini! LSS 0 set /a "f_ini=0"
+            if not "!LAST_START!"=="!f_ini!" (
+                set "tmp_f=!TRAILER_TEMP!\t_fin_!tid!.mp4"
                 if "!HAS_A!"=="1" (
-                    "!FFMPEG!" -y -ss !start! -t !tempo! -i "!orig!" -filter_complex "[0:v]!VF_CHAIN![v];[0:a]!AF_CHAIN![a]" -map "[v]" -map "[a]" !VENC_ARGS! -c:a aac -b:a 128k -threads 0 "!tmp!" >nul 2>&1
+                    "!FFMPEG!" -y -ss !f_ini! -t !tempo! -i "!orig!" -filter_complex "[0:v]!VF_CHAIN![v];[0:a]!AF_CHAIN![a]" -map "[v]" -map "[a]" !VENC_ARGS! -c:a aac -b:a 128k -threads 0 "!tmp_f!" >nul 2>&1
                 ) else (
-                    "!FFMPEG!" -y -ss !start! -t !tempo! -i "!orig!" -vf "!VF_CHAIN!" -an !VENC_ARGS! -threads 0 "!tmp!" >nul 2>&1
+                    "!FFMPEG!" -y -ss !f_ini! -t !tempo! -i "!orig!" -vf "!VF_CHAIN!" -an !VENC_ARGS! -threads 0 "!tmp_f!" >nul 2>&1
                 )
 
-                if exist "!tmp!" (
-                    "!FFPROBE!" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "!tmp!" >nul 2>&1
+                if exist "!tmp_f!" (
+                    "!FFPROBE!" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "!tmp_f!" >nul 2>&1
                     if errorlevel 1 (
-                        echo [AVISO] segmento invalido ignorado: !tmp!
-                        del "!tmp!" >nul 2>&1
+                        echo [AVISO] segmento final invalido ignorado: !tmp_f!
+                        del "!tmp_f!" >nul 2>&1
                     ) else (
-                        set "tmpSlash=!tmp:\=/!"
-                        echo file '!tmpSlash!' >> "!LISTA!"
+                        set "tmpfSlash=!tmp_f:\=/!"
+                        echo file '!tmpfSlash!' >> "!LISTA!"
                         set /a "SEG_COUNT+=1"
                     )
-                )
-
-            )
-
-            set /a "f_ini=!DUR_INT! - !final!"
-            if !f_ini! LSS 0 set "f_ini=0"
-            set "tmp_f=!TRAILER_TEMP!\t_fin_!tid!.mp4"
-            if "!HAS_A!"=="1" (
-                "!FFMPEG!" -y -ss !f_ini! -t !final! -i "!orig!" -filter_complex "[0:v]!VF_CHAIN![v];[0:a]!AF_CHAIN![a]" -map "[v]" -map "[a]" !VENC_ARGS! -c:a aac -b:a 128k -threads 0 "!tmp_f!" >nul 2>&1
-            ) else (
-                "!FFMPEG!" -y -ss !f_ini! -t !final! -i "!orig!" -vf "!VF_CHAIN!" -an !VENC_ARGS! -threads 0 "!tmp_f!" >nul 2>&1
-            )
-
-            if exist "!tmp_f!" (
-                "!FFPROBE!" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "!tmp_f!" >nul 2>&1
-                if errorlevel 1 (
-                    echo [AVISO] segmento final invalido ignorado: !tmp_f!
-                    del "!tmp_f!" >nul 2>&1
-                ) else (
-                    set "tmpfSlash=!tmp_f:\=/!"
-                    echo file '!tmpfSlash!' >> "!LISTA!"
-                    set /a "SEG_COUNT+=1"
                 )
             )
             )

@@ -50,6 +50,38 @@ export function purgeRecentPlaybackTitle(session: number, trailerRel: string): v
   )
 }
 
+/** Unifica entrada em Destaques quando dois `trailer_rel` são o mesmo vídeo. */
+export function remapRecentPlaybackTrailerRel(session: number, fromRel: string, toRel: string): void {
+  const from = normalizeTrailerRel(fromRel)
+  const to = normalizeTrailerRel(toRel)
+  if (!from.startsWith('trailers/') || from === to) return
+  const s = Math.max(0, Math.floor(session))
+  const d = getVideoTagsDb()
+  runVideoTagsTxn(d, () => {
+    const fromRow = d
+      .prepare('SELECT touched_at FROM recent_playback WHERE session = ? AND trailer_rel = ?')
+      .get(s, from) as { touched_at: string } | undefined
+    const toRow = d
+      .prepare('SELECT touched_at FROM recent_playback WHERE session = ? AND trailer_rel = ?')
+      .get(s, to) as { touched_at: string } | undefined
+    if (fromRow && toRow) {
+      const keep = fromRow.touched_at > toRow.touched_at ? fromRow.touched_at : toRow.touched_at
+      d.prepare('UPDATE recent_playback SET touched_at = ? WHERE session = ? AND trailer_rel = ?').run(
+        keep,
+        s,
+        to,
+      )
+      d.prepare('DELETE FROM recent_playback WHERE session = ? AND trailer_rel = ?').run(s, from)
+    } else if (fromRow) {
+      d.prepare('UPDATE recent_playback SET trailer_rel = ? WHERE session = ? AND trailer_rel = ?').run(
+        to,
+        s,
+        from,
+      )
+    }
+  })
+}
+
 export function remapRecentPlaybackAfterMove(fromSession: number, toSession: number, trailerRel: string): void {
   const rel = normalizeTrailerRel(trailerRel)
   const fromS = Math.max(0, Math.floor(fromSession))
