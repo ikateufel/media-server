@@ -1,5 +1,5 @@
 import { stat } from 'node:fs/promises'
-import { createError } from 'h3'
+import { createError, getQuery } from 'h3'
 import type { TrailerListEntry } from '~/composables/useVideoFolder'
 import { RECENTS_SESSION_ID } from '~/composables/useVideoFolder'
 import {
@@ -22,10 +22,26 @@ export default defineEventHandler(async (event) => {
   }
 
   const ordered = readRecentPlaybackList()
+  const total = ordered.length
+
+  const q = getQuery(event)
+  const offsetRaw = q.offset
+  const limitRaw = q.limit
+  const offset =
+    offsetRaw !== undefined && offsetRaw !== null && String(offsetRaw).trim() !== ''
+      ? Math.max(0, Math.floor(Number(offsetRaw)) || 0)
+      : 0
+  const limitParsed =
+    limitRaw !== undefined && limitRaw !== null && String(limitRaw).trim() !== ''
+      ? Math.floor(Number(limitRaw)) || 0
+      : 0
+  const limit = limitParsed > 0 ? Math.min(limitParsed, 50) : total
+  const page = limit > 0 && limit < total ? ordered.slice(offset, offset + limit) : ordered
+
   const items: TrailerListEntry[] = []
   const tagSuggestions = new Set<string>()
 
-  for (const row of ordered) {
+  for (const row of page) {
     if (!Number.isFinite(row.session) || row.session < 0 || row.session >= roots.length) continue
     const root = roots[row.session]!.trim()
     try {
@@ -52,10 +68,15 @@ export default defineEventHandler(async (event) => {
 
   const adminToken = getResolvedAdminToken(event) ?? ''
 
+  const pageEnd = offset + page.length
+
   return {
     session: RECENTS_SESSION_ID,
     rootLabel: 'Destaques',
     items,
+    total,
+    offset,
+    hasMore: pageEnd < total,
     tagSuggestions: [...tagSuggestions].sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: 'base' }),
     ),

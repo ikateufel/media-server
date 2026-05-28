@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import { catalogPreviewFrameUrl } from '~/composables/useVideoFolder'
 
-const props = defineProps<{
-  previewRel: string
-  sessionIndex: number
-}>()
+const props = withDefaults(
+  defineProps<{
+    previewRel: string
+    sessionIndex: number
+    /** 1 = uma imagem (Destaques / TV); 4 = grelha 2×2. */
+    maxSlots?: number
+  }>(),
+  { maxSlots: 4 },
+)
 
-const catalogFrameSlots = [0, 1, 2, 3] as const
+const catalogFrameSlots = computed(() => {
+  const n = Math.min(4, Math.max(1, Math.floor(props.maxSlots)))
+  return Array.from({ length: n }, (_, i) => i) as number[]
+})
 
 const rootEl = ref<HTMLElement | null>(null)
 /** Tile intersectou o scroll — mostra grelha (slots preenchem-se aos poucos). */
@@ -30,13 +38,14 @@ function cancelSlotBumps() {
 }
 
 function armNextSlot() {
-  if (slotsToShow.value >= 4) return
+  const cap = catalogFrameSlots.value.length
+  if (slotsToShow.value >= cap) return
   const go = () => {
     idleCbId = undefined
     slotTimeoutId = undefined
-    if (slotsToShow.value >= 4) return
+    if (slotsToShow.value >= cap) return
     slotsToShow.value++
-    if (slotsToShow.value < 4) armNextSlot()
+    if (slotsToShow.value < cap) armNextSlot()
   }
   if (typeof requestIdleCallback !== 'undefined') {
     idleCbId = requestIdleCallback(go, { timeout: 900 })
@@ -85,7 +94,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="rootEl" class="catalog-frame-strip" role="presentation">
+  <div
+    ref="rootEl"
+    class="catalog-frame-strip"
+    :class="{ 'catalog-frame-strip--single': catalogFrameSlots.length === 1 }"
+    role="presentation"
+  >
     <template v-if="inView">
       <template v-for="slot in catalogFrameSlots" :key="slot">
         <img
@@ -100,8 +114,13 @@ onUnmounted(() => {
         <div v-else class="catalog-frame-skeleton-cell" aria-hidden="true" />
       </template>
     </template>
-    <div v-else class="catalog-frame-skeleton" aria-hidden="true">
-      <span v-for="n in 4" :key="n" class="catalog-frame-skeleton-cell" />
+    <div
+      v-else
+      class="catalog-frame-skeleton"
+      :class="{ 'catalog-frame-skeleton--single': catalogFrameSlots.length === 1 }"
+      aria-hidden="true"
+    >
+      <span v-for="slot in catalogFrameSlots" :key="slot" class="catalog-frame-skeleton-cell" />
     </div>
   </div>
 </template>
@@ -142,5 +161,11 @@ onUnmounted(() => {
   min-height: 0;
   min-width: 0;
   background: linear-gradient(135deg, #12141a 0%, #1a1d24 50%, #12141a 100%);
+}
+
+.catalog-frame-strip--single,
+.catalog-frame-skeleton--single {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
 }
 </style>

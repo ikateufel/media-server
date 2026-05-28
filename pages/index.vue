@@ -55,7 +55,84 @@
               catalogGridCollapsed && pinnedTrailers.length === 2 && !playerUrl && previewUrl,
           }"
         >
-          <template v-if="!playerUrl && previewUrl && pinnedTrailers.length > 0">
+          <template v-if="isTvLayout">
+            <div
+              v-if="tvStageVideoSrc"
+              ref="previewFullscreenWrapRef"
+              class="stage-fullscreen-wrap"
+            >
+              <video
+                ref="tvStageVideoRef"
+                class="stage-video"
+                :class="{ 'stage-video--fast-play': fastPlayEnabled && tvStageIsMain }"
+                playsinline
+                :controls="tvStageIsMain ? mainVideoNativeControls : true"
+                :muted="tvStageIsMain ? false : previewTrailerMuted"
+                :preload="videoPreloadAttr"
+                @loadeddata="onTvStageLoadedData"
+                @loadedmetadata="onTvStageLoadedMetadata"
+                @timeupdate="onTvStageTimeUpdate"
+                @seeked="onTvStageSeeked"
+                @play="syncMainVideoPausedForUi"
+                @pause="syncMainVideoPausedForUi"
+                @ended="onTvStageEnded"
+                @ratechange="syncRateFromVideo"
+                @volumechange="onPreviewTrailerVolumeChange"
+                @click="onTvStageSurfaceClick"
+                @error="onStageVideoError"
+              />
+              <div
+                v-show="!tvStageIsMain && trailerStageFullscreen && entries.length > 0"
+                class="stage-fullscreen-trailer-actions"
+                aria-label="Controlo no trailer em ecrã inteiro"
+              >
+                <button
+                  type="button"
+                  class="stage-fullscreen-trailer-btn"
+                  title="Trailer anterior"
+                  aria-label="Trailer anterior"
+                  :disabled="entries.length < 2"
+                  @click.stop="goToPrevTrailer"
+                >
+                  <svg class="stage-fullscreen-trailer-btn-ico" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                    <g transform="scale(-1 1) translate(-24 0)">
+                      <path d="M7 6v12l7-6-7-6zm9 0v12h2V6h-2z" />
+                    </g>
+                  </svg>
+                  <span>Voltar trailer</span>
+                </button>
+                <button
+                  type="button"
+                  class="stage-fullscreen-trailer-btn"
+                  title="Próximo trailer"
+                  aria-label="Próximo trailer"
+                  :disabled="entries.length < 2"
+                  @click.stop="goToNextTrailer"
+                >
+                  <span>Próximo trailer</span>
+                  <svg class="stage-fullscreen-trailer-btn-ico" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                    <path d="M7 6v12l7-6-7-6zm9 0v12h2V6h-2z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="stage-fullscreen-trailer-btn stage-fullscreen-trailer-btn--primary"
+                  :disabled="selectedEntry ? !selectedEntry.hasMain : true"
+                  :title="selectedEntry && !selectedEntry.hasMain ? 'Completo em falta' : 'Vídeo completo'"
+                  aria-label="Tocar vídeo completo"
+                  @click.stop="openFullFromPreview"
+                >
+                  <svg class="stage-fullscreen-trailer-btn-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="4" width="20" height="14" rx="2" />
+                    <path d="M10 9l5 3-5 3V9z" fill="currentColor" stroke="none" />
+                  </svg>
+                  <span>Tocar completo</span>
+                </button>
+              </div>
+            </div>
+            <div v-else class="preview-placeholder">Escolha um título na lista.</div>
+          </template>
+          <template v-else-if="!playerUrl && previewUrl && pinnedTrailers.length > 0">
             <div class="video-shell-main" title="Segue o título seleccionado na grelha">
               <span class="video-shell-pane-badge video-shell-pane-badge--main" aria-hidden="true">Grelha</span>
               <div ref="previewFullscreenWrapRef" class="stage-fullscreen-wrap">
@@ -259,18 +336,18 @@
               </svg>
             </button>
             <button
-              v-if="focusedIndex !== null && selectedEntry"
+              v-if="selectedEntry"
               type="button"
               class="icon-tool icon-tool--fav"
               :class="{ 'icon-tool--fav-on': selectedEntry.isFavorite }"
               :aria-pressed="!!selectedEntry.isFavorite"
               :title="selectedEntry.isFavorite ? 'Retirar dos favoritos' : 'Favorito'"
-              @click="toggleFavoriteAtIndex(focusedIndex)"
+              @click="toggleFavoriteAtIndex(null)"
             >
               {{ selectedEntry.isFavorite ? '★' : '☆' }}
             </button>
             <button
-              v-if="focusedIndex !== null && selectedEntry"
+              v-if="selectedEntry"
               type="button"
               class="icon-tool icon-tool--memorable"
               :class="{ 'icon-tool--memorable-on': isEntryMemorable(selectedEntry) }"
@@ -278,7 +355,7 @@
               :title="isEntryMemorable(selectedEntry)
                 ? 'Retirar marca de memorável'
                 : 'Memorável (marca como visto e empurra para o fim)'"
-              @click="toggleMemorableAtIndex(focusedIndex)"
+              @click="toggleMemorableAtIndex(null)"
             >
               <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M7 4h10v3a5 5 0 0 1-5 5 5 5 0 0 1-5-5V4z" />
@@ -290,7 +367,7 @@
               </svg>
             </button>
             <button
-              v-if="focusedIndex !== null && selectedEntry"
+              v-if="selectedEntry"
               type="button"
               class="icon-tool icon-tool--recents"
               :class="{ 'icon-tool--recents-on': isPlaybackTitleInRecentList(selectedEntry) }"
@@ -365,6 +442,7 @@
               </svg>
             </button>
             <button
+              v-if="!isTvLayout"
               type="button"
               class="icon-tool"
               :class="{
@@ -382,7 +460,7 @@
               </svg>
             </button>
             <button
-              v-if="pinnedTrailers.length > 0"
+              v-if="!isTvLayout && pinnedTrailers.length > 0"
               type="button"
               class="icon-tool"
               title="Remover trailers fixos (por baixo)"
@@ -494,7 +572,7 @@
             </p>
           </div>
           <div
-            v-if="focusedIndex !== null && selectedEntry && !isTvLayout"
+            v-if="selectedEntry && !isTvLayout"
             class="toolbar-tags-panel"
             :class="{ 'toolbar-tags-panel--input-open': trailerTagPanelOpen }"
           >
@@ -561,18 +639,18 @@
               </svg>
             </button>
             <button
-              v-if="activeIndex !== null && mainVideoEntry"
+              v-if="mainVideoEntry"
               type="button"
               class="icon-tool icon-tool--fav"
               :class="{ 'icon-tool--fav-on': mainVideoEntry.isFavorite }"
               :aria-pressed="!!mainVideoEntry.isFavorite"
               :title="mainVideoEntry.isFavorite ? 'Retirar dos favoritos' : 'Favorito'"
-              @click="toggleFavoriteAtIndex(activeIndex)"
+              @click="toggleFavoriteAtIndex(null)"
             >
               {{ mainVideoEntry.isFavorite ? '★' : '☆' }}
             </button>
             <button
-              v-if="activeIndex !== null && mainVideoEntry"
+              v-if="mainVideoEntry"
               type="button"
               class="icon-tool icon-tool--memorable"
               :class="{ 'icon-tool--memorable-on': isEntryMemorable(mainVideoEntry) }"
@@ -580,7 +658,7 @@
               :title="isEntryMemorable(mainVideoEntry)
                 ? 'Retirar marca de memorável'
                 : 'Memorável (marca como visto e empurra para o fim)'"
-              @click="toggleMemorableAtIndex(activeIndex)"
+              @click="toggleMemorableAtIndex(null)"
             >
               <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M7 4h10v3a5 5 0 0 1-5 5 5 5 0 0 1-5-5V4z" />
@@ -592,7 +670,7 @@
               </svg>
             </button>
             <button
-              v-if="activeIndex !== null && mainVideoEntry"
+              v-if="mainVideoEntry"
               type="button"
               class="icon-tool icon-tool--recents"
               :class="{ 'icon-tool--recents-on': isPlaybackTitleInRecentList(mainVideoEntry) }"
@@ -982,8 +1060,21 @@
               Filtro: {{ catalogTagFilter }}
               <span class="tag-filter-clear-x" aria-hidden="true">×</span>
             </button>
+            <button
+              v-if="catalogOriginFilter"
+              type="button"
+              class="tag-filter-clear tag-filter-clear--origin"
+              :title="`Remover filtro de origem «${catalogOriginFilter}»`"
+              @click="clearCatalogOriginFilter"
+            >
+              Origem: {{ catalogOriginFilter }}
+              <span class="tag-filter-clear-x" aria-hidden="true">×</span>
+            </button>
           </div>
-          <div v-if="sessionMenuTopTags.length && !catalogGridCollapsed" class="catalog-top-tags">
+          <div
+            v-if="sessionMenuTopTags.length && !catalogGridCollapsed"
+            class="catalog-top-tags"
+          >
             <span class="catalog-top-tags-title">Top tags</span>
             <div class="catalog-top-tags-row">
               <button
@@ -995,6 +1086,26 @@
                 @click="onTopTagPick(tag)"
               >
                 {{ tag }}
+              </button>
+            </div>
+          </div>
+          <div
+            v-if="sessionIndex === RECENTS_SESSION_ID && sessionMenuOriginTags.length && !catalogGridCollapsed"
+            class="catalog-top-tags catalog-top-tags--origin"
+          >
+            <span class="catalog-top-tags-title">ORIGEM</span>
+            <div class="catalog-top-tags-row">
+              <button
+                v-for="row in sessionMenuOriginTags"
+                :key="row.tag"
+                type="button"
+                class="catalog-top-tag catalog-top-tag--origin"
+                :class="{ 'catalog-top-tag--active': catalogOriginFilter === row.tag }"
+                :title="`${row.count} título(s) com origem «${row.tag}»`"
+                @click="onOriginTagPick(row.tag)"
+              >
+                {{ row.tag }}
+                <span class="catalog-top-tag-count">{{ row.count }}</span>
               </button>
             </div>
           </div>
@@ -1019,6 +1130,13 @@
         <div v-if="catalogTagFilter && !entries.length && !loading && fullEntries.length" class="empty-hint">
           Nenhum título com a tag <code class="code">{{ catalogTagFilter }}</code>.
           <button type="button" class="empty-hint-link" @click="clearCatalogTagFilter">Mostrar todos</button>
+        </div>
+        <div
+          v-else-if="catalogOriginFilter && !entries.length && !loading && fullEntries.length"
+          class="empty-hint"
+        >
+          Nenhum título com origem <code class="code">{{ catalogOriginFilter }}</code> em Destaques.
+          <button type="button" class="empty-hint-link" @click="clearCatalogOriginFilter">Mostrar todos</button>
         </div>
         <div v-else-if="showOnlyWatched && !entries.length && !loading && fullEntries.length" class="empty-hint">
           Nenhum vídeo marcado como concluído ou memorável aqui.
@@ -1069,25 +1187,31 @@
           >
             <div class="trailer-grid" role="list" aria-label="Catálogo de trailers">
             <div
-              v-for="(entry, i) in entries"
-              :key="`${libSession(entry)}:${entry.trailerRel}`"
+              v-if="isTvLayout && tvGridPaddingTopPx > 0"
+              class="tv-grid-spacer"
+              :style="{ height: `${tvGridPaddingTopPx}px` }"
+              aria-hidden="true"
+            />
+            <div
+              v-for="gridRow in catalogGridRenderItems"
+              :key="`${libSession(gridRow.entry)}:${gridRow.entry.trailerRel}`"
               class="grid-tile"
               role="group"
-              :data-trailer-rel="entry.trailerRel"
+              :data-trailer-rel="gridRow.entry.trailerRel"
               :class="{
-                'grid-tile--selected': focusedIndex === i,
-                'grid-tile--full': activeIndex === i,
-                'grid-tile--no-main': !entry.hasMain,
-                'grid-tile--fav': entry.isFavorite,
+                'grid-tile--selected': focusedIndex === gridRow.index,
+                'grid-tile--full': activeIndex === gridRow.index,
+                'grid-tile--no-main': !gridRow.entry.hasMain,
+                'grid-tile--fav': gridRow.entry.isFavorite,
                 'grid-tile--in-destaques':
-                  sessionIndex !== RECENTS_SESSION_ID && isPlaybackTitleInRecentList(entry),
+                  sessionIndex !== RECENTS_SESSION_ID && isPlaybackTitleInRecentList(gridRow.entry),
               }"
               :title="
                 sessionIndex === RECENTS_SESSION_ID
-                  ? `Destaques · ${libraryFolderLabel(libSession(entry))} · ${entry.mainFilename} · ${formatSize(entry.trailerSizeBytes)}`
-                  : `${entry.mainFilename} · ${formatSize(entry.trailerSizeBytes)}`
+                  ? `Destaques · ${libraryFolderLabel(libSession(gridRow.entry))} · ${gridRow.entry.mainFilename} · ${formatSize(gridRow.entry.trailerSizeBytes)}`
+                  : `${gridRow.entry.mainFilename} · ${formatSize(gridRow.entry.trailerSizeBytes)}`
               "
-              @pointerdown="onGridTileChromePointerDown(i, $event)"
+              @pointerdown="onGridTileChromePointerDown(gridRow.index, $event)"
               @pointerup="onGridTileChromePointerUp"
               @pointerleave="onGridTileChromePointerUp"
               @pointercancel="onGridTileChromePointerUp"
@@ -1095,12 +1219,12 @@
               <button
                 type="button"
                 class="fav-btn fav-btn--tile"
-                :class="{ 'fav-btn--on': entry.isFavorite }"
-                :aria-pressed="!!entry.isFavorite"
-                :title="entry.isFavorite ? 'Retirar dos favoritos' : 'Favorito (sobe na lista)'"
-                @click.stop="toggleFavoriteAtIndex(i)"
+                :class="{ 'fav-btn--on': gridRow.entry.isFavorite }"
+                :aria-pressed="!!gridRow.entry.isFavorite"
+                :title="gridRow.entry.isFavorite ? 'Retirar dos favoritos' : 'Favorito (sobe na lista)'"
+                @click.stop="toggleFavoriteAtIndex(gridRow.index, { grid: true })"
               >
-                {{ entry.isFavorite ? '★' : '☆' }}
+                {{ gridRow.entry.isFavorite ? '★' : '☆' }}
               </button>
               <button
                 v-if="sessionIndex === RECENTS_SESSION_ID"
@@ -1109,7 +1233,7 @@
                 :disabled="recentsMutationBusy"
                 title="Remover só desta lista Destaques (não apaga ficheiros)"
                 aria-label="Remover de Destaques"
-                @click.stop="removeFromRecentsAtIndex(i)"
+                @click.stop="removeFromRecentsAtIndex(gridRow.index)"
               >
                 <svg class="grid-tile-remove-recents-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round">
                   <path
@@ -1119,7 +1243,7 @@
                 </svg>
               </button>
               <span
-                v-if="sessionIndex !== RECENTS_SESSION_ID && isPlaybackTitleInRecentList(entry)"
+                v-if="sessionIndex !== RECENTS_SESSION_ID && isPlaybackTitleInRecentList(gridRow.entry)"
                 class="grid-tile-destaques-eye"
                 title="Na lista Destaques"
                 aria-label="Na lista Destaques"
@@ -1139,7 +1263,7 @@
                 </svg>
               </span>
               <span
-                v-if="isEntryMemorable(entry)"
+                v-if="isEntryMemorable(gridRow.entry)"
                 class="watch-badge watch-badge--memorable"
                 title="Memorável"
                 aria-label="Memorável"
@@ -1154,7 +1278,7 @@
                 </svg>
               </span>
               <span
-                v-else-if="isEntryCompleted(entry)"
+                v-else-if="isEntryCompleted(gridRow.entry)"
                 class="watch-badge watch-badge--done"
                 title="Já visto até ao fim"
                 aria-label="Já visto até ao fim"
@@ -1164,9 +1288,9 @@
                 </svg>
               </span>
               <span
-                v-else-if="isEntryPartiallyWatched(entry)"
+                v-else-if="isEntryPartiallyWatched(gridRow.entry)"
                 class="watch-badge watch-badge--partial"
-                :title="`Visto parcialmente (${formatWatchedSeconds(entry.watchedSeconds)})`"
+                :title="`Visto parcialmente (${formatWatchedSeconds(gridRow.entry.watchedSeconds)})`"
                 aria-label="Visto parcialmente"
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1175,7 +1299,7 @@
                 </svg>
               </span>
               <span
-                v-else-if="isEntryTrailerWatched(entry)"
+                v-else-if="isEntryTrailerWatched(gridRow.entry)"
                 class="watch-badge watch-badge--trailer"
                 title="Trailer já visto até ao fim"
                 aria-label="Trailer já visto"
@@ -1186,23 +1310,23 @@
                 </svg>
               </span>
               <div
-                v-if="entry.previewRel"
+                v-if="gridRow.entry.previewRel"
                 class="grid-tile-thumb"
                 role="button"
                 tabindex="0"
                 :aria-label="
-                  gridInlinePreviewIndex === i
-                    ? `Pré-visualização de ${entry.label}. Toque outra vez para o trailer no palco.`
-                    : `Miniatura de ${entry.label}. Toque para substituir pelo preview em vídeo.`
+                  gridInlinePreviewIndex === gridRow.index
+                    ? `Pré-visualização de ${gridRow.entry.label}. Toque outra vez para o trailer no palco.`
+                    : `Miniatura de ${gridRow.entry.label}. Toque para substituir pelo preview em vídeo.`
                 "
-                @click.stop="onCatalogThumbClick(i)"
-                @keydown.enter.prevent.stop="onCatalogThumbClick(i)"
-                @keydown.space.prevent.stop="onCatalogThumbClick(i)"
+                @click.stop="onCatalogThumbClick(gridRow.index)"
+                @keydown.enter.prevent.stop="onCatalogThumbClick(gridRow.index)"
+                @keydown.space.prevent.stop="onCatalogThumbClick(gridRow.index)"
               >
                 <video
-                  v-if="gridInlinePreviewIndex === i"
+                  v-if="catalogThumbInlineVideo && gridInlinePreviewIndex === gridRow.index"
                   class="grid-inline-preview-video"
-                  :src="apiVideoUrl(entry.previewRel, libSession(entry))"
+                  :src="apiVideoUrl(gridRow.entry.previewRel, libSession(gridRow.entry))"
                   :muted="previewTrailerMuted"
                   playsinline
                   :preload="videoPreloadAttr"
@@ -1211,16 +1335,17 @@
                 />
                 <CatalogFrameStrip
                   v-else
-                  :preview-rel="entry.previewRel"
-                  :session-index="libSession(entry)"
+                  :preview-rel="gridRow.entry.previewRel"
+                  :session-index="libSession(gridRow.entry)"
+                  :max-slots="catalogThumbMaxSlots"
                 />
                 <button
-                  v-if="entry.previewRel && gridInlinePreviewIndex === i"
+                  v-if="catalogThumbInlineVideo && gridRow.entry.previewRel && gridInlinePreviewIndex === gridRow.index"
                   type="button"
                   class="grid-tile-maxi"
                   title="Miniaturas em ecrã inteiro"
                   aria-label="Miniaturas em ecrã inteiro"
-                  @click.stop="openCatalogGalleryDialog(i)"
+                  @click.stop="openCatalogGalleryDialog(gridRow.index)"
                 >
                   <svg class="grid-tile-maxi-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M9 3H5a2 2 0 00-2 2v4M21 9V5a2 2 0 00-2-2h-4M15 21h4a2 2 0 002-2v-4M3 15v4a2 2 0 002 2h4" stroke-linecap="round" />
@@ -1235,41 +1360,60 @@
                 class="grid-tile-select"
                 :aria-label="
                   sessionIndex === RECENTS_SESSION_ID
-                    ? `Escolher trailer ${entry.label} em Destaques, origem ${libraryFolderLabel(libSession(entry))}`
-                    : `Escolher trailer ${entry.label}`
+                    ? `Escolher trailer ${gridRow.entry.label} em Destaques, origem ${libraryFolderLabel(libSession(gridRow.entry))}`
+                    : `Escolher trailer ${gridRow.entry.label}`
                 "
-                @click="onListItemClick(i)"
+                @click="onListItemClick(gridRow.index)"
               >
                 <span
                   v-if="sessionIndex === RECENTS_SESSION_ID"
                   class="grid-tile-recents-meta"
-                  :title="`Lista Destaques · vídeo da biblioteca «${libraryFolderLabel(libSession(entry))}»`"
+                  :title="`Lista Destaques · vídeo da biblioteca «${libraryFolderLabel(libSession(gridRow.entry))}»`"
                 >
                   <span class="grid-tile-recents-tag">Destaques</span>
-                  <span class="grid-tile-recents-lib">{{ libraryFolderLabel(libSession(entry)) }}</span>
+                  <span class="grid-tile-recents-lib">{{ libraryFolderLabel(libSession(gridRow.entry)) }}</span>
                 </span>
-                <span class="grid-tile-label">{{ entry.label }}</span>
-                <span v-if="!entry.hasMain" class="badge badge--tile">sem completo</span>
+                <span class="grid-tile-label">{{ gridRow.entry.label }}</span>
+                <span v-if="!gridRow.entry.hasMain" class="badge badge--tile">sem completo</span>
                 <span
-                  v-if="(entry.tags?.length ?? 0) > 0"
+                  v-if="(gridRow.entry.tags?.length ?? 0) > 0"
                   class="grid-tile-tags"
-                  :title="(entry.tags ?? []).join(', ')"
+                  :title="(gridRow.entry.tags ?? []).join(', ')"
                 >
                   <span
-                    v-for="t in (entry.tags ?? []).slice(0, 2)"
+                    v-for="t in (gridRow.entry.tags ?? []).slice(0, 2)"
                     :key="t"
                     class="grid-tile-tag"
                     :class="{ 'grid-tile-tag--active': catalogTagFilter === t }"
                     >{{ t }}</span
                   >
                   <span
-                    v-if="(entry.tags ?? []).length > 2"
+                    v-if="(gridRow.entry.tags ?? []).length > 2"
                     class="grid-tile-tag grid-tile-tag--more"
-                    >+{{ (entry.tags ?? []).length - 2 }}</span
+                    >+{{ (gridRow.entry.tags ?? []).length - 2 }}</span
                   >
                 </span>
               </button>
             </div>
+            <div
+              v-if="isTvLayout && tvGridPaddingBottomPx > 0"
+              class="tv-grid-spacer"
+              :style="{ height: `${tvGridPaddingBottomPx}px` }"
+              aria-hidden="true"
+            />
+            <div
+              v-if="isTvLayout && sessionIndex === RECENTS_SESSION_ID && recentsHasMore"
+              ref="recentsLoadSentinel"
+              class="recents-load-sentinel"
+              aria-hidden="true"
+            />
+            <p
+              v-if="isTvLayout && sessionIndex === RECENTS_SESSION_ID && (recentsLoadingMore || recentsLoadStatusLine)"
+              class="recents-load-hint"
+              :class="{ 'recents-load-hint--status': recentsLoadStatusLine && !recentsLoadingMore }"
+            >
+              {{ recentsLoadingMore ? 'A carregar mais…' : recentsLoadStatusLine }}
+            </p>
           </div>
           </div>
           <div
@@ -1513,6 +1657,9 @@ import {
 } from '~/composables/useVideoFolder'
 import IconTrailerRandom from '~/components/IconTrailerRandom.vue'
 import { useSilkTvLayout } from '~/composables/useSilkTvLayout'
+import { useRecentsCatalogWindow } from '~/composables/useRecentsCatalogWindow'
+import { useTvCatalogVirtualGrid } from '~/composables/useTvCatalogVirtualGrid'
+import { useTvStageVideo } from '~/composables/useTvStageVideo'
 
 const { manualTvAssist, isTvLayout } = useSilkTvLayout()
 
@@ -1693,6 +1840,7 @@ async function toggleCurrentTitleRecents() {
       })
       showToast('Adicionado a Destaques.', 'success')
       await refreshRecentPlaybackKeys()
+      syncCatalogIndicesToPlayback()
       if (sessionIndex.value === RECENTS_SESSION_ID) {
         await loadTrailers({ preserveFocusTrailerRel: e.trailerRel })
       }
@@ -1747,8 +1895,22 @@ let suppressShareUrlSync = false
 const hadFullVideoForShareUrlRef = ref(false)
 
 const fullEntries = ref<TrailerListEntry[]>([])
+
+const recentsCatalog = useRecentsCatalogWindow(fullEntries)
+const recentsTotal = recentsCatalog.total
+const recentsHasMore = recentsCatalog.hasMore
+const recentsLoadingMore = recentsCatalog.loadingMore
+const recentsLoadStatusLine = recentsCatalog.loadStatusLine
+const recentsLoadSentinel = ref<HTMLElement | null>(null)
+let recentsLoadObserver: IntersectionObserver | null = null
+
+/** Modo TV (`?tv=1`): uma imagem estática na grelha; sem vídeo inline no cartão. */
+const catalogThumbMaxSlots = computed(() => (isTvLayout.value ? 1 : 4))
+const catalogThumbInlineVideo = computed(() => !isTvLayout.value)
 /** Filtro da grelha por tag; `null` = mostrar todos. */
 const catalogTagFilter = ref<string | null>(null)
+/** Filtro por pasta/biblioteca de origem (só Destaques). */
+const catalogOriginFilter = ref<string | null>(null)
 /**
  * Filtro "Só vistos": quando `true`, restringe o catálogo aos vídeos com
  * tag `concluido` OU `memoravel`. Combina com `catalogTagFilter` (AND).
@@ -1821,8 +1983,21 @@ function sortCatalogList(list: TrailerListEntry[]): TrailerListEntry[] {
 
 const entries = computed(() => {
   const tag = catalogTagFilter.value
+  const origin = catalogOriginFilter.value
   const raw = fullEntries.value
-  let filtered = tag ? raw.filter((e) => (e.tags ?? []).includes(tag)) : raw
+  const si = sessionIndex.value
+  let filtered = tag
+    ? raw.filter((e) => {
+        const list = si === RECENTS_SESSION_ID ? entryUserTags(e) : (e.tags ?? [])
+        return list.includes(tag)
+      })
+    : raw
+  if (origin) {
+    const want = origin.trim().toLowerCase()
+    filtered = filtered.filter((e) =>
+      entryOriginTags(e).some((t) => t.trim().toLowerCase() === want),
+    )
+  }
   if (showOnlyWatched.value) {
     filtered = filtered.filter(isEntryWatchedClass)
   }
@@ -1856,9 +2031,12 @@ const moveTitleTargetSessions = computed(() =>
 
 const watchedCount = computed(() => fullEntries.value.filter(isEntryWatchedClass).length)
 const favoriteCount = computed(() => fullEntries.value.filter((e) => e.isFavorite === true).length)
-const destaquesCount = computed(() =>
-  fullEntries.value.filter((e) => isPlaybackTitleInRecentList(e)).length,
-)
+const destaquesCount = computed(() => {
+  if (sessionIndex.value === RECENTS_SESSION_ID && recentsTotal.value > 0) {
+    return recentsTotal.value
+  }
+  return fullEntries.value.filter((e) => isPlaybackTitleInRecentList(e)).length
+})
 
 const favoriteCatalogFilterIcon = computed(() => {
   if (favoriteCatalogFilter.value === 'only') return '★'
@@ -1913,7 +2091,9 @@ const catalogSortDateTitle = computed(() =>
 const sessionMenuTopTags = computed(() => {
   const counts = new Map<string, number>()
   for (const entry of fullEntries.value) {
-    for (const t of entry.tags ?? []) {
+    const list =
+      sessionIndex.value === RECENTS_SESSION_ID ? entryUserTags(entry) : (entry.tags ?? [])
+    for (const t of list) {
       const tag = t.trim()
       if (!tag) continue
       counts.set(tag, (counts.get(tag) ?? 0) + 1)
@@ -1923,6 +2103,21 @@ const sessionMenuTopTags = computed(() => {
     .sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : a[0].localeCompare(b[0], undefined, { sensitivity: 'base' })))
     .slice(0, 5)
     .map(([tag]) => tag)
+})
+
+/** Bibliotecas do menu esquerdo presentes em Destaques (agregado, sem subpastas). */
+const sessionMenuOriginTags = computed(() => {
+  if (sessionIndex.value !== RECENTS_SESSION_ID) return []
+  const counts = new Map<string, number>()
+  for (const entry of fullEntries.value) {
+    for (const t of entryOriginTags(entry)) {
+      counts.set(t, (counts.get(t) ?? 0) + 1)
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : a[0].localeCompare(b[0], undefined, { sensitivity: 'base' })))
+    .slice(0, 12)
+    .map(([tag, count]) => ({ tag, count }))
 })
 const searchSessionActive = computed(() => sessionIndex.value === SEARCH_SESSION_ID)
 
@@ -2056,6 +2251,34 @@ const sequentialForwardOnceAfterPrev = ref(false)
 const playerUrl = ref<string | null>(null)
 const mainVideoRef = ref<HTMLVideoElement | null>(null)
 
+const {
+  tvStageVideoRef,
+  tvStageVideoSrc,
+  tvStageIsMain,
+  releaseVideoElement,
+} = useTvStageVideo(isTvLayout, previewUrl, playerUrl)
+
+function mainStageVideoEl(): HTMLVideoElement | null {
+  if (isTvLayout.value) return tvStageVideoRef.value
+  return mainVideoRef.value
+}
+
+function stageVideoEl(): HTMLVideoElement | null {
+  if (isTvLayout.value) return tvStageVideoRef.value
+  return playerUrl.value ? mainVideoRef.value : previewVideoRef.value
+}
+
+function previewStageVideoEl(): HTMLVideoElement | null {
+  if (isTvLayout.value) return tvStageVideoRef.value
+  return previewVideoRef.value
+}
+
+const {
+  catalogGridRenderItems,
+  tvGridPaddingTopPx,
+  tvGridPaddingBottomPx,
+} = useTvCatalogVirtualGrid(isTvLayout, entries, focusedIndex)
+
 const playbackRate = ref(1)
 const fastPlayEnabled = ref(false)
 
@@ -2071,7 +2294,7 @@ let fastPlayProgrammaticSeek = false
 const mainVideoPausedForUi = ref(false)
 
 function syncMainVideoPausedForUi() {
-  const v = mainVideoRef.value
+  const v = isTvLayout.value && playerUrl.value ? tvStageVideoRef.value : mainVideoRef.value
   if (!v) {
     mainVideoPausedForUi.value = false
     return
@@ -2147,6 +2370,10 @@ function onGridInlinePreviewLoaded(ev: Event) {
 
 function onCatalogThumbClick(i: number) {
   if (!entries.value[i]?.previewRel) return
+  if (!catalogThumbInlineVideo.value) {
+    onListItemClick(i)
+    return
+  }
   if (gridInlinePreviewIndex.value === i) {
     onListItemClick(i)
     return
@@ -2341,8 +2568,27 @@ function onSessionMenuPick(id: number) {
 
 function onTopTagPick(tag: string) {
   if (!tag) return
+  const { prevFocusedRel, wasFullRel } = captureCatalogFilterFocusSnapshot()
+  catalogOriginFilter.value = null
   catalogTagFilter.value = catalogTagFilter.value === tag ? null : tag
   sessionMenuOpen.value = false
+  void refocusAfterTagFilterChange(prevFocusedRel, wasFullRel)
+}
+
+function onOriginTagPick(tag: string) {
+  if (!tag) return
+  const { prevFocusedRel, wasFullRel } = captureCatalogFilterFocusSnapshot()
+  catalogTagFilter.value = null
+  catalogOriginFilter.value = catalogOriginFilter.value === tag ? null : tag
+  sessionMenuOpen.value = false
+  void refocusAfterTagFilterChange(prevFocusedRel, wasFullRel)
+}
+
+function clearCatalogOriginFilter() {
+  if (!catalogOriginFilter.value) return
+  const { prevFocusedRel, wasFullRel } = captureCatalogFilterFocusSnapshot()
+  catalogOriginFilter.value = null
+  void refocusAfterTagFilterChange(prevFocusedRel, wasFullRel)
 }
 
 async function runSearchSession() {
@@ -2421,6 +2667,11 @@ function scrollCatalogByDirection(dir: 1 | -1) {
     nextTick(() => scrollCatalogApplyStep(dir))
   } else {
     scrollCatalogApplyStep(dir)
+  }
+  if (dir === 1 && sessionIndex.value === RECENTS_SESSION_ID && isTvLayout.value) {
+    const fi = focusedIndex.value
+    const n = entries.value.length
+    if (fi !== null && n && recentsHasMore.value && fi >= n - 2) void tryLoadRecentsMore('scroll')
   }
 }
 
@@ -2535,9 +2786,16 @@ watch([previewUrl, playerUrl], ([p, pl]) => {
 })
 
 const selectedEntry = computed(() => {
+  if (previewUrl.value || playerUrl.value) {
+    const playback = resolvePlaybackEntryFromUrls()
+    if (playback) return playback
+  }
   const i = focusedIndex.value
-  if (i === null) return null
-  return entries.value[i] ?? null
+  if (i !== null) {
+    const e = entries.value[i]
+    if (e) return e
+  }
+  return null
 })
 
 /** Diretório relativo à raiz da sessão (vazio se o completo está na raiz). */
@@ -2545,6 +2803,18 @@ function parentRelDir(mainRel: string): string {
   const n = mainRel.replace(/\\/g, '/').replace(/\/+$/, '')
   const i = n.lastIndexOf('/')
   return i > 0 ? n.slice(0, i) : ''
+}
+
+/** Pasta de origem = rótulo da biblioteca no menu esquerdo (sem subpastas). */
+function entryOriginTags(entry: TrailerListEntry): string[] {
+  const label = libraryFolderLabel(libSession(entry)).trim()
+  return label ? [label] : []
+}
+
+/** Tags do utilizador, sem duplicar as de origem já mostradas em «ORIGEM». */
+function entryUserTags(entry: TrailerListEntry): string[] {
+  const originKeys = new Set(entryOriginTags(entry).map((t) => t.toLowerCase()))
+  return (entry.tags ?? []).filter((t) => !originKeys.has(t.trim().toLowerCase()))
 }
 
 /** Pasta no topo do cartão: biblioteca (menu) e, se aplicável, subpasta do `mainRel`. */
@@ -2564,21 +2834,22 @@ const playbackFolderCaption = computed(() => {
   return lib || '—'
 })
 
-/** Título cujo vídeo completo está no palco (índice na lista filtrada). */
+/** Título cujo vídeo completo está no palco (URL de reprodução; índice só se coincidir). */
 const mainVideoEntry = computed(() => {
   if (!playerUrl.value) return null
+  const parsed = parseApiVideoUrl(playerUrl.value)
+  if (!parsed) return null
+  const norm = (r: string) => r.replace(/\\/g, '/').replace(/^\/+/, '')
+  const want = norm(parsed.rel)
+  const fromUrl =
+    fullEntries.value.find((e) => norm(e.mainRel) === want && libSession(e) === parsed.session) ?? null
+  if (fromUrl) return fromUrl
   const i = activeIndex.value
   if (i !== null) {
     const fromIdx = entries.value[i]
     if (fromIdx) return fromIdx
   }
-  const parsed = parseApiVideoUrl(playerUrl.value)
-  if (!parsed) return null
-  const norm = (r: string) => r.replace(/\\/g, '/').replace(/^\/+/, '')
-  const want = norm(parsed.rel)
-  return (
-    fullEntries.value.find((e) => norm(e.mainRel) === want && libSession(e) === parsed.session) ?? null
-  )
+  return null
 })
 
 function formatSize(bytes: number) {
@@ -2672,6 +2943,11 @@ function formatWatchedSeconds(secs: number | null | undefined): string {
 }
 
 function setPreviewForIndex(i: number | null) {
+  if (isTvLayout.value && playerUrl.value) {
+    playerUrl.value = null
+    activeIndex.value = null
+  }
+  if (isTvLayout.value) releaseVideoElement(tvStageVideoRef.value)
   previewUrl.value = null
   if (i === null || !entries.value[i]) return
   const e = entries.value[i]
@@ -2694,11 +2970,43 @@ function setTrailerIndex(i: number) {
 
 function onPreviewLoaded() {
   errorMsg.value = ''
-  const el = previewVideoRef.value
+  const el = previewStageVideoEl()
   if (el) {
     el.playbackRate = playbackRate.value
     el.play().catch(() => {})
   }
+}
+
+function onTvStageLoadedData() {
+  if (!isTvLayout.value) return
+  if (playerUrl.value) return
+  onPreviewLoaded()
+}
+
+function onTvStageLoadedMetadata() {
+  if (!isTvLayout.value || !playerUrl.value) return
+  onMainVideoLoadedMetadata()
+}
+
+function onTvStageTimeUpdate() {
+  if (!isTvLayout.value || !playerUrl.value) return
+  onMainVideoTimeUpdate()
+}
+
+function onTvStageSeeked() {
+  if (!isTvLayout.value || !playerUrl.value) return
+  onMainVideoSeeked()
+}
+
+function onTvStageSurfaceClick() {
+  if (!isTvLayout.value) return
+  if (playerUrl.value) onMainVideoSurfaceClick()
+}
+
+function onTvStageEnded() {
+  if (!isTvLayout.value) return
+  if (playerUrl.value) onMainVideoEnded()
+  else onPreviewEnded()
 }
 
 function stageVideoMediaErrorReason(code: number): string {
@@ -2891,11 +3199,15 @@ function shouldAutoFullscreenOnLandscape() {
 }
 
 function activeVideoEl(): HTMLVideoElement | null {
-  return playerUrl.value ? mainVideoRef.value : previewVideoRef.value
+  return stageVideoEl()
 }
 
 /** Alvo do fullscreen automático em landscape: trailer → contentor com botões; vídeo completo → elemento vídeo. */
 function fullscreenTargetForAutorient(): HTMLElement | null {
+  if (isTvLayout.value) {
+    if (playerUrl.value) return tvStageVideoRef.value
+    return previewFullscreenWrapRef.value ?? tvStageVideoRef.value
+  }
   if (playerUrl.value) return mainVideoRef.value
   return previewFullscreenWrapRef.value ?? previewVideoRef.value
 }
@@ -2968,7 +3280,7 @@ function syncTrailerStageFullscreenFlag() {
   if (!import.meta.client || typeof document === 'undefined') return
   const fe = docFullscreenElement()
   const wrap = previewFullscreenWrapRef.value
-  const previewVid = previewVideoRef.value
+  const previewVid = isTvLayout.value ? tvStageVideoRef.value : previewVideoRef.value
 
   trailerStageFullscreen.value = !!(wrap && fe === wrap)
 
@@ -2988,7 +3300,7 @@ function onDocumentFullscreenChange() {
 
 function exitFullscreenIfMainVideo() {
   if (!import.meta.client || typeof document === 'undefined') return
-  const v = mainVideoRef.value
+  const v = mainStageVideoEl()
   if (!v) return
   const fe = docFullscreenElement()
   if (fe !== v) return
@@ -3045,6 +3357,7 @@ function onListItemClick(i: number) {
 async function closeFullVideo() {
   stopFastPlay(false)
   await flushMainProgressIfAny()
+  if (isTvLayout.value) releaseVideoElement(tvStageVideoRef.value)
   playerUrl.value = null
   activeIndex.value = null
 }
@@ -3086,9 +3399,10 @@ async function openVideo(i: number) {
   }
   fullVideoResumeAt.value = resumeAt
   activeIndex.value = i
+  if (isTvLayout.value) releaseVideoElement(tvStageVideoRef.value)
   playerUrl.value = apiVideoUrl(entry.mainRel, libSession(entry))
   nextTick(() => {
-    const v = mainVideoRef.value
+    const v = mainStageVideoEl()
     if (v) {
       v.playbackRate = playbackRate.value
       v.play().catch(() => {})
@@ -3104,7 +3418,7 @@ function mainProgressStorageRel(): string | null {
 
 async function persistMainProgress(force: boolean) {
   if (!playerUrl.value) return
-  const v = mainVideoRef.value
+  const v = mainStageVideoEl()
   const mainRel = mainProgressStorageRel()
   if (!v || !mainRel || !Number.isFinite(v.currentTime)) return
   const now = Date.now()
@@ -3138,7 +3452,7 @@ async function flushMainProgressIfAny() {
 }
 
 function onMainVideoLoadedMetadata() {
-  const v = mainVideoRef.value
+  const v = mainStageVideoEl()
   const t = fullVideoResumeAt.value
   fullVideoResumeAt.value = null
   if (!v) return
@@ -3162,7 +3476,7 @@ function onMainVideoTimeUpdate() {
 function onMainVideoSeeked() {
   if (!fastPlayEnabled.value) return
   if (fastPlayProgrammaticSeek) return
-  const v = mainVideoRef.value
+  const v = mainStageVideoEl()
   if (!v) return
   fastPlaySegmentStartAt = Number.isFinite(v.currentTime) ? v.currentTime : 0
 }
@@ -3170,14 +3484,14 @@ function onMainVideoSeeked() {
 /** Com controlos nativos ocultos (FAST em touch), toque no vídeo = pausar / continuar. */
 function onMainVideoSurfaceClick() {
   if (mainVideoNativeControls.value) return
-  const v = mainVideoRef.value
+  const v = mainStageVideoEl()
   if (!v) return
   if (v.paused) void v.play().catch(() => {})
   else v.pause()
 }
 
 function stopFastPlay(keepEnabled: boolean) {
-  const v = mainVideoRef.value
+  const v = mainStageVideoEl()
   if (v && Number.isFinite(playbackRate.value)) {
     v.playbackRate = playbackRate.value
   }
@@ -3192,7 +3506,7 @@ function stopFastPlay(keepEnabled: boolean) {
 
 function toggleFastPlay() {
   fastPlayEnabled.value = !fastPlayEnabled.value
-  const v = mainVideoRef.value
+  const v = mainStageVideoEl()
   if (!fastPlayEnabled.value || !v) {
     if (!fastPlayEnabled.value) stopFastPlay(false)
     return
@@ -3202,7 +3516,7 @@ function toggleFastPlay() {
   if (v.paused) v.play().catch(() => {})
   void nextTick(() => {
     syncMainVideoPausedForUi()
-    const el = mainVideoRef.value
+    const el = mainStageVideoEl()
     if (el && fastPlayEnabled.value && fastPlayFullscreenOn.value)
       tryEnterVideoFullscreen(el).catch(() => {})
   })
@@ -3210,7 +3524,7 @@ function toggleFastPlay() {
 
 function applyFastPlayStepIfNeeded() {
   if (!fastPlayEnabled.value || fastPlayProgrammaticSeek) return
-  const v = mainVideoRef.value
+  const v = mainStageVideoEl()
   if (!v || !Number.isFinite(v.currentTime) || !Number.isFinite(v.duration)) return
   if (v.paused || v.ended) return
 
@@ -3294,6 +3608,83 @@ function splitTagInputToParts(raw: string): string[] {
 
 function findFullEntryIndex(trailerRel: string, libS: number): number {
   return fullEntries.value.findIndex((x) => x.trailerRel === trailerRel && libSession(x) === libS)
+}
+
+function findEntryIndexInEntries(trailerRel: string, libS?: number): number {
+  return entries.value.findIndex((e) => {
+    if (libS !== undefined && libSession(e) !== libS) return false
+    return trailerRelMatchesFocus(e.trailerRel, trailerRel)
+  })
+}
+
+/** Título em reprodução mas filtrado da grelha (ex.: favorito com «sem favoritos»). */
+function resolvePlaybackEntryFromUrls(): TrailerListEntry | null {
+  if (playerUrl.value) {
+    const parsed = parseApiVideoUrl(playerUrl.value)
+    if (parsed) {
+      const norm = (r: string) => r.replace(/\\/g, '/').replace(/^\/+/, '')
+      const wantMain = norm(parsed.rel)
+      return (
+        fullEntries.value.find(
+          (e) => norm(e.mainRel) === wantMain && libSession(e) === parsed.session,
+        ) ?? null
+      )
+    }
+  }
+  if (previewUrl.value) {
+    const parsed = parseApiVideoUrl(previewUrl.value)
+    if (parsed) {
+      return (
+        fullEntries.value.find(
+          (e) =>
+            trailerRelMatchesFocus(e.trailerRel, parsed.rel) && libSession(e) === parsed.session,
+        ) ?? null
+      )
+    }
+  }
+  return null
+}
+
+/** Alvo de acções na barra: vídeo em reprodução; na grelha: cartão clicado (`grid: true`). */
+function resolveCatalogActionEntry(
+  i: number | null,
+  opts?: { grid?: boolean },
+): TrailerListEntry | null {
+  const playback = resolvePlaybackEntryFromUrls()
+  const hasPlayback = !!(previewUrl.value || playerUrl.value)
+  if (opts?.grid && i !== null) return entries.value[i] ?? null
+  if (hasPlayback && playback) return playback
+  if (i !== null) return entries.value[i] ?? null
+  return playback ?? selectedEntry.value ?? null
+}
+
+/** Limpa índices da grelha se já não apontam ao vídeo que está a tocar. */
+function syncCatalogIndicesToPlayback() {
+  if (!previewUrl.value && !playerUrl.value) return
+  const playback = resolvePlaybackEntryFromUrls()
+  if (!playback) return
+  const fi = focusedIndex.value
+  if (fi !== null) {
+    const at = entries.value[fi]
+    if (
+      !at ||
+      !trailerRelMatchesFocus(at.trailerRel, playback.trailerRel) ||
+      libSession(at) !== libSession(playback)
+    ) {
+      focusedIndex.value = null
+    }
+  }
+  const ai = activeIndex.value
+  if (ai !== null && playerUrl.value) {
+    const at = entries.value[ai]
+    if (
+      !at ||
+      !trailerRelMatchesFocus(at.trailerRel, playback.trailerRel) ||
+      libSession(at) !== libSession(playback)
+    ) {
+      activeIndex.value = null
+    }
+  }
 }
 
 function sortTags(tags: string[]): string[] {
@@ -3389,14 +3780,7 @@ function applyCatalogTagFilter(tagName: string) {
 
 function clearCatalogTagFilter() {
   if (!catalogTagFilter.value) return
-  const prevFocusedRel =
-    focusedIndex.value !== null && entries.value[focusedIndex.value]
-      ? entries.value[focusedIndex.value].trailerRel
-      : null
-  const wasFullRel =
-    playerUrl.value && activeIndex.value !== null && entries.value[activeIndex.value]
-      ? entries.value[activeIndex.value].trailerRel
-      : null
+  const { prevFocusedRel, wasFullRel } = captureCatalogFilterFocusSnapshot()
   catalogTagFilter.value = null
   void refocusAfterTagFilterChange(prevFocusedRel, wasFullRel)
 }
@@ -3406,6 +3790,11 @@ async function refocusAfterTagFilterChange(prevFocusedRel: string | null, wasFul
   const list = entries.value
 
   if (!list.length) {
+    if (playerUrl.value || previewUrl.value) {
+      focusedIndex.value = null
+      activeIndex.value = null
+      return
+    }
     await closeFullVideo()
     focusedIndex.value = null
     previewUrl.value = null
@@ -3413,20 +3802,27 @@ async function refocusAfterTagFilterChange(prevFocusedRel: string | null, wasFul
   }
 
   if (playerUrl.value && wasFullRel) {
-    const ni = list.findIndex((e) => e.trailerRel === wasFullRel)
-    if (ni < 0) await closeFullVideo()
-    else {
+    const ni = findEntryIndexInEntries(wasFullRel)
+    if (ni >= 0) {
       activeIndex.value = ni
       focusedIndex.value = ni
+    } else {
+      activeIndex.value = null
+      focusedIndex.value = null
     }
+    return
   }
 
   if (playerUrl.value) return
 
   if (prevFocusedRel) {
-    const ni = list.findIndex((e) => e.trailerRel === prevFocusedRel)
+    const ni = findEntryIndexInEntries(prevFocusedRel)
     if (ni >= 0) {
       setTrailerIndex(ni)
+      return
+    }
+    if (previewUrl.value) {
+      focusedIndex.value = null
       return
     }
   }
@@ -3434,10 +3830,7 @@ async function refocusAfterTagFilterChange(prevFocusedRel: string | null, wasFul
 }
 
 async function addTagFromInput() {
-  const e =
-    playerUrl.value && activeIndex.value !== null
-      ? (entries.value[activeIndex.value] ?? null)
-      : selectedEntry.value
+  const e = resolveCatalogActionEntry(null)
   if (!e) return
   const parts = [...new Set(splitTagInputToParts(newTagInput.value))]
   if (!parts.length) return
@@ -3499,17 +3892,53 @@ async function removeTagFromEntry(trailerRel: string, tagName: string, libS: num
   }
 }
 
-async function toggleFavoriteAtIndex(i: number) {
-  const e = entries.value[i]
+function entryLeavesCatalogAfterFavoriteChange(nextFavorite: boolean): boolean {
+  if (favoriteCatalogFilter.value === 'exclude' && nextFavorite) return true
+  if (favoriteCatalogFilter.value === 'only' && !nextFavorite) return true
+  return false
+}
+
+async function toggleFavoriteAtIndex(i: number | null, opts?: { grid?: boolean }) {
+  const playbackBefore = resolvePlaybackEntryFromUrls()
+  const e = resolveCatalogActionEntry(i, opts)
   if (!e) return
+  const trailerRel = e.trailerRel
+  const ls = libSession(e)
+  const idx = findFullEntryIndex(trailerRel, ls)
+  const prevFav = e.isFavorite === true
+  const next = !prevFav
+  const prevFocusedRel = trailerRel
+  const wasFullRel = playerUrl.value ? (playbackBefore?.trailerRel ?? trailerRel) : null
+  const keepsPlayback =
+    !!(previewUrl.value || playerUrl.value) &&
+    playbackBefore !== null &&
+    trailerRelMatchesFocus(playbackBefore.trailerRel, trailerRel) &&
+    libSession(playbackBefore) === ls
+
+  if (idx >= 0) fullEntries.value[idx].isFavorite = next
+
+  if (keepsPlayback && entryLeavesCatalogAfterFavoriteChange(next)) {
+    if (playerUrl.value) activeIndex.value = null
+    focusedIndex.value = null
+  }
+
   try {
-    await $fetch('/api/library/favorite', {
+    const res = await $fetch<{ isFavorite?: boolean }>('/api/library/favorite', {
       method: 'POST',
-      body: { session: libSession(e), trailerRel: e.trailerRel },
+      body: { session: ls, trailerRel },
     })
+    if (idx >= 0 && typeof res.isFavorite === 'boolean') {
+      fullEntries.value[idx].isFavorite = res.isFavorite
+    }
     errorMsg.value = ''
-    await loadTrailers({ preserveFocusTrailerRel: e.trailerRel })
+    if (keepsPlayback && entryLeavesCatalogAfterFavoriteChange(res.isFavorite ?? next)) {
+      if (playerUrl.value) activeIndex.value = null
+      focusedIndex.value = null
+    } else {
+      await refocusAfterTagFilterChange(prevFocusedRel, wasFullRel)
+    }
   } catch (err: unknown) {
+    if (idx >= 0) fullEntries.value[idx].isFavorite = prevFav
     const ex = err as { data?: { statusMessage?: string }; message?: string }
     errorMsg.value =
       ex?.data?.statusMessage || ex?.message || 'Não foi possível gravar o favorito (servidor).'
@@ -3524,8 +3953,8 @@ async function toggleFavoriteAtIndex(i: number) {
  * Atualiza o estado local imediatamente para feedback instantâneo (sem esperar
  * pelo fetch dos trailers); ainda assim re-carrega para garantir consistência.
  */
-async function toggleMemorableAtIndex(i: number) {
-  const e = entries.value[i]
+async function toggleMemorableAtIndex(i: number | null, opts?: { grid?: boolean }) {
+  const e = resolveCatalogActionEntry(i, opts)
   if (!e) return
   const isMemorable = isEntryMemorable(e)
   const next = !isMemorable
@@ -3674,6 +4103,11 @@ async function confirmMoveTitleToSession(targetId: number) {
 }
 
 function applyPlaybackRateToAllVideos(rate: number) {
+  if (isTvLayout.value) {
+    const tv = tvStageVideoRef.value
+    if (tv && Math.abs(tv.playbackRate - rate) > 0.001) tv.playbackRate = rate
+    return
+  }
   const main = mainVideoRef.value
   if (main && Math.abs(main.playbackRate - rate) > 0.001) main.playbackRate = rate
   const preview = previewVideoRef.value
@@ -3694,7 +4128,7 @@ function setPlaybackRate(rate: number) {
 function syncRateFromVideo() {
   // Em FAST, a velocidade do vídeo completo é temporária e não deve sobrescrever o seletor global.
   if (fastPlayEnabled.value && playerUrl.value) return
-  const v = playerUrl.value ? mainVideoRef.value : previewVideoRef.value
+  const v = stageVideoEl()
   if (v && Number.isFinite(v.playbackRate)) {
     if (Math.abs(v.playbackRate - playbackRate.value) < 0.001) return
     setPlaybackRate(v.playbackRate)
@@ -3805,6 +4239,183 @@ function fallbackCatalogStartIndex(len: number): number {
   return Math.floor(Math.random() * len)
 }
 
+type CatalogLoadOpts = {
+  preserveFocusTrailerRel?: string | null
+  focusSlotAfterDelete?: number | null
+}
+
+function applyServerCatalogPayload(data: {
+  serverPlatform?: string
+  adminRevealExplorer?: boolean
+  catalogMode?: 'trailers' | 'main-only'
+  fastPlay?: {
+    rate?: number
+    stepSeconds?: number
+    windowSeconds?: number
+    lastMinuteSeconds?: number
+    fullscreenOnFastPlay?: boolean
+  }
+}) {
+  serverPlatform.value =
+    typeof data.serverPlatform === 'string' ? data.serverPlatform : ''
+  adminRevealExplorer.value = data.adminRevealExplorer === true
+  if (data.fastPlay && typeof data.fastPlay === 'object') {
+    const nRate = Number(data.fastPlay.rate)
+    const nStep = Number(data.fastPlay.stepSeconds)
+    const nWindow = Number(data.fastPlay.windowSeconds)
+    const nLast = Number(data.fastPlay.lastMinuteSeconds)
+    if (Number.isFinite(nRate) && nRate >= 0.5 && nRate <= 4) fastPlayRate.value = nRate
+    if (Number.isFinite(nStep) && nStep >= 10 && nStep <= 600) {
+      fastPlayStepSeconds.value = Math.round(nStep)
+    }
+    if (Number.isFinite(nWindow) && nWindow >= 2 && nWindow <= 120) {
+      fastPlayWindowSeconds.value = Math.round(nWindow)
+    }
+    if (Number.isFinite(nLast) && nLast >= 10 && nLast <= 600) {
+      fastPlayLastMinuteSeconds.value = Math.round(nLast)
+    }
+    const fsOn = data.fastPlay.fullscreenOnFastPlay
+    fastPlayFullscreenOn.value = typeof fsOn === 'boolean' ? fsOn : true
+  }
+  catalogMode.value = data.catalogMode === 'main-only' ? 'main-only' : 'trailers'
+}
+
+async function applyCatalogFocusAfterLoad(
+  list: TrailerListEntry[],
+  opts: CatalogLoadOpts | undefined,
+  keepPlaybackAcrossReload: boolean,
+  preserveRel: string | null,
+) {
+  const qSessionFromRoute = parseShareSessionQuery(route.query.session)
+  const shareRelForThisSession =
+    !preserveRel &&
+    (qSessionFromRoute === null || qSessionFromRoute === sessionIndex.value)
+      ? normalizeShareRelQuery(route.query.rel)
+      : ''
+
+  if (list.length) {
+    if (preserveRel) {
+      const ni = list.findIndex((e) => trailerRelMatchesFocus(e.trailerRel, preserveRel))
+      if (ni >= 0) {
+        focusedIndex.value = ni
+      } else if (keepPlaybackAcrossReload) {
+        focusedIndex.value = null
+      } else {
+        const slotRaw = opts?.focusSlotAfterDelete
+        const slot =
+          typeof slotRaw === 'number' && Number.isFinite(slotRaw)
+            ? Math.min(Math.max(0, Math.trunc(slotRaw)), list.length - 1)
+            : 0
+        focusedIndex.value = slot
+      }
+    } else if (shareRelForThisSession) {
+      const ei = list.findIndex((e) => e.trailerRel === shareRelForThisSession)
+      focusedIndex.value = ei >= 0 ? ei : fallbackCatalogStartIndex(list.length)
+    } else {
+      focusedIndex.value = fallbackCatalogStartIndex(list.length)
+    }
+  } else {
+    focusedIndex.value = null
+  }
+
+  if (keepPlaybackAcrossReload && preserveRel) {
+    const niFull = list.findIndex((e) => trailerRelMatchesFocus(e.trailerRel, preserveRel))
+    if (niFull >= 0) {
+      activeIndex.value = niFull
+      focusedIndex.value = niFull
+    } else {
+      activeIndex.value = null
+      focusedIndex.value = null
+    }
+  } else {
+    activeIndex.value = null
+    playerUrl.value = null
+    setPreviewForIndex(focusedIndex.value)
+  }
+
+  if (list.length && focusedIndex.value !== null) {
+    const tr = list[focusedIndex.value]?.trailerRel
+    if (tr) {
+      await nextTick()
+      requestAnimationFrame(() => {
+        scrollCatalogGridToTrailerRel(tr)
+      })
+    }
+  }
+}
+
+function teardownRecentsLoadObserver() {
+  recentsLoadObserver?.disconnect()
+  recentsLoadObserver = null
+}
+
+function setupRecentsLoadObserver() {
+  teardownRecentsLoadObserver()
+  if (!isTvLayout.value || sessionIndex.value !== RECENTS_SESSION_ID || !recentsHasMore.value) return
+  if (!import.meta.client) return
+  const root = document.querySelector('.trailer-grid-scroll')
+  const sentinel = recentsLoadSentinel.value
+  if (!root || !sentinel) return
+  recentsLoadObserver = new IntersectionObserver(
+    (observed) => {
+      if (observed.some((e) => e.isIntersecting)) void tryLoadRecentsMore('sentinel')
+    },
+    { root, rootMargin: '160px 0px', threshold: 0 },
+  )
+  recentsLoadObserver.observe(sentinel)
+}
+
+async function tryLoadRecentsMore(trigger: 'sentinel' | 'focus' | 'scroll') {
+  if (!isTvLayout.value || sessionIndex.value !== RECENTS_SESSION_ID) return
+  const result = await recentsCatalog.loadMore(trigger)
+  if (!result) return
+  const { trimmedFromTop } = result
+  if (trimmedFromTop > 0 && focusedIndex.value !== null) {
+    focusedIndex.value = Math.max(0, focusedIndex.value - trimmedFromTop)
+    const list = entries.value
+    if (list.length && focusedIndex.value >= list.length) {
+      focusedIndex.value = list.length - 1
+    }
+  }
+  await nextTick()
+  setupRecentsLoadObserver()
+}
+
+async function loadRecentsTrailers(opts?: CatalogLoadOpts) {
+  errorMsg.value = ''
+  searchSessionError.value = ''
+  loading.value = true
+  gridInlinePreviewIndex.value = null
+  catalogGalleryIndex.value = null
+  const preserveRel =
+    typeof opts?.preserveFocusTrailerRel === 'string' ? opts.preserveFocusTrailerRel : null
+  const playingTrailerRel = resolvePlaybackEntryFromUrls()?.trailerRel ?? null
+  const keepPlaybackAcrossReload = Boolean(
+    preserveRel &&
+      playingTrailerRel &&
+      trailerRelMatchesFocus(playingTrailerRel, preserveRel),
+  )
+  try {
+    const data = await recentsCatalog.loadInitial()
+    applyServerCatalogPayload(data)
+    tagSuggestions.value = Array.isArray(data.tagSuggestions) ? data.tagSuggestions : []
+    await nextTick()
+    await applyCatalogFocusAfterLoad(entries.value, opts, keepPlaybackAcrossReload, preserveRel)
+    await refreshRecentPlaybackKeys()
+    await nextTick()
+    setupRecentsLoadObserver()
+  } catch (e: unknown) {
+    const err = e as { data?: { statusMessage?: string }; message?: string }
+    fullEntries.value = []
+    tagSuggestions.value = []
+    recentsCatalog.reset()
+    errorMsg.value =
+      err?.data?.statusMessage || err?.message || 'Não foi possível carregar Destaques.'
+  } finally {
+    loading.value = false
+  }
+}
+
 async function loadTrailers(opts?: {
   preserveFocusTrailerRel?: string | null
   /** Após apagar: se preserveFocusTrailerRel não existir na nova lista, focar este índice (clamp), em vez de aleatório. */
@@ -3829,13 +4440,17 @@ async function loadTrailers(opts?: {
   catalogGalleryIndex.value = null
   const preserveRel =
     typeof opts?.preserveFocusTrailerRel === 'string' ? opts.preserveFocusTrailerRel : null
-  const playingMainRel =
-    playerUrl.value && activeIndex.value !== null && entries.value[activeIndex.value]
-      ? entries.value[activeIndex.value].trailerRel
-      : null
-  const keepFullPlayback = Boolean(
-    preserveRel && playingMainRel && trailerRelMatchesFocus(playingMainRel, preserveRel),
+  const playingTrailerRel = resolvePlaybackEntryFromUrls()?.trailerRel ?? null
+  const keepPlaybackAcrossReload = Boolean(
+    preserveRel &&
+      playingTrailerRel &&
+      trailerRelMatchesFocus(playingTrailerRel, preserveRel),
   )
+  if (sessionIndex.value === RECENTS_SESSION_ID && isTvLayout.value) {
+    await loadRecentsTrailers(opts)
+    return
+  }
+
   const isSearchSession = sessionIndex.value === SEARCH_SESSION_ID
   const searchQ = searchSessionQuery.value.trim()
   const trailerUrl = isSearchSession
@@ -3871,27 +4486,7 @@ async function loadTrailers(opts?: {
         fullscreenOnFastPlay?: boolean
       }
     }>(trailerUrl)
-    serverPlatform.value =
-      typeof data.serverPlatform === 'string' ? data.serverPlatform : ''
-    adminRevealExplorer.value = data.adminRevealExplorer === true
-    if (data.fastPlay && typeof data.fastPlay === 'object') {
-      const nRate = Number(data.fastPlay.rate)
-      const nStep = Number(data.fastPlay.stepSeconds)
-      const nWindow = Number(data.fastPlay.windowSeconds)
-      const nLast = Number(data.fastPlay.lastMinuteSeconds)
-      if (Number.isFinite(nRate) && nRate >= 0.5 && nRate <= 4) fastPlayRate.value = nRate
-      if (Number.isFinite(nStep) && nStep >= 10 && nStep <= 600) {
-        fastPlayStepSeconds.value = Math.round(nStep)
-      }
-      if (Number.isFinite(nWindow) && nWindow >= 2 && nWindow <= 120) {
-        fastPlayWindowSeconds.value = Math.round(nWindow)
-      }
-      if (Number.isFinite(nLast) && nLast >= 10 && nLast <= 600) {
-        fastPlayLastMinuteSeconds.value = Math.round(nLast)
-      }
-      const fsOn = data.fastPlay.fullscreenOnFastPlay
-      fastPlayFullscreenOn.value = typeof fsOn === 'boolean' ? fsOn : true
-    }
+    applyServerCatalogPayload(data)
     catalogMode.value =
       !isSearchSession && data.catalogMode === 'main-only' ? 'main-only' : 'trailers'
     fullEntries.value = data.items.map((e) => ({
@@ -3901,68 +4496,13 @@ async function loadTrailers(opts?: {
       highlightedAtMs: e.highlightedAtMs,
     }))
     tagSuggestions.value = Array.isArray(data.tagSuggestions) ? data.tagSuggestions : []
-    const tag = catalogTagFilter.value
-    const filtered = tag
-      ? fullEntries.value.filter((e) => (e.tags ?? []).includes(tag))
-      : [...fullEntries.value]
-    const list =
-      sessionIndex.value === RECENTS_SESSION_ID || isSearchSession ? [...filtered] : sortCatalogList(filtered)
-
-    const qSessionFromRoute = parseShareSessionQuery(route.query.session)
-    const shareRelForThisSession =
-      !preserveRel &&
-      (qSessionFromRoute === null || qSessionFromRoute === sessionIndex.value)
-        ? normalizeShareRelQuery(route.query.rel)
-        : ''
-
-    if (list.length) {
-      if (preserveRel) {
-        const ni = list.findIndex((e) => trailerRelMatchesFocus(e.trailerRel, preserveRel))
-        if (ni >= 0) {
-          focusedIndex.value = ni
-        } else {
-          const slotRaw = opts?.focusSlotAfterDelete
-          const slot =
-            typeof slotRaw === 'number' && Number.isFinite(slotRaw)
-              ? Math.min(Math.max(0, Math.trunc(slotRaw)), list.length - 1)
-              : 0
-          focusedIndex.value = slot
-        }
-      } else if (shareRelForThisSession) {
-        const ei = list.findIndex((e) => e.trailerRel === shareRelForThisSession)
-        focusedIndex.value = ei >= 0 ? ei : fallbackCatalogStartIndex(list.length)
-      } else {
-        focusedIndex.value = fallbackCatalogStartIndex(list.length)
-      }
-    } else {
-      focusedIndex.value = null
-    }
-
-    if (keepFullPlayback && preserveRel) {
-      const niFull = list.findIndex((e) => trailerRelMatchesFocus(e.trailerRel, preserveRel))
-      if (niFull >= 0) {
-        activeIndex.value = niFull
-        focusedIndex.value = niFull
-      } else {
-        activeIndex.value = null
-        playerUrl.value = null
-        setPreviewForIndex(focusedIndex.value)
-      }
-    } else {
-      activeIndex.value = null
-      playerUrl.value = null
-      setPreviewForIndex(focusedIndex.value)
-    }
-
-    if (list.length && focusedIndex.value !== null) {
-      const tr = list[focusedIndex.value]?.trailerRel
-      if (tr) {
-        await nextTick()
-        requestAnimationFrame(() => {
-          scrollCatalogGridToTrailerRel(tr)
-        })
-      }
-    }
+    await nextTick()
+    await applyCatalogFocusAfterLoad(
+      entries.value,
+      opts,
+      keepPlaybackAcrossReload,
+      preserveRel,
+    )
     await refreshRecentPlaybackKeys()
   } catch (e: unknown) {
     const err = e as { data?: { statusMessage?: string }; message?: string }
@@ -4218,12 +4758,32 @@ watch(
   },
 )
 
+watch(entries, () => {
+  syncCatalogIndicesToPlayback()
+}, { flush: 'post' })
+
+watch(focusedIndex, (fi) => {
+  if (!isTvLayout.value || sessionIndex.value !== RECENTS_SESSION_ID || fi === null) return
+  const n = entries.value.length
+  if (n && recentsHasMore.value && fi >= n - 2) void tryLoadRecentsMore('focus')
+})
+
+watch([entries, recentsHasMore, catalogGridCollapsed, isTvLayout], () => {
+  if (!isTvLayout.value || sessionIndex.value !== RECENTS_SESSION_ID) return
+  void nextTick(() => setupRecentsLoadObserver())
+})
+
 watch([sessionIndex, focusedIndex, activeIndex, playerUrl, favoriteCatalogFilter, destaquesCatalogFilter], () => {
   syncShareUrlFromState()
 }, { flush: 'post' })
 
 watch(sessionIndex, (si) => {
   if (si === RECENTS_SESSION_ID) applyDestaquesCatalogSortDefaults()
+  else {
+    catalogOriginFilter.value = null
+    teardownRecentsLoadObserver()
+    recentsCatalog.reset()
+  }
 })
 
 watch(
@@ -4281,6 +4841,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  teardownRecentsLoadObserver()
   stopFastPlay(false)
   void flushMainProgressIfAny()
   if (gridChromeLongTimer) {
@@ -4719,6 +5280,34 @@ onUnmounted(() => {
   color: #eff6ff;
 }
 
+.catalog-top-tags--origin .catalog-top-tags-title {
+  color: #c9a86a;
+}
+
+.catalog-top-tag--origin {
+  border-color: #6b5a38;
+  background: #2a2418;
+  color: #e8d4a8;
+}
+
+.catalog-top-tag--origin.catalog-top-tag--active {
+  border-color: #c9a86a;
+  background: #3d3420;
+  color: #fff6e0;
+}
+
+.catalog-top-tag-count {
+  margin-left: 0.28rem;
+  font-size: 0.68rem;
+  opacity: 0.75;
+}
+
+.tag-filter-clear--origin {
+  border-color: #6b5a38;
+  background: #2a2418;
+  color: #e8d4a8;
+}
+
 .catalog-head-tools {
   display: flex;
   flex-wrap: wrap;
@@ -5021,6 +5610,42 @@ onUnmounted(() => {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding: 0 clamp(0.35rem, 1.2vw, 0.65rem) 0.5rem;
+}
+
+.tv-grid-spacer {
+  grid-column: 1 / -1;
+  width: 100%;
+  pointer-events: none;
+}
+
+.grid-tile-thumb--tv-placeholder {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 4.5rem;
+  background: linear-gradient(135deg, #12141a 0%, #1a1d24 50%, #12141a 100%);
+}
+
+.recents-load-sentinel {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 2px;
+  pointer-events: none;
+}
+
+.recents-load-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.78rem;
+  color: #8ab4f8;
+  text-align: center;
+}
+
+.recents-load-hint--status {
+  color: #b8d4a0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .catalog-grid-scroll-wrap {
@@ -5448,6 +6073,60 @@ onUnmounted(() => {
   border-color: #fcc934;
   color: #ffe7a3;
   background: #2a2415;
+}
+
+.grid-tile-tags-origin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.12rem;
+  margin-top: 0.2rem;
+  max-width: 100%;
+}
+
+.grid-tile-tags-origin-label {
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #9aa0a6;
+  line-height: 1;
+}
+
+.grid-tile-tags--origin-chips {
+  margin-top: 0;
+}
+
+.grid-tile-tag--origin {
+  background: #1e2a22;
+  color: #9fd4a8;
+  border-color: #3d5c44;
+}
+
+.tag-chip-list--origin {
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid #2d333b;
+}
+
+.tag-chip-list-label {
+  flex: 0 0 100%;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #9aa0a6;
+  margin-bottom: 0.1rem;
+}
+
+.tag-chip--origin {
+  cursor: default;
+  background: #1e2a22;
+  color: #b8e0bf;
+  border-color: #3d5c44;
+}
+
+.tag-chip--origin:hover {
+  background: #243328;
+  border-color: #4a7354;
 }
 
 .grid-tile:has(.grid-tile-select:hover) {

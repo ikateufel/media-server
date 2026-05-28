@@ -5,7 +5,7 @@
       "name": "Anexar: Nuxt dev (porta 9230)",
       "type": "node",
       "request": "attach",
-      "port": 9230,
+      "port": 9236,
       "restart": true,
       "skipFiles": ["<node_internals>/**"],
       "localRoot": "${workspaceFolder}",
