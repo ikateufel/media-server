@@ -1,6 +1,203 @@
 <template>
-  <div class="layout" :class="{ 'layout--tv-silk': isTvLayout, 'layout--theater': theaterMode }">
+  <div
+    class="layout"
+    :class="{
+      'layout--tv-silk': isTvLayout,
+      'layout--tv-minimal': isTvLayout,
+      'layout--theater': theaterMode && !isTvLayout,
+    }"
+  >
     <div v-if="errorMsg" class="error" role="alert">{{ errorMsg }}</div>
+
+    <!-- Modo TV: vídeo + tags de pasta (centro) + rail lateral só miniaturas. -->
+    <div v-if="isTvLayout" class="tv-minimal">
+      <div class="tv-minimal-main">
+        <video
+          v-show="tvMinimalVideoSrc"
+          ref="tvMinimalVideoRef"
+          class="tv-minimal-video"
+          :class="{ 'tv-minimal-video--full': tvMinimalIsFull, 'stage-video--fast-play': fastPlayEnabled && tvMinimalIsFull }"
+          playsinline
+          :controls="tvMinimalIsFull ? mainVideoNativeControls : true"
+          :muted="tvMinimalIsFull ? false : previewTrailerMuted"
+          :preload="videoPreloadAttr"
+          @loadeddata="onTvMinimalLoadedData"
+          @loadedmetadata="onTvMinimalLoadedMetadata"
+          @timeupdate="onTvMinimalTimeUpdate"
+          @seeked="onTvMinimalSeeked"
+          @play="syncMainVideoPausedForUi"
+          @pause="syncMainVideoPausedForUi"
+          @ended="onTvMinimalEnded"
+          @ratechange="syncRateFromVideo"
+          @volumechange="onPreviewTrailerVolumeChange"
+          @click="onTvMinimalSurfaceClick"
+          @error="onStageVideoError"
+        />
+        <div v-if="loading" class="tv-minimal-overlay">A carregar lista…</div>
+        <div v-else-if="!entries.length && !loading" class="tv-minimal-overlay">
+          Nenhum título nesta sessão.
+        </div>
+        <div v-else-if="!tvMinimalVideoSrc" class="tv-minimal-overlay">
+          Sem trailer para este título.
+        </div>
+        <div class="tv-minimal-bar" role="toolbar" aria-label="Navegação e filtros">
+          <div class="tv-minimal-bar-left">
+            <div class="tv-minimal-actions" aria-label="Navegação">
+              <button
+                type="button"
+                class="tv-minimal-btn"
+                :disabled="entries.length < 2 || tvMinimalIsFull"
+                aria-label="Trailer anterior"
+                @click="tvMinimalPrev"
+              >
+                ◀
+              </button>
+              <button
+                v-if="!tvMinimalIsFull"
+                type="button"
+                class="tv-minimal-btn tv-minimal-btn--primary"
+                :disabled="!selectedEntry?.hasMain"
+                :title="selectedEntry && !selectedEntry.hasMain ? 'Completo em falta' : 'Tocar vídeo completo'"
+                aria-label="Tocar vídeo completo"
+                @click="openFullFromPreview"
+              >
+                Completo
+              </button>
+              <button
+                v-else
+                type="button"
+                class="tv-minimal-btn tv-minimal-btn--secondary"
+                aria-label="Voltar ao trailer"
+                title="Voltar ao trailer"
+                @click="onTvMinimalBackToTrailer"
+              >
+                Trailer
+              </button>
+              <div v-if="tvMinimalIsFull" class="tv-minimal-rate">
+                <label for="rate-select-tv-minimal" class="tv-minimal-rate-label">Vel.</label>
+                <select
+                  id="rate-select-tv-minimal"
+                  class="tv-minimal-rate-select"
+                  :value="playbackRate"
+                  :disabled="fastPlayEnabled"
+                  :title="fastPlayEnabled ? 'Desactive FAST para mudar a velocidade manualmente' : 'Velocidade do vídeo completo'"
+                  @change="setPlaybackRate(Number(($event.target as HTMLSelectElement).value))"
+                >
+                  <option v-for="r in PLAYBACK_RATES" :key="r" :value="r">
+                    {{ r === 1 ? '1×' : `${r}×` }}
+                  </option>
+                </select>
+              </div>
+              <button
+                type="button"
+                class="tv-minimal-btn"
+                :disabled="entries.length < 2 || tvMinimalIsFull"
+                aria-label="Próximo trailer"
+                @click="tvMinimalNext"
+              >
+                ▶
+              </button>
+            </div>
+            <div
+              v-if="sessionIndex === RECENTS_SESSION_ID && tvOriginTags.length"
+              class="tv-minimal-origin"
+              role="toolbar"
+              aria-label="Filtrar Destaques por biblioteca de origem"
+            >
+              <span class="tv-minimal-origin-label">ORIGEM</span>
+              <button
+                v-for="row in tvOriginTags"
+                :key="row.tag"
+                type="button"
+                class="tv-minimal-origin-btn"
+                :class="{ 'tv-minimal-origin-btn--active': catalogOriginFilter === row.tag }"
+                :title="`${row.count} título(s) com origem «${row.tag}»`"
+                @click="onOriginTagPick(row.tag)"
+              >
+                {{ row.tag }}
+                <span class="tv-minimal-origin-count">{{ row.count }}</span>
+              </button>
+              <button
+                v-if="catalogOriginFilter"
+                type="button"
+                class="tv-minimal-origin-btn tv-minimal-origin-btn--clear"
+                aria-label="Limpar filtro de origem"
+                @click="clearCatalogOriginFilter"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+          <div v-if="tvMinimalCaption" class="tv-minimal-meta">
+            <p class="tv-minimal-title" :title="tvMinimalCaption">
+              {{ tvMinimalCaption }}
+            </p>
+            <p v-if="entries.length && !tvMinimalIsFull" class="tv-minimal-pos">
+              {{ (focusedIndex ?? 0) + 1 }} / {{ entries.length }}
+            </p>
+            <p v-else-if="tvMinimalIsFull" class="tv-minimal-pos tv-minimal-pos--full">
+              Completo
+            </p>
+          </div>
+        </div>
+      </div>
+      <aside class="tv-minimal-rail" aria-label="Lista de títulos">
+        <button
+          v-if="entries.length"
+          type="button"
+          class="tv-minimal-rail-scroll-btn"
+          aria-label="Lista para cima"
+          title="Subir na lista"
+          @click="scrollTvMinimalRail(-1)"
+        >
+          ▲
+        </button>
+        <div ref="tvMinimalRailScroll" class="tv-minimal-rail-scroll">
+          <button
+            v-for="(entry, i) in entries"
+            :key="`${catalogOriginFilter ?? ''}:${libSession(entry)}:${entry.trailerRel}`"
+            type="button"
+            class="tv-minimal-thumb"
+            :class="{ 'tv-minimal-thumb--active': focusedIndex === i }"
+            :title="entry.label"
+            :aria-label="`Tocar ${entry.label}`"
+            :aria-current="focusedIndex === i ? 'true' : undefined"
+            @click="tvMinimalSelectIndex(i)"
+          >
+            <img
+              v-if="entry.previewRel"
+              class="tv-minimal-thumb-img"
+              decoding="async"
+              alt=""
+              :src="catalogPreviewFrameUrl(entry.previewRel, libSession(entry), 0)"
+            />
+            <span v-else class="tv-minimal-thumb-ph" aria-hidden="true" />
+          </button>
+          <div
+            v-if="sessionIndex === RECENTS_SESSION_ID && recentsHasMore && recentsPaginationEnabled"
+            ref="recentsLoadSentinel"
+            class="recents-load-sentinel"
+            aria-hidden="true"
+          />
+          <p
+            v-if="recentsPaginationEnabled && recentsLoadingMore"
+            class="tv-minimal-rail-hint"
+          >
+            +
+          </p>
+        </div>
+        <button
+          v-if="entries.length"
+          type="button"
+          class="tv-minimal-rail-scroll-btn"
+          aria-label="Lista para baixo"
+          title="Descer na lista"
+          @click="scrollTvMinimalRail(1)"
+        >
+          ▼
+        </button>
+      </aside>
+    </div>
 
     <div
       v-if="toastVisible"
@@ -13,6 +210,7 @@
     </div>
 
     <div
+      v-if="!isTvLayout"
       class="main-stack"
       :class="{
         'main-stack--catalog-collapsed': catalogGridCollapsed,
@@ -1402,7 +1600,7 @@
               aria-hidden="true"
             />
             <div
-              v-if="isTvLayout && sessionIndex === RECENTS_SESSION_ID && recentsHasMore"
+              v-if="isTvLayout && sessionIndex === RECENTS_SESSION_ID && recentsHasMore && recentsPaginationEnabled"
               ref="recentsLoadSentinel"
               class="recents-load-sentinel"
               aria-hidden="true"
@@ -1443,7 +1641,7 @@
       </aside>
     </div>
 
-    <Teleport to="body">
+    <Teleport v-if="!isTvLayout" to="body">
       <div
         v-show="sessionMenuOpen"
         id="session-menu-backdrop"
@@ -1901,7 +2099,9 @@ const recentsTotal = recentsCatalog.total
 const recentsHasMore = recentsCatalog.hasMore
 const recentsLoadingMore = recentsCatalog.loadingMore
 const recentsLoadStatusLine = recentsCatalog.loadStatusLine
+const recentsPaginationEnabled = recentsCatalog.paginationEnabled
 const recentsLoadSentinel = ref<HTMLElement | null>(null)
+const tvMinimalRailScroll = ref<HTMLElement | null>(null)
 let recentsLoadObserver: IntersectionObserver | null = null
 
 /** Modo TV (`?tv=1`): uma imagem estática na grelha; sem vídeo inline no cartão. */
@@ -1992,7 +2192,8 @@ const entries = computed(() => {
         return list.includes(tag)
       })
     : raw
-  if (origin) {
+  // Destaques: filtro ORIGEM só no servidor (`librarySession`); evita lista vazia com filtro duplo.
+  if (origin && si !== RECENTS_SESSION_ID) {
     const want = origin.trim().toLowerCase()
     filtered = filtered.filter((e) =>
       entryOriginTags(e).some((t) => t.trim().toLowerCase() === want),
@@ -2105,20 +2306,31 @@ const sessionMenuTopTags = computed(() => {
     .map(([tag]) => tag)
 })
 
-/** Bibliotecas do menu esquerdo presentes em Destaques (agregado, sem subpastas). */
+/** Bibliotecas do menu em Destaques (API: lista SQLite completa, não só a janela em memória). */
 const sessionMenuOriginTags = computed(() => {
   if (sessionIndex.value !== RECENTS_SESSION_ID) return []
-  const counts = new Map<string, number>()
-  for (const entry of fullEntries.value) {
-    for (const t of entryOriginTags(entry)) {
-      counts.set(t, (counts.get(t) ?? 0) + 1)
-    }
-  }
-  return [...counts.entries()]
-    .sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : a[0].localeCompare(b[0], undefined, { sensitivity: 'base' })))
-    .slice(0, 12)
-    .map(([tag, count]) => ({ tag, count }))
+  return recentsCatalog.originCounts.value
 })
+
+/** Tags ORIGEM no modo TV — só Destaques. */
+const tvOriginTags = computed(() => {
+  if (!isTvLayout.value || sessionIndex.value !== RECENTS_SESSION_ID) return []
+  return sessionMenuOriginTags.value
+})
+
+/** Sessão da biblioteca (menu) para o filtro ORIGEM activo em Destaques. */
+function recentsLibrarySessionFilter(): number | null {
+  const tag = catalogOriginFilter.value?.trim()
+  if (!tag) return null
+  const fromApi = recentsCatalog.originCounts.value.find((r) => r.tag === tag)
+  if (fromApi && fromApi.session >= 0) return fromApi.session
+  const sid = sessions.value.find((s) => s.id >= 0 && s.label?.trim() === tag)?.id
+  return sid !== undefined && sid >= 0 ? sid : null
+}
+
+function syncRecentsOriginApiFilter() {
+  recentsCatalog.setLibrarySessionFilter(recentsLibrarySessionFilter())
+}
 const searchSessionActive = computed(() => sessionIndex.value === SEARCH_SESSION_ID)
 
 /** Alterna o filtro "Só vistos" mantendo o foco no vídeo actual sempre que possível. */
@@ -2259,17 +2471,17 @@ const {
 } = useTvStageVideo(isTvLayout, previewUrl, playerUrl)
 
 function mainStageVideoEl(): HTMLVideoElement | null {
-  if (isTvLayout.value) return tvStageVideoRef.value
+  if (isTvLayout.value) return tvMinimalVideoRef.value
   return mainVideoRef.value
 }
 
 function stageVideoEl(): HTMLVideoElement | null {
-  if (isTvLayout.value) return tvStageVideoRef.value
+  if (isTvLayout.value) return tvMinimalVideoRef.value
   return playerUrl.value ? mainVideoRef.value : previewVideoRef.value
 }
 
 function previewStageVideoEl(): HTMLVideoElement | null {
-  if (isTvLayout.value) return tvStageVideoRef.value
+  if (isTvLayout.value) return tvMinimalVideoRef.value
   return previewVideoRef.value
 }
 
@@ -2278,6 +2490,143 @@ const {
   tvGridPaddingTopPx,
   tvGridPaddingBottomPx,
 } = useTvCatalogVirtualGrid(isTvLayout, entries, focusedIndex)
+
+/** Modo TV minimal: um unico video no palco (sem grelha). */
+const tvMinimalVideoRef = ref<HTMLVideoElement | null>(null)
+
+const tvMinimalVideoSrc = computed(() => {
+  if (!isTvLayout.value) return null
+  if (playerUrl.value) return playerUrl.value
+  if (previewUrl.value) return previewUrl.value
+  return null
+})
+
+const tvMinimalIsFull = computed(() => isTvLayout.value && !!playerUrl.value)
+
+const tvMinimalCaption = computed(() => {
+  const e =
+    tvMinimalIsFull.value && activeIndex.value !== null
+      ? entries.value[activeIndex.value]
+      : selectedEntry.value
+  if (!e) return ''
+  return e.label?.trim() || e.mainFilename || ''
+})
+
+function applyTvMinimalVideoSrc(url: string | null) {
+  const v = tvMinimalVideoRef.value
+  if (!v) return
+  releaseVideoElement(v)
+  if (!url) return
+  v.src = url
+  v.load()
+}
+
+watch(
+  tvMinimalVideoSrc,
+  (url) => {
+    if (!isTvLayout.value) return
+    void nextTick(() => applyTvMinimalVideoSrc(url))
+  },
+  { flush: 'post' },
+)
+
+watch(isTvLayout, (on) => {
+  if (on) {
+    void nextTick(() => applyTvMinimalVideoSrc(tvMinimalVideoSrc.value))
+  } else {
+    releaseVideoElement(tvMinimalVideoRef.value)
+  }
+})
+
+/** Arranca o trailer no índice (modo TV só vídeo). */
+function ensureTvMinimalPlayback(index = 0) {
+  if (!isTvLayout.value) return
+  teardownRecentsLoadObserver()
+  const list = entries.value
+  if (!list.length) {
+    previewUrl.value = null
+    playerUrl.value = null
+    focusedIndex.value = null
+    applyTvMinimalVideoSrc(null)
+    return
+  }
+  const i = Math.min(Math.max(0, Math.floor(index)), list.length - 1)
+  playerUrl.value = null
+  activeIndex.value = null
+  gridInlinePreviewIndex.value = null
+  focusedIndex.value = i
+  setPreviewForIndex(i)
+  void nextTick(() => applyTvMinimalVideoSrc(tvMinimalVideoSrc.value))
+  if (import.meta.client) {
+    console.info(`[VP TV] trailer ${i + 1}/${list.length}: ${list[i]?.label ?? ''}`)
+  }
+}
+
+function tvMinimalPrev() {
+  goToPrevTrailer()
+}
+
+function tvMinimalNext() {
+  goToNextTrailer()
+}
+
+function tvMinimalSelectIndex(i: number) {
+  if (!entries.value[i]) return
+  ensureTvMinimalPlayback(i)
+  void nextTick(() => {
+    const root = tvMinimalRailScroll.value
+    const btn = root?.querySelectorAll<HTMLElement>('.tv-minimal-thumb')[i]
+    btn?.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+  })
+}
+
+function onTvMinimalLoadedMetadata() {
+  if (!isTvLayout.value || !playerUrl.value) return
+  onMainVideoLoadedMetadata()
+}
+
+function onTvMinimalLoadedData() {
+  if (!isTvLayout.value) return
+  errorMsg.value = ''
+  const el = tvMinimalVideoRef.value
+  if (!el) return
+  if (playerUrl.value) {
+    el.playbackRate = fastPlayEnabled.value ? fastPlayRate.value : playbackRate.value
+  } else {
+    el.playbackRate = 1
+  }
+  void el.play().catch(() => {})
+}
+
+function onTvMinimalTimeUpdate() {
+  if (!isTvLayout.value || !playerUrl.value) return
+  onMainVideoTimeUpdate()
+}
+
+function onTvMinimalSeeked() {
+  if (!isTvLayout.value || !playerUrl.value) return
+  onMainVideoSeeked()
+}
+
+function onTvMinimalSurfaceClick() {
+  if (!isTvLayout.value) return
+  if (playerUrl.value) onMainVideoSurfaceClick()
+}
+
+function onTvMinimalEnded() {
+  if (!isTvLayout.value) return
+  if (playerUrl.value) {
+    onMainVideoEnded()
+    return
+  }
+  void markCurrentTrailerWatchedFireAndForget()
+  goToNextTrailer()
+}
+
+async function onTvMinimalBackToTrailer() {
+  await closeFullVideo()
+  void nextTick(() => applyTvMinimalVideoSrc(tvMinimalVideoSrc.value))
+}
 
 const playbackRate = ref(1)
 const fastPlayEnabled = ref(false)
@@ -2294,7 +2643,7 @@ let fastPlayProgrammaticSeek = false
 const mainVideoPausedForUi = ref(false)
 
 function syncMainVideoPausedForUi() {
-  const v = isTvLayout.value && playerUrl.value ? tvStageVideoRef.value : mainVideoRef.value
+  const v = playerUrl.value ? mainStageVideoEl() : mainVideoRef.value
   if (!v) {
     mainVideoPausedForUi.value = false
     return
@@ -2575,19 +2924,44 @@ function onTopTagPick(tag: string) {
   void refocusAfterTagFilterChange(prevFocusedRel, wasFullRel)
 }
 
-function onOriginTagPick(tag: string) {
+async function reloadRecentsAfterOriginFilterChange() {
+  teardownRecentsLoadObserver()
+  playerUrl.value = null
+  activeIndex.value = null
+  previewUrl.value = null
+  focusedIndex.value = null
+  syncRecentsOriginApiFilter()
+  recentsCatalog.setPaginationEnabled(false)
+  if (isTvLayout.value) {
+    await loadRecentsTrailers()
+    return
+  }
+  await loadTrailers()
+}
+
+async function onOriginTagPick(tag: string) {
   if (!tag) return
-  const { prevFocusedRel, wasFullRel } = captureCatalogFilterFocusSnapshot()
+  if (loading.value) return
   catalogTagFilter.value = null
   catalogOriginFilter.value = catalogOriginFilter.value === tag ? null : tag
   sessionMenuOpen.value = false
+  if (sessionIndex.value === RECENTS_SESSION_ID) {
+    await reloadRecentsAfterOriginFilterChange()
+    return
+  }
+  const { prevFocusedRel, wasFullRel } = captureCatalogFilterFocusSnapshot()
   void refocusAfterTagFilterChange(prevFocusedRel, wasFullRel)
 }
 
-function clearCatalogOriginFilter() {
+async function clearCatalogOriginFilter() {
   if (!catalogOriginFilter.value) return
-  const { prevFocusedRel, wasFullRel } = captureCatalogFilterFocusSnapshot()
+  if (loading.value) return
   catalogOriginFilter.value = null
+  if (sessionIndex.value === RECENTS_SESSION_ID) {
+    await reloadRecentsAfterOriginFilterChange()
+    return
+  }
+  const { prevFocusedRel, wasFullRel } = captureCatalogFilterFocusSnapshot()
   void refocusAfterTagFilterChange(prevFocusedRel, wasFullRel)
 }
 
@@ -2658,8 +3032,45 @@ function scrollCatalogApplyStep(dir: 1 | -1): boolean {
   return true
 }
 
+/** Um card do rail TV (altura + gap). */
+function tvMinimalRailStepPx(): number {
+  const root = tvMinimalRailScroll.value
+  if (!root) return 80
+  const thumb = root.querySelector('.tv-minimal-thumb')
+  if (thumb instanceof HTMLElement) {
+    const gap = 6
+    return Math.max(48, thumb.offsetHeight + gap)
+  }
+  return 80
+}
+
+/** ▲▼ no rail lateral do modo TV minimal. */
+function scrollTvMinimalRail(dir: 1 | -1) {
+  const root = tvMinimalRailScroll.value
+  if (!root || !entries.value.length) return
+  const maxScroll = Math.max(0, root.scrollHeight - root.clientHeight)
+  if (maxScroll <= 0) return
+  const step = tvMinimalRailStepPx()
+  const dest = Math.min(maxScroll, Math.max(0, root.scrollTop + dir * step))
+  if (dest === root.scrollTop) return
+  root.scrollTo({ top: dest, behavior: 'auto' })
+  if (
+    dir === 1 &&
+    sessionIndex.value === RECENTS_SESSION_ID &&
+    recentsPaginationEnabled.value &&
+    recentsHasMore.value &&
+    dest >= maxScroll - step
+  ) {
+    void tryLoadRecentsMore('scroll')
+  }
+}
+
 /** Botões ▲▼ no catálogo (Silk): não dependem da barra nativa nem das teclas de volume. */
 function scrollCatalogByDirection(dir: 1 | -1) {
+  if (isTvLayout.value) {
+    scrollTvMinimalRail(dir)
+    return
+  }
   if (!entries.value.length) return
   const wasCollapsed = catalogGridCollapsed.value
   if (wasCollapsed) catalogGridCollapsed.value = false
@@ -2671,7 +3082,15 @@ function scrollCatalogByDirection(dir: 1 | -1) {
   if (dir === 1 && sessionIndex.value === RECENTS_SESSION_ID && isTvLayout.value) {
     const fi = focusedIndex.value
     const n = entries.value.length
-    if (fi !== null && n && recentsHasMore.value && fi >= n - 2) void tryLoadRecentsMore('scroll')
+    if (
+      fi !== null &&
+      n &&
+      recentsPaginationEnabled.value &&
+      recentsHasMore.value &&
+      fi >= n - 2
+    ) {
+      void tryLoadRecentsMore('scroll')
+    }
   }
 }
 
@@ -2723,7 +3142,19 @@ function onGlobalDocumentKeydown(e: KeyboardEvent) {
   if (isTvLayout.value) {
     if (!documentTargetIsFormField(e.target)) {
       const k = e.key
-      if (k === 'MediaFastForward' || k === 'MediaTrackNext') {
+      if (k === 'ArrowRight' || k === 'ArrowDown') {
+        if (entries.value.length) {
+          e.preventDefault()
+          tvMinimalNext()
+          return
+        }
+      } else if (k === 'ArrowLeft' || k === 'ArrowUp') {
+        if (entries.value.length) {
+          e.preventDefault()
+          tvMinimalPrev()
+          return
+        }
+      } else if (k === 'MediaFastForward' || k === 'MediaTrackNext') {
         if (entries.value.length) {
           e.preventDefault()
           goToNextTrailer()
@@ -2947,11 +3378,14 @@ function setPreviewForIndex(i: number | null) {
     playerUrl.value = null
     activeIndex.value = null
   }
-  if (isTvLayout.value) releaseVideoElement(tvStageVideoRef.value)
+  if (isTvLayout.value) {
+    releaseVideoElement(tvMinimalVideoRef.value)
+    releaseVideoElement(tvStageVideoRef.value)
+  }
   previewUrl.value = null
   if (i === null || !entries.value[i]) return
   const e = entries.value[i]
-  if (!e.previewRel) return
+  if (!isTvLayout.value && !e.previewRel) return
   previewUrl.value = apiVideoUrl(e.trailerRel, libSession(e))
 }
 
@@ -2962,6 +3396,13 @@ function setTrailerIndex(i: number) {
   setPreviewForIndex(i)
   void nextTick(() => {
     requestAnimationFrame(() => {
+      if (isTvLayout.value) {
+        const root = tvMinimalRailScroll.value
+        const btn = root?.querySelectorAll<HTMLElement>('.tv-minimal-thumb')[i]
+        btn?.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+        applyTvMinimalVideoSrc(tvMinimalVideoSrc.value)
+        return
+      }
       const rel = entries.value[i]?.trailerRel
       if (rel) scrollCatalogGridToTrailerRel(rel)
     })
@@ -3199,14 +3640,15 @@ function shouldAutoFullscreenOnLandscape() {
 }
 
 function activeVideoEl(): HTMLVideoElement | null {
+  if (isTvLayout.value) return tvMinimalVideoRef.value
   return stageVideoEl()
 }
 
 /** Alvo do fullscreen automático em landscape: trailer → contentor com botões; vídeo completo → elemento vídeo. */
 function fullscreenTargetForAutorient(): HTMLElement | null {
   if (isTvLayout.value) {
-    if (playerUrl.value) return tvStageVideoRef.value
-    return previewFullscreenWrapRef.value ?? tvStageVideoRef.value
+    if (playerUrl.value) return tvMinimalVideoRef.value ?? tvStageVideoRef.value
+    return tvMinimalVideoRef.value ?? previewFullscreenWrapRef.value ?? tvStageVideoRef.value
   }
   if (playerUrl.value) return mainVideoRef.value
   return previewFullscreenWrapRef.value ?? previewVideoRef.value
@@ -3357,7 +3799,7 @@ function onListItemClick(i: number) {
 async function closeFullVideo() {
   stopFastPlay(false)
   await flushMainProgressIfAny()
-  if (isTvLayout.value) releaseVideoElement(tvStageVideoRef.value)
+  if (isTvLayout.value) releaseVideoElement(tvMinimalVideoRef.value)
   playerUrl.value = null
   activeIndex.value = null
 }
@@ -3399,7 +3841,7 @@ async function openVideo(i: number) {
   }
   fullVideoResumeAt.value = resumeAt
   activeIndex.value = i
-  if (isTvLayout.value) releaseVideoElement(tvStageVideoRef.value)
+  if (isTvLayout.value) releaseVideoElement(tvMinimalVideoRef.value)
   playerUrl.value = apiVideoUrl(entry.mainRel, libSession(entry))
   nextTick(() => {
     const v = mainStageVideoEl()
@@ -3660,6 +4102,7 @@ function resolveCatalogActionEntry(
 
 /** Limpa índices da grelha se já não apontam ao vídeo que está a tocar. */
 function syncCatalogIndicesToPlayback() {
+  if (loading.value) return
   if (!previewUrl.value && !playerUrl.value) return
   const playback = resolvePlaybackEntryFromUrls()
   if (!playback) return
@@ -3788,6 +4231,27 @@ function clearCatalogTagFilter() {
 async function refocusAfterTagFilterChange(prevFocusedRel: string | null, wasFullRel: string | null) {
   await nextTick()
   const list = entries.value
+
+  if (isTvLayout.value) {
+    if (!list.length) {
+      ensureTvMinimalPlayback(0)
+      return
+    }
+    if (wasFullRel) {
+      const ni = findEntryIndexInEntries(wasFullRel)
+      ensureTvMinimalPlayback(ni >= 0 ? ni : 0)
+      return
+    }
+    if (prevFocusedRel) {
+      const ni = findEntryIndexInEntries(prevFocusedRel)
+      if (ni >= 0) {
+        ensureTvMinimalPlayback(ni)
+        return
+      }
+    }
+    ensureTvMinimalPlayback(0)
+    return
+  }
 
   if (!list.length) {
     if (playerUrl.value || previewUrl.value) {
@@ -4104,8 +4568,14 @@ async function confirmMoveTitleToSession(targetId: number) {
 
 function applyPlaybackRateToAllVideos(rate: number) {
   if (isTvLayout.value) {
-    const tv = tvStageVideoRef.value
-    if (tv && Math.abs(tv.playbackRate - rate) > 0.001) tv.playbackRate = rate
+    const minimal = tvMinimalVideoRef.value
+    if (minimal && Math.abs(minimal.playbackRate - rate) > 0.001) {
+      minimal.playbackRate = rate
+    }
+    const stage = tvStageVideoRef.value
+    if (stage && stage !== minimal && Math.abs(stage.playbackRate - rate) > 0.001) {
+      stage.playbackRate = rate
+    }
     return
   }
   const main = mainVideoRef.value
@@ -4128,6 +4598,8 @@ function setPlaybackRate(rate: number) {
 function syncRateFromVideo() {
   // Em FAST, a velocidade do vídeo completo é temporária e não deve sobrescrever o seletor global.
   if (fastPlayEnabled.value && playerUrl.value) return
+  // No modo TV minimal, o select de velocidade só existe no completo — não sincronizar a partir do trailer.
+  if (isTvLayout.value && !playerUrl.value) return
   const v = stageVideoEl()
   if (v && Number.isFinite(v.playbackRate)) {
     if (Math.abs(v.playbackRate - playbackRate.value) < 0.001) return
@@ -4333,6 +4805,11 @@ async function applyCatalogFocusAfterLoad(
     setPreviewForIndex(focusedIndex.value)
   }
 
+  if (isTvLayout.value) {
+    if (list.length) ensureTvMinimalPlayback(focusedIndex.value ?? 0)
+    return
+  }
+
   if (list.length && focusedIndex.value !== null) {
     const tr = list[focusedIndex.value]?.trailerRel
     if (tr) {
@@ -4351,9 +4828,18 @@ function teardownRecentsLoadObserver() {
 
 function setupRecentsLoadObserver() {
   teardownRecentsLoadObserver()
-  if (!isTvLayout.value || sessionIndex.value !== RECENTS_SESSION_ID || !recentsHasMore.value) return
+  if (
+    !recentsPaginationEnabled.value ||
+    !isTvLayout.value ||
+    sessionIndex.value !== RECENTS_SESSION_ID ||
+    !recentsHasMore.value
+  ) {
+    return
+  }
   if (!import.meta.client) return
-  const root = document.querySelector('.trailer-grid-scroll')
+  const root = isTvLayout.value
+    ? tvMinimalRailScroll.value
+    : document.querySelector('.trailer-grid-scroll')
   const sentinel = recentsLoadSentinel.value
   if (!root || !sentinel) return
   recentsLoadObserver = new IntersectionObserver(
@@ -4366,6 +4852,8 @@ function setupRecentsLoadObserver() {
 }
 
 async function tryLoadRecentsMore(trigger: 'sentinel' | 'focus' | 'scroll') {
+  if (!recentsPaginationEnabled.value) return
+  if (loading.value || recentsLoadingMore.value) return
   if (!isTvLayout.value || sessionIndex.value !== RECENTS_SESSION_ID) return
   const result = await recentsCatalog.loadMore(trigger)
   if (!result) return
@@ -4382,6 +4870,8 @@ async function tryLoadRecentsMore(trigger: 'sentinel' | 'focus' | 'scroll') {
 }
 
 async function loadRecentsTrailers(opts?: CatalogLoadOpts) {
+  syncRecentsOriginApiFilter()
+  teardownRecentsLoadObserver()
   errorMsg.value = ''
   searchSessionError.value = ''
   loading.value = true
@@ -4396,14 +4886,25 @@ async function loadRecentsTrailers(opts?: CatalogLoadOpts) {
       trailerRelMatchesFocus(playingTrailerRel, preserveRel),
   )
   try {
-    const data = await recentsCatalog.loadInitial()
+    const data = recentsPaginationEnabled.value
+      ? await recentsCatalog.loadInitial()
+      : await recentsCatalog.loadFull()
     applyServerCatalogPayload(data)
     tagSuggestions.value = Array.isArray(data.tagSuggestions) ? data.tagSuggestions : []
     await nextTick()
-    await applyCatalogFocusAfterLoad(entries.value, opts, keepPlaybackAcrossReload, preserveRel)
+    await applyCatalogFocusAfterLoad(
+      entries.value,
+      opts,
+      keepPlaybackAcrossReload,
+      preserveRel,
+    )
     await refreshRecentPlaybackKeys()
     await nextTick()
-    setupRecentsLoadObserver()
+    if (recentsPaginationEnabled.value) {
+      setupRecentsLoadObserver()
+    } else {
+      teardownRecentsLoadObserver()
+    }
   } catch (e: unknown) {
     const err = e as { data?: { statusMessage?: string }; message?: string }
     fullEntries.value = []
@@ -4458,7 +4959,12 @@ async function loadTrailers(opts?: {
       ? `/api/library/search?q=${encodeURIComponent(searchQ)}&mode=${encodeURIComponent(searchSessionMode.value)}`
       : ''
     : sessionIndex.value === RECENTS_SESSION_ID
-      ? '/api/trailers/recent'
+      ? (() => {
+          const sid = recentsLibrarySessionFilter()
+          return sid !== null
+            ? `/api/trailers/recent?librarySession=${sid}`
+            : '/api/trailers/recent'
+        })()
       : `/api/trailers?session=${sessionIndex.value}`
   if (!trailerUrl) {
     fullEntries.value = []
@@ -4474,6 +4980,7 @@ async function loadTrailers(opts?: {
   try {
     const data = await $fetch<{
       items: TrailerListEntry[]
+      originCounts?: { session: number; tag: string; count: number }[]
       tagSuggestions?: string[]
       serverPlatform?: string
       adminRevealExplorer?: boolean
@@ -4487,6 +4994,9 @@ async function loadTrailers(opts?: {
       }
     }>(trailerUrl)
     applyServerCatalogPayload(data)
+    if (sessionIndex.value === RECENTS_SESSION_ID) {
+      recentsCatalog.applyOriginCounts(data.originCounts)
+    }
     catalogMode.value =
       !isSearchSession && data.catalogMode === 'main-only' ? 'main-only' : 'trailers'
     fullEntries.value = data.items.map((e) => ({
@@ -4764,12 +5274,17 @@ watch(entries, () => {
 
 watch(focusedIndex, (fi) => {
   if (!isTvLayout.value || sessionIndex.value !== RECENTS_SESSION_ID || fi === null) return
+  if (!recentsPaginationEnabled.value) return
   const n = entries.value.length
   if (n && recentsHasMore.value && fi >= n - 2) void tryLoadRecentsMore('focus')
 })
 
-watch([entries, recentsHasMore, catalogGridCollapsed, isTvLayout], () => {
+watch([entries, recentsHasMore, recentsPaginationEnabled, catalogGridCollapsed, isTvLayout], () => {
   if (!isTvLayout.value || sessionIndex.value !== RECENTS_SESSION_ID) return
+  if (!recentsPaginationEnabled.value) {
+    teardownRecentsLoadObserver()
+    return
+  }
   void nextTick(() => setupRecentsLoadObserver())
 })
 
@@ -4777,9 +5292,13 @@ watch([sessionIndex, focusedIndex, activeIndex, playerUrl, favoriteCatalogFilter
   syncShareUrlFromState()
 }, { flush: 'post' })
 
-watch(sessionIndex, (si) => {
-  if (si === RECENTS_SESSION_ID) applyDestaquesCatalogSortDefaults()
-  else {
+watch(sessionIndex, (si, prevSi) => {
+  if (si === RECENTS_SESSION_ID) {
+    applyDestaquesCatalogSortDefaults()
+    if (prevSi !== RECENTS_SESSION_ID) {
+      recentsCatalog.setPaginationEnabled(true)
+    }
+  } else {
     catalogOriginFilter.value = null
     teardownRecentsLoadObserver()
     recentsCatalog.reset()
@@ -4801,6 +5320,7 @@ onMounted(async () => {
     await loadTrailers()
     await applyShareQueryFromRoute()
     await nextTick()
+    if (isTvLayout.value) ensureTvMinimalPlayback(focusedIndex.value ?? 0)
     syncShareUrlFromState()
   }
   if (typeof window === 'undefined') return
@@ -4842,6 +5362,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   teardownRecentsLoadObserver()
+  releaseVideoElement(tvMinimalVideoRef.value)
   stopFastPlay(false)
   void flushMainProgressIfAny()
   if (gridChromeLongTimer) {
@@ -7650,5 +8171,348 @@ onUnmounted(() => {
     flex: 0 1 auto;
     max-width: 14rem;
   }
+}
+
+/* —— Modo TV minimal (?tv=1): só vídeo + anterior/próximo —— */
+.layout--tv-minimal {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.layout--tv-minimal .error {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  margin: 0;
+}
+
+.tv-minimal {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: row;
+  background: #000;
+}
+
+.tv-minimal-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.tv-minimal-rail {
+  --tv-rail-w: 140px;
+  flex: 0 0 var(--tv-rail-w);
+  width: var(--tv-rail-w);
+  min-width: var(--tv-rail-w);
+  max-width: var(--tv-rail-w);
+  border-left: 1px solid #2d333b;
+  background: #121418;
+  display: flex;
+  flex-direction: column;
+}
+
+.tv-minimal-rail-scroll-btn {
+  flex: 0 0 auto;
+  width: 100%;
+  height: 2.25rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-top: 1px solid #2d333b;
+  border-bottom: 1px solid #2d333b;
+  background: #1a1d24;
+  color: #e8eaed;
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tv-minimal-rail-scroll-btn:first-child {
+  border-top: none;
+}
+
+.tv-minimal-rail-scroll-btn:last-child {
+  border-bottom: none;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.tv-minimal-rail-scroll-btn:active {
+  background: #2a5181;
+  color: #eff6ff;
+}
+
+.tv-minimal-rail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px 5px;
+}
+
+/* Caixa fixa 16:9 — não encolhe com flex nem antes da imagem carregar */
+.tv-minimal-thumb {
+  flex: 0 0 auto;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: calc((var(--tv-rail-w) - 10px) * 9 / 16);
+  min-height: calc((var(--tv-rail-w) - 10px) * 9 / 16);
+  margin: 0;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+  background: #0a0a0c;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tv-minimal-thumb--active {
+  border-color: #7fb2f3;
+  box-shadow: 0 0 0 1px #7fb2f3;
+}
+
+.tv-minimal-thumb-img,
+.tv-minimal-thumb-ph {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.tv-minimal-thumb-ph {
+  background: linear-gradient(135deg, #12141a 0%, #1a1d24 50%, #12141a 100%);
+}
+
+.tv-minimal-rail-scroll .recents-load-sentinel {
+  flex: 0 0 auto;
+  width: 100%;
+  height: 4px;
+  min-height: 4px;
+}
+
+.tv-minimal-rail-hint {
+  margin: 0;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #8ab4f8;
+}
+
+.tv-minimal-video {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  object-fit: contain;
+  background: #000;
+}
+
+.tv-minimal-overlay {
+  position: absolute;
+  inset: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  color: #e8eaed;
+  font-size: 1.1rem;
+  text-align: center;
+  background: #0a0a0c;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.tv-minimal-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.tv-minimal-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+
+.tv-minimal-origin {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 0.15rem;
+}
+
+.tv-minimal-origin-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #c9a86a;
+  margin-right: 0.15rem;
+}
+
+.tv-minimal-origin-btn {
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid #6b5a38;
+  background: #2a2418;
+  color: #e8d4a8;
+  cursor: pointer;
+}
+
+.tv-minimal-origin-btn--active {
+  border-color: #c9a86a;
+  background: #3d3420;
+  color: #fff6e0;
+}
+
+.tv-minimal-origin-btn--clear {
+  border-color: #5f9dee;
+  background: #1d3553;
+  color: #cde3ff;
+}
+
+.tv-minimal-origin-count {
+  margin-left: 0.2rem;
+  opacity: 0.75;
+  font-size: 0.65rem;
+}
+
+.tv-minimal-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem calc(0.4rem + env(safe-area-inset-bottom, 0px));
+  background: #121418;
+  border-top: 1px solid #2d333b;
+  z-index: 3;
+}
+
+.tv-minimal-meta {
+  flex: 0 1 32%;
+  min-width: 0;
+  margin-left: auto;
+  text-align: right;
+}
+
+.tv-minimal-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e8eaed;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tv-minimal-pos {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: #9aa0a6;
+}
+
+.tv-minimal-btn {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 2px solid #5f9dee;
+  background: #1d3553;
+  color: #eff6ff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tv-minimal-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.tv-minimal-btn:active:not(:disabled) {
+  background: #2a5181;
+}
+
+.tv-minimal-btn--primary {
+  border-color: #7fb2f3;
+  background: #2a5181;
+  color: #eff6ff;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.45rem;
+}
+
+.tv-minimal-btn--secondary {
+  border-color: #c9a86a;
+  background: #3d3420;
+  color: #fff6e0;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.45rem;
+}
+
+.tv-minimal-rate {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+
+.tv-minimal-rate-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #9aa0a6;
+  white-space: nowrap;
+}
+
+.tv-minimal-rate-select {
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  min-width: 2.75rem;
+  max-width: 3.25rem;
+  padding: 0.32rem 0.25rem;
+  border-radius: 8px;
+  border: 2px solid #454a53;
+  background: #252a32;
+  color: #e8eaed;
+  cursor: pointer;
+}
+
+.tv-minimal-rate-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tv-minimal-pos--full {
+  color: #8ab4f8;
 }
 </style>

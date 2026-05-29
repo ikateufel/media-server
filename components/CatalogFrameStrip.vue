@@ -16,6 +16,8 @@ const catalogFrameSlots = computed(() => {
   return Array.from({ length: n }, (_, i) => i) as number[]
 })
 
+const singleFrameMode = computed(() => catalogFrameSlots.value.length === 1)
+
 const rootEl = ref<HTMLElement | null>(null)
 /** Tile intersectou o scroll — mostra grelha (slots preenchem-se aos poucos). */
 const inView = ref(false)
@@ -59,18 +61,38 @@ function onImgError(ev: Event) {
   if (el instanceof HTMLImageElement) el.style.visibility = 'hidden'
 }
 
-onMounted(() => {
+function scrollRootFor(el: HTMLElement): Element | null {
+  return (
+    el.closest('.tv-minimal-rail-scroll') ??
+    el.closest('.trailer-grid-scroll') ??
+    null
+  )
+}
+
+function resetFrameState() {
+  cancelSlotBumps()
+  inView.value = false
+  slotsToShow.value = 0
+}
+
+function revealFrames() {
+  cancelSlotBumps()
+  inView.value = true
+  slotsToShow.value = 1
+  if (!singleFrameMode.value) armNextSlot()
+}
+
+function attachIntersectionObserver() {
+  io?.disconnect()
+  io = null
   const el = rootEl.value
   if (!el) return
-  const scrollRoot = el.closest('.trailer-grid-scroll')
+  const scrollRoot = scrollRootFor(el)
   io = new IntersectionObserver(
     (entries) => {
       for (const e of entries) {
         if (e.isIntersecting) {
-          cancelSlotBumps()
-          inView.value = true
-          slotsToShow.value = 1
-          armNextSlot()
+          revealFrames()
           io?.disconnect()
           io = null
           break
@@ -84,6 +106,18 @@ onMounted(() => {
     },
   )
   io.observe(el)
+}
+
+watch(
+  () => [props.previewRel, props.sessionIndex, props.maxSlots] as const,
+  () => {
+    resetFrameState()
+    void nextTick(() => attachIntersectionObserver())
+  },
+)
+
+onMounted(() => {
+  attachIntersectionObserver()
 })
 
 onUnmounted(() => {

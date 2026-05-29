@@ -9,7 +9,43 @@ import {
 import { isCatalogTrailerRelSuffix } from '../../utils/trailerNames'
 import { readRecentPlaybackList } from '../../utils/recentPlaybackDb'
 import { getResolvedAdminToken } from '../../utils/requireAdmin'
-import { getFastPlaySettingsFromDisk, getVideoRootsFromRuntime } from '../../utils/videoMenu'
+import {
+  getFastPlaySettingsFromDisk,
+  getVideoMenuItems,
+  getVideoRootsFromRuntime,
+  type VideoMenuItem,
+} from '../../utils/videoMenu'
+import type { RecentPlaybackRow } from '../../utils/recentPlaybackDb'
+
+function buildRecentsOriginCounts(
+  rows: RecentPlaybackRow[],
+  rootsLength: number,
+  menu: VideoMenuItem[],
+): { session: number; tag: string; count: number }[] {
+  const counts = new Map<number, number>()
+  for (const row of rows) {
+    const s = row.session
+    if (!Number.isFinite(s) || s < 0 || s >= rootsLength) continue
+    const norm = row.trailerRel.trim().replace(/\\/g, '/')
+    if (!norm.startsWith('trailers/')) continue
+    const trailerName = norm.slice('trailers/'.length)
+    if (!trailerName || !isCatalogTrailerRelSuffix(trailerName)) continue
+    counts.set(s, (counts.get(s) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([session, count]) => ({
+      session,
+      tag: menu[session]?.title?.trim() || `Biblioteca ${session}`,
+      count,
+    }))
+    .filter((r) => r.tag.length > 0)
+    .sort((a, b) =>
+      b.count !== a.count
+        ? b.count - a.count
+        : a.tag.localeCompare(b.tag, undefined, { sensitivity: 'base' }),
+    )
+    .slice(0, 12)
+}
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
@@ -21,10 +57,21 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const ordered = readRecentPlaybackList()
-  const total = ordered.length
+  const menu = getVideoMenuItems(config)
+  const allOrdered = readRecentPlaybackList()
+  const originCounts = buildRecentsOriginCounts(allOrdered, roots.length, menu)
 
   const q = getQuery(event)
+  const libSessionRaw = q.librarySession
+  let ordered = allOrdered
+  if (libSessionRaw !== undefined && libSessionRaw !== null && String(libSessionRaw).trim() !== '') {
+    const want = Math.floor(Number(libSessionRaw))
+    if (Number.isFinite(want) && want >= 0) {
+      ordered = allOrdered.filter((r) => r.session === want)
+    }
+  }
+
+  const total = ordered.length
   const offsetRaw = q.offset
   const limitRaw = q.limit
   const offset =
@@ -77,6 +124,7 @@ export default defineEventHandler(async (event) => {
     total,
     offset,
     hasMore: pageEnd < total,
+    originCounts,
     tagSuggestions: [...tagSuggestions].sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: 'base' }),
     ),
