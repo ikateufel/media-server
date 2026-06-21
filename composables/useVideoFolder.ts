@@ -77,7 +77,10 @@ export function isEntryWatchedClass(entry: { tags?: string[] }): boolean {
 
 export interface TrailerListEntry {
   trailerRel: string
-  /** Catálogo: `preview/<mesmo_nome_que_o_trailer>` ou legado em `trailers/`; `null` se não existir. */
+  /**
+   * Fonte de miniaturas (`preview-frame`) e, se for `preview/…`, slideshow legado.
+   * Na prática aponta para `trailers/…` quando só há trailer.
+   */
   previewRel: string | null
   mainRel: string
   mainFilename: string
@@ -143,6 +146,12 @@ export function parseApiVideoUrl(href: string): { rel: string; session: number }
 
 /** Número de slots de JPEG estático por título na grelha (API `preview-frame`). */
 export const CATALOG_PREVIEW_FRAME_SLOTS = 4
+
+/** Slideshow em `preview/` (geração descontinuada); não usar para o palco — só miniatura inline legada. */
+export function isDedicatedPreviewVideoRel(rel: string | null | undefined): boolean {
+  if (!rel) return false
+  return rel.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase().startsWith('preview/')
+}
 
 export function catalogPreviewFrameUrl(previewRel: string, session: number, slot: number): string {
   const sess = Number.isFinite(session) && session >= 0 ? Math.floor(session) : 0

@@ -3,6 +3,7 @@
     <header class="admin-head">
       <h1 class="admin-title">Administração</h1>
       <NuxtLink to="/" class="admin-back">← Reprodutor</NuxtLink>
+      <NuxtLink to="/shrink" class="admin-back">Shrink</NuxtLink>
     </header>
 
     <p class="admin-lead">

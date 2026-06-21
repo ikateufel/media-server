@@ -2,11 +2,11 @@ import type { Ref } from 'vue'
 import type { TrailerListEntry } from '~/composables/useVideoFolder'
 
 /** Primeira página em Destaques (Fire TV / memória). */
-export const RECENTS_PAGE_INITIAL = 10
+export const RECENTS_PAGE_INITIAL = 30
 /** Itens por «load more». */
-export const RECENTS_PAGE_MORE = 5
+export const RECENTS_PAGE_MORE = 30
 /** Máximo de entradas em `fullEntries` na sessão Destaques. */
-export const RECENTS_MAX_IN_MEMORY = 15
+export const RECENTS_MAX_IN_MEMORY = 60
 
 export interface RecentsOriginCount {
   session: number
@@ -153,7 +153,7 @@ export function useRecentsCatalogWindow(fullEntries: Ref<TrailerListEntry[]>) {
     return data
   }
 
-  /** Carrega mais itens (mais antigos). Remove do topo se passar de {@link RECENTS_MAX_IN_MEMORY}. */
+  /** Carrega mais itens (mais antigos). Mantém ordem global (mais recente primeiro). */
   async function loadMore(
     trigger: string,
   ): Promise<{ data: RecentsCatalogPage; trimmedFromTop: number } | null> {

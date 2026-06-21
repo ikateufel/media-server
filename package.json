@@ -27,6 +27,7 @@
     "check-videos": "tsx scripts/check-videos-integrity.ts",
     "analyze-no-trailer": "tsx scripts/move-no-trailer-to-analyze.ts",
     "find-orphan-trailers-previews": "tsx scripts/find-orphan-trailers-previews.ts",
+    "clear-preview-videos": "tsx scripts/clear-preview-videos.ts",
     "install-external-dependencies": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-external-dependencies.ps1",
     "installer:prep": "nuxt prepare && nuxt build"
   },

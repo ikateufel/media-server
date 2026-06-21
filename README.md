@@ -58,21 +58,26 @@ Lista completa: ver `package.json` → `scripts`.
 
 ## trailer.bat no Windows
 
-O script **distribui** cortes pelo filme e junta-os com aceleração ~2× (`setpts`/áudio já configurados em `scripts/trailer.bat`).
+O script **distribui** cortes pelo filme e junta-os com aceleração ~2× (`setpts`/áudio em `scripts/trailer.bat`).
 
-Modo opcional **minuto10** (mantém os mesmos `vel` e `pts`, ou seja **2×**):
+**Único processamento padrão** (`trailer.bat`, Admin, `trailer-1min.bat`, `trailer-2min.bat`) — **15 s** em 2×:
+- vídeos **≤ 60 min**: a cada **5 %** do filme (0 %, 5 %, …, 95 %);
+- vídeos **> 60 min**: a cada **5 min** (0 min, 5 min, 10 min, …).
 
-- **`TRAILER_MODE=minuto10`** no ambiente quando o servidor dispara o job (Admin / `.env` se propagar ao `cmd`); ou
-- Na pasta da biblioteca: `scripts\trailer.bat minuto10` (também `--minuto10` / `-minuto10`).
+`TRAILER_MODE` no `.env` **não altera** o algoritmo (valores `minuto*` antigos são ignorados).
 
-Nesse modo: **10 s** extraídos a partir de **cada minuto** do filme (0:00, 1:00, 2:00, …) **sem sobrepor** o bloco final; em seguida **até 60 s contínuos** do **fim** do filme. Vídeos com menos de 60 s usam só o trecho final disponível.
+Modos legado só por argumento explícito: `trailer.bat minuto15`, `trailer.bat sparse`, etc.
+
+Ajuste fino no `.env`: **`TRAILER_PCT_SEG`**, **`TRAILER_PCT_STEP`**, **`TRAILER_LONG_MIN_SEC`**, **`TRAILER_LONG_STEP_SEC`** (padrão 15 / 5 / 3600 / 300).
+
+**`preview.bat`** (job «Trailer + preview» no Admin) já **não** gera `preview/*.mp4` — só aquece **miniaturas JPEG** em `.thumb_cache/` a partir dos trailers. O palco toca sempre o **trailer**; ficheiros antigos em `preview/` ficam legados e não são usados para reprodução. Para libertar espaço: `npm run clear-preview-videos` (lista) ou `npm run clear-preview-videos -- --delete` (envia vídeos em `preview/` para a lixeira; **`.thumb_cache/` intacto**).
 
 ## Admin (`/admin`)
 
 Com **`VIDEO_ADMIN_TOKEN`** definido no servidor, guarda o token na página Admin e usa:
 
 - edição do **menu de pastas** (grava `data/video-menu.json`);
-- **Trailer + preview** por pasta (um botão na tabela) ou, nas acções gerais, **Trailers (todas)**, **Previews (todas)** ou **Trailer + preview (todas)** — este último encadeia `trailer.bat` e `preview.bat` num único job no Windows;
+- **Trailer + miniaturas** por pasta (um botão na tabela) ou, nas acções gerais, **Trailers (todas)**, **Previews (todas)** ou **Trailer + preview (todas)** — «preview» corre `preview.bat`, que gera só JPEG em `.thumb_cache/` (não vídeo curto em `preview/`);
 - contagens / cruzamento **trailers ↔ preview**;
 - **auto-tags** e outras ferramentas de manutenção.
 

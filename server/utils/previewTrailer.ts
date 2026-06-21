@@ -9,7 +9,8 @@ function previewRelFromTrailerRelative(trailerRelative: string): string {
 
 /**
  * Extensões de vídeo em `preview/` a tentar com o mesmo stem que o trailer.
- * O `preview.bat` grava em `.mp4` mesmo quando o original/trailer é `.mkv`.
+ * Slideshow legado em `preview/` (geração descontinuada; preview.bat gera só `.thumb_cache/`).
+ * Por defeito devolve `trailers/…` para miniaturas e reprodução do trailer.
  */
 const PREVIEW_VIDEO_EXTS = ['.mp4', '.mkv', '.webm', '.m4v', '.mov', '.avi'] as const
 
@@ -38,6 +39,25 @@ export async function resolvePreviewTrailerRel(
   const extLower = rawExt.toLowerCase()
   const relDir = norm.includes('/') ? norm.slice(0, Math.max(0, norm.lastIndexOf('/'))) : ''
 
+  // Miniaturas e palco: fonte principal é o trailer (não depende de preview/ no disco).
+  const trailersDir = join(root, 'trailers')
+  const trailerSelf = join(trailersDir, norm)
+  try {
+    const st = await stat(trailerSelf)
+    if (st.isFile()) return `trailers/${norm}`.replace(/\\/g, '/')
+  } catch {
+    /* */
+  }
+  const trailerCatalogRel = `trailers/${norm}`.replace(/\\/g, '/')
+  for (const cand of resolveCatalogRelAbsoluteCandidates(root, trailerCatalogRel)) {
+    try {
+      const st = await stat(cand)
+      if (st.isFile()) return trailerCatalogRel
+    } catch {
+      /* */
+    }
+  }
+
   const inPreviewDir = join(root, 'preview', norm)
   try {
     const st = await stat(inPreviewDir)
@@ -59,7 +79,6 @@ export async function resolvePreviewTrailerRel(
     }
   }
 
-  const trailersDir = join(root, 'trailers')
   for (const pext of orderedPreviewExts(extLower)) {
     const legacyNames = [
       `preview.${stem}${pext}`,
@@ -78,14 +97,6 @@ export async function resolvePreviewTrailerRel(
     }
   }
 
-  const trailerSelf = join(trailersDir, norm)
-  try {
-    const st = await stat(trailerSelf)
-    if (st.isFile()) return `trailers/${norm}`.replace(/\\/g, '/')
-  } catch {
-    /* */
-  }
-
   // Compat legado: ficheiros guardados em "<sub>/preview/<file>".
   const previewCatalogRel = `preview/${norm}`.replace(/\\/g, '/')
   for (const cand of resolveCatalogRelAbsoluteCandidates(root, previewCatalogRel)) {
@@ -97,15 +108,5 @@ export async function resolvePreviewTrailerRel(
     }
   }
 
-  // Compat legado: trailer em "<sub>/trailers/<file>".
-  const trailerCatalogRel = `trailers/${norm}`.replace(/\\/g, '/')
-  for (const cand of resolveCatalogRelAbsoluteCandidates(root, trailerCatalogRel)) {
-    try {
-      const st = await stat(cand)
-      if (st.isFile()) return trailerCatalogRel
-    } catch {
-      /* */
-    }
-  }
   return null
 }

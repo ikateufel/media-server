@@ -8,6 +8,7 @@
  *   npx tsx scripts/warm-preview-frame-cache.ts
  *   npx tsx scripts/warm-preview-frame-cache.ts --force
  *   npx tsx scripts/warm-preview-frame-cache.ts --session=0
+ *   npx tsx scripts/warm-preview-frame-cache.ts --root=C:\videos\biblioteca
  *   npm run warm-preview-cache
  */
 import { existsSync, readFileSync } from 'node:fs'
@@ -45,59 +46,82 @@ function loadDotenv() {
 function parseArgs(argv: string[]) {
   let force = false
   let onlySession: number | null = null
+  let onlyRoot: string | null = null
   for (const a of argv) {
     if (a === '--help' || a === '-h') {
       console.log(`
-Gera cache de miniaturas (4 slots por preview) em <VIDEO_ROOT>/${PREVIEW_THUMB_CACHE_DIR}/.
+Gera cache de miniaturas (4 slots por trailer) em <VIDEO_ROOT>/${PREVIEW_THUMB_CACHE_DIR}/.
 
   --force       Regenera mesmo que o JPEG ja exista (mesmo mtime)
   --session=N   So a sessao N (indice do menu / VIDEO_ROOT)
+  --root=PATH   So esta pasta de biblioteca (cwd do preview.bat / sync)
 `)
       process.exit(0)
     }
     if (a === '--force') force = true
     const m = a.match(/^--session=(\d+)$/)
     if (m) onlySession = Number(m[1])
+    const r = a.match(/^--root=(.+)$/)
+    if (r) onlyRoot = r[1]!.trim()
   }
-  return { force, onlySession }
+  return { force, onlySession, onlyRoot }
+}
+
+async function warmRoot(root: string, force: boolean, label: string) {
+  let hits = 0
+  let built = 0
+  let errors = 0
+  try {
+    await stat(root)
+  } catch {
+    console.warn(`${label} Raiz inexistente: ${root}`)
+    return { hits, built, errors }
+  }
+
+  const rels = await listPreviewRelsForVideoRoot(root)
+  console.log(`${label} ${root}`)
+  console.log(`  trailers com fonte de miniatura: ${rels.length}`)
+  for (const rel of rels) {
+    for (let slot = 0; slot < PREVIEW_FRAME_SLOT_COUNT; slot++) {
+      const st = await ensurePreviewFrameCached({ root, rel, slot, force })
+      if (st === 'hit') hits++
+      else if (st === 'built') built++
+      else {
+        errors++
+        console.warn(`  [${slot}] ${rel} -> ${st}`)
+      }
+    }
+  }
+  return { hits, built, errors }
 }
 
 async function main() {
   loadDotenv()
-  const { force, onlySession } = parseArgs(process.argv.slice(2))
-  const roots = getVideoRootsForCli()
-  if (!roots.length) {
-    console.error('Sem raizes: defina VIDEO_ROOT no .env ou data/video-menu.json.')
-    process.exit(1)
-  }
+  const { force, onlySession, onlyRoot } = parseArgs(process.argv.slice(2))
 
   let hits = 0
   let built = 0
   let errors = 0
 
-  for (let s = 0; s < roots.length; s++) {
-    if (onlySession !== null && s !== onlySession) continue
-    const root = roots[s]!.trim()
-    try {
-      await stat(root)
-    } catch {
-      console.warn(`[sessao ${s}] Raiz inexistente: ${root}`)
-      continue
+  if (onlyRoot) {
+    const r = await warmRoot(onlyRoot.trim(), force, '\n[biblioteca]')
+    hits += r.hits
+    built += r.built
+    errors += r.errors
+  } else {
+    const roots = getVideoRootsForCli()
+    if (!roots.length) {
+      console.error('Sem raizes: defina VIDEO_ROOT no .env ou data/video-menu.json.')
+      process.exit(1)
     }
 
-    const rels = await listPreviewRelsForVideoRoot(root)
-    console.log(`\n[sessao ${s}] ${root}`)
-    console.log(`  previews com ficheiro: ${rels.length}`)
-    for (const rel of rels) {
-      for (let slot = 0; slot < PREVIEW_FRAME_SLOT_COUNT; slot++) {
-        const st = await ensurePreviewFrameCached({ root, rel, slot, force })
-        if (st === 'hit') hits++
-        else if (st === 'built') built++
-        else {
-          errors++
-          console.warn(`  [${slot}] ${rel} -> ${st}`)
-        }
-      }
+    for (let s = 0; s < roots.length; s++) {
+      if (onlySession !== null && s !== onlySession) continue
+      const root = roots[s]!.trim()
+      const r = await warmRoot(root, force, `\n[sessao ${s}]`)
+      hits += r.hits
+      built += r.built
+      errors += r.errors
     }
   }
 

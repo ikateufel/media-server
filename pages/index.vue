@@ -165,11 +165,11 @@
             @click="tvMinimalSelectIndex(i)"
           >
             <img
-              v-if="entry.previewRel"
+              v-if="entry.previewRel || entry.trailerRel"
               class="tv-minimal-thumb-img"
               decoding="async"
               alt=""
-              :src="catalogPreviewFrameUrl(entry.previewRel, libSession(entry), 0)"
+              :src="catalogPreviewFrameUrl(entry.previewRel ?? entry.trailerRel, libSession(entry), 0)"
             />
             <span v-else class="tv-minimal-thumb-ph" aria-hidden="true" />
           </button>
@@ -1312,6 +1312,8 @@
           Esta sessão está sem catálogo em <code class="code">trailers/</code> / <code class="code">preview/</code>.
           Ao clicar no grid, o vídeo completo abre diretamente.
           <NuxtLink to="/admin" class="empty-hint-link">Processar trailers/previews no Admin</NuxtLink>
+          ·
+          <NuxtLink to="/shrink" class="empty-hint-link">Shrink de vídeos</NuxtLink>
         </div>
         <div
           v-else-if="searchSessionActive && searchSessionQuery.trim().length < 2 && !loading"
@@ -1508,7 +1510,7 @@
                 </svg>
               </span>
               <div
-                v-if="gridRow.entry.previewRel"
+                v-if="gridRow.entry.previewRel || gridRow.entry.trailerRel"
                 class="grid-tile-thumb"
                 role="button"
                 tabindex="0"
@@ -1522,9 +1524,13 @@
                 @keydown.space.prevent.stop="onCatalogThumbClick(gridRow.index)"
               >
                 <video
-                  v-if="catalogThumbInlineVideo && gridInlinePreviewIndex === gridRow.index"
+                  v-if="
+                    catalogThumbInlineVideo &&
+                    isDedicatedPreviewVideoRel(gridRow.entry.previewRel) &&
+                    gridInlinePreviewIndex === gridRow.index
+                  "
                   class="grid-inline-preview-video"
-                  :src="apiVideoUrl(gridRow.entry.previewRel, libSession(gridRow.entry))"
+                  :src="apiVideoUrl(gridRow.entry.previewRel!, libSession(gridRow.entry))"
                   :muted="previewTrailerMuted"
                   playsinline
                   :preload="videoPreloadAttr"
@@ -1533,12 +1539,16 @@
                 />
                 <CatalogFrameStrip
                   v-else
-                  :preview-rel="gridRow.entry.previewRel"
+                  :preview-rel="gridRow.entry.previewRel ?? gridRow.entry.trailerRel"
                   :session-index="libSession(gridRow.entry)"
                   :max-slots="catalogThumbMaxSlots"
                 />
                 <button
-                  v-if="catalogThumbInlineVideo && gridRow.entry.previewRel && gridInlinePreviewIndex === gridRow.index"
+                  v-if="
+                    catalogThumbInlineVideo &&
+                    isDedicatedPreviewVideoRel(gridRow.entry.previewRel) &&
+                    gridInlinePreviewIndex === gridRow.index
+                  "
                   type="button"
                   class="grid-tile-maxi"
                   title="Miniaturas em ecrã inteiro"
@@ -1709,7 +1719,7 @@
 
     <Teleport to="body">
       <div
-        v-if="catalogGalleryIndex !== null && galleryDialogEntry?.previewRel"
+        v-if="catalogGalleryIndex !== null && (galleryDialogEntry?.previewRel || galleryDialogEntry?.trailerRel)"
         class="catalog-gallery-dialog"
         role="dialog"
         aria-modal="true"
@@ -1729,7 +1739,7 @@
               loading="eager"
               decoding="async"
               alt=""
-              :src="catalogPreviewFrameUrl(galleryDialogEntry.previewRel, libSession(galleryDialogEntry), slot)"
+              :src="catalogPreviewFrameUrl((galleryDialogEntry.previewRel ?? galleryDialogEntry.trailerRel)!, libSession(galleryDialogEntry), slot)"
             />
           </div>
         </div>
@@ -1847,6 +1857,7 @@ import {
   apiVideoUrl,
   parseApiVideoUrl,
   catalogPreviewFrameUrl,
+  isDedicatedPreviewVideoRel,
   isEntryCompleted,
   isEntryMemorable,
   isEntryPartiallyWatched,
@@ -2106,7 +2117,10 @@ let recentsLoadObserver: IntersectionObserver | null = null
 
 /** Modo TV (`?tv=1`): uma imagem estática na grelha; sem vídeo inline no cartão. */
 const catalogThumbMaxSlots = computed(() => (isTvLayout.value ? 1 : 4))
-const catalogThumbInlineVideo = computed(() => !isTvLayout.value)
+const catalogThumbInlineVideo = computed(
+  () => false,
+  /* legado: slideshow preview/ no tile; desactivado — só miniaturas JPEG + trailer no palco */
+)
 /** Filtro da grelha por tag; `null` = mostrar todos. */
 const catalogTagFilter = ref<string | null>(null)
 /** Filtro por pasta/biblioteca de origem (só Destaques). */
@@ -2181,6 +2195,16 @@ function sortCatalogList(list: TrailerListEntry[]): TrailerListEntry[] {
   return [...list].sort(compareCatalogEntries)
 }
 
+/** Destaques: data de inserção / toque, mais recente primeiro (índice 0). */
+function sortRecentsByDateDesc(list: TrailerListEntry[]): TrailerListEntry[] {
+  return [...list].sort((a, b) => {
+    const ta = a.highlightedAtMs ?? 0
+    const tb = b.highlightedAtMs ?? 0
+    if (ta !== tb) return tb - ta
+    return a.mainRel.localeCompare(b.mainRel, undefined, { sensitivity: 'base' })
+  })
+}
+
 const entries = computed(() => {
   const tag = catalogTagFilter.value
   const origin = catalogOriginFilter.value
@@ -2211,6 +2235,9 @@ const entries = computed(() => {
     filtered = filtered.filter((e) => isPlaybackTitleInRecentList(e))
   } else if (destaquesCatalogFilter.value === 'exclude') {
     filtered = filtered.filter((e) => !isPlaybackTitleInRecentList(e))
+  }
+  if (si === RECENTS_SESSION_ID) {
+    return sortRecentsByDateDesc(filtered)
   }
   return sortCatalogList(filtered)
 })
@@ -2556,7 +2583,13 @@ function ensureTvMinimalPlayback(index = 0) {
   gridInlinePreviewIndex.value = null
   focusedIndex.value = i
   setPreviewForIndex(i)
-  void nextTick(() => applyTvMinimalVideoSrc(tvMinimalVideoSrc.value))
+  void nextTick(() => {
+    if (i === 0 && sessionIndex.value === RECENTS_SESSION_ID) {
+      const root = tvMinimalRailScroll.value
+      if (root) root.scrollTop = 0
+    }
+    applyTvMinimalVideoSrc(tvMinimalVideoSrc.value)
+  })
   if (import.meta.client) {
     console.info(`[VP TV] trailer ${i + 1}/${list.length}: ${list[i]?.label ?? ''}`)
   }
@@ -2718,7 +2751,8 @@ function onGridInlinePreviewLoaded(ev: Event) {
 }
 
 function onCatalogThumbClick(i: number) {
-  if (!entries.value[i]?.previewRel) return
+  const e = entries.value[i]
+  if (!e?.previewRel && !e?.trailerRel) return
   if (!catalogThumbInlineVideo.value) {
     onListItemClick(i)
     return
@@ -2902,7 +2936,8 @@ const galleryDialogEntry = computed(() => {
 })
 
 function openCatalogGalleryDialog(i: number) {
-  if (!entries.value[i]?.previewRel) return
+  const e = entries.value[i]
+  if (!e?.previewRel && !e?.trailerRel) return
   catalogGalleryIndex.value = i
 }
 
@@ -2989,7 +3024,7 @@ let gridChromeLongTimer: ReturnType<typeof setTimeout> | null = null
 function onGridTileChromePointerDown(i: number, e: PointerEvent) {
   if (e.button !== 0) return
   if (e.target !== e.currentTarget) return
-  if (!entries.value[i]?.previewRel) return
+  if (!entries.value[i]?.previewRel && !entries.value[i]?.trailerRel) return
   if (gridChromeLongTimer) clearTimeout(gridChromeLongTimer)
   gridChromeLongTimer = window.setTimeout(() => {
     gridChromeLongTimer = null
@@ -3385,7 +3420,7 @@ function setPreviewForIndex(i: number | null) {
   previewUrl.value = null
   if (i === null || !entries.value[i]) return
   const e = entries.value[i]
-  if (!isTvLayout.value && !e.previewRel) return
+  if (!e.trailerRel) return
   previewUrl.value = apiVideoUrl(e.trailerRel, libSession(e))
 }
 
@@ -3785,11 +3820,6 @@ function onLandscapeOrientationChange() {
 }
 
 function onListItemClick(i: number) {
-  const e = entries.value[i]
-  if (e && !e.previewRel && e.hasMain) {
-    void openVideo(i)
-    return
-  }
   playerUrl.value = null
   activeIndex.value = null
   setTrailerIndex(i)
@@ -4100,32 +4130,35 @@ function resolveCatalogActionEntry(
   return playback ?? selectedEntry.value ?? null
 }
 
-/** Limpa índices da grelha se já não apontam ao vídeo que está a tocar. */
+/** Reajusta índices da grelha se a lista mudou mas o vídeo em reprodução continua visível. */
 function syncCatalogIndicesToPlayback() {
   if (loading.value) return
   if (!previewUrl.value && !playerUrl.value) return
   const playback = resolvePlaybackEntryFromUrls()
   if (!playback) return
+  const playbackIdx = findEntryIndexInEntries(playback.trailerRel, libSession(playback))
+  const entryMatchesPlayback = (entry: TrailerListEntry | undefined) =>
+    !!entry &&
+    trailerRelMatchesFocus(entry.trailerRel, playback.trailerRel) &&
+    libSession(entry) === libSession(playback)
+
   const fi = focusedIndex.value
   if (fi !== null) {
-    const at = entries.value[fi]
-    if (
-      !at ||
-      !trailerRelMatchesFocus(at.trailerRel, playback.trailerRel) ||
-      libSession(at) !== libSession(playback)
-    ) {
-      focusedIndex.value = null
+    if (!entryMatchesPlayback(entries.value[fi])) {
+      focusedIndex.value = playbackIdx >= 0 ? playbackIdx : null
     }
+  } else if (playbackIdx >= 0) {
+    focusedIndex.value = playbackIdx
   }
-  const ai = activeIndex.value
-  if (ai !== null && playerUrl.value) {
-    const at = entries.value[ai]
-    if (
-      !at ||
-      !trailerRelMatchesFocus(at.trailerRel, playback.trailerRel) ||
-      libSession(at) !== libSession(playback)
-    ) {
-      activeIndex.value = null
+
+  if (playerUrl.value) {
+    const ai = activeIndex.value
+    if (ai !== null) {
+      if (!entryMatchesPlayback(entries.value[ai])) {
+        activeIndex.value = playbackIdx >= 0 ? playbackIdx : null
+      }
+    } else if (playbackIdx >= 0) {
+      activeIndex.value = playbackIdx
     }
   }
 }
@@ -4704,10 +4737,10 @@ function trailerRelMatchesFocus(a: string, b: string): boolean {
   return na === nb
 }
 
-/** Fallback quando não há URL nem entrada preservada: aleatório em desktop; primeiro item em Silk/Fire TV. */
+/** Fallback quando não há URL nem entrada preservada: Destaques / TV no primeiro; aleatório nas outras bibliotecas. */
 function fallbackCatalogStartIndex(len: number): number {
   if (len <= 0) return 0
-  if (isTvLayout.value) return 0
+  if (isTvLayout.value || sessionIndex.value === RECENTS_SESSION_ID) return 0
   return Math.floor(Math.random() * len)
 }
 
@@ -4855,17 +4888,37 @@ async function tryLoadRecentsMore(trigger: 'sentinel' | 'focus' | 'scroll') {
   if (!recentsPaginationEnabled.value) return
   if (loading.value || recentsLoadingMore.value) return
   if (!isTvLayout.value || sessionIndex.value !== RECENTS_SESSION_ID) return
+  const playback = resolvePlaybackEntryFromUrls()
+  const preserveFocusRel =
+    playback?.trailerRel ??
+    (focusedIndex.value !== null ? captureEntryRel(focusedIndex.value) : null)
+  const preserveFocusLib = playback
+    ? libSession(playback)
+    : focusedIndex.value !== null && entries.value[focusedIndex.value]
+      ? libSession(entries.value[focusedIndex.value]!)
+      : undefined
+  const preserveActiveRel = playerUrl.value ? captureEntryRel(activeIndex.value) : null
+  const preserveActiveLib =
+    activeIndex.value !== null && entries.value[activeIndex.value]
+      ? libSession(entries.value[activeIndex.value]!)
+      : undefined
   const result = await recentsCatalog.loadMore(trigger)
   if (!result) return
-  const { trimmedFromTop } = result
-  if (trimmedFromTop > 0 && focusedIndex.value !== null) {
-    focusedIndex.value = Math.max(0, focusedIndex.value - trimmedFromTop)
-    const list = entries.value
-    if (list.length && focusedIndex.value >= list.length) {
-      focusedIndex.value = list.length - 1
-    }
+  if (preserveFocusRel) {
+    const ni = findEntryIndexInEntries(preserveFocusRel, preserveFocusLib)
+    if (ni >= 0) focusedIndex.value = ni
   }
+  if (preserveActiveRel) {
+    const na = findEntryIndexInEntries(preserveActiveRel, preserveActiveLib)
+    if (na >= 0) activeIndex.value = na
+  }
+  syncCatalogIndicesToPlayback()
   await nextTick()
+  if (focusedIndex.value !== null && isTvLayout.value) {
+    const root = tvMinimalRailScroll.value
+    const btn = root?.querySelectorAll<HTMLElement>('.tv-minimal-thumb')[focusedIndex.value]
+    btn?.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+  }
   setupRecentsLoadObserver()
 }
 

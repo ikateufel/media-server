@@ -35,8 +35,8 @@ namespace RB {
     public uint wFunc;
     public IntPtr pFrom;
     public IntPtr pTo;
-    public ushort fFlags;
-    private ushort pad_fFlags_;
+    public UInt16 fFlags;
+    private UInt16 pad_fFlags_;
     public int fAnyOperationsAborted;
     public IntPtr hNameMappings;
     public IntPtr lpszProgressTitle;
@@ -73,7 +73,7 @@ function Move-OneFileToRecycleSh([string]$fullPath) {
     $o.wFunc = 3
     $o.pFrom = $ptr
     $o.pTo = [IntPtr]::Zero
-    $o.fFlags = [ushort](64 + 16 + 4)
+    $o.fFlags = [System.UInt16](64 + 16 + 4)
     $o.fAnyOperationsAborted = 0
     $o.hNameMappings = [IntPtr]::Zero
     $o.lpszProgressTitle = [IntPtr]::Zero
