@@ -1,19 +1,27 @@
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { createError } from 'h3'
+import { formatCutsFile, type CutSegment } from './editorCuts'
 
-export type ShrinkSpeed = 1.25 | 1.5 | 2
+export type EditorSpeed = 1 | 1.25 | 1.5 | 2
+
+export function normalizeEditorSpeed(raw: unknown): EditorSpeed | null {
+  const n = Number(raw)
+  if (n === 1 || n === 1.25 || n === 1.5 || n === 2) return n
+  return null
+}
 
 /**
- * Executa `scripts/shrink_video.bat` para um ficheiro.
- * Caminho do vídeo via `VP_SHRINK_INPUT` (evita parênteses/espaços na linha de comando do cmd).
+ * Executa `scripts/edit_video.bat` para um ficheiro com trechos a manter.
  */
-export async function runShrinkBatForFile(opts: {
+export async function runEditorBatForFile(opts: {
   projectRoot: string
   videoAbsolutePath: string
+  keepSegments: CutSegment[]
   height: number
-  speed: ShrinkSpeed
+  speed: EditorSpeed
   force: boolean
   onSpawn?: (pid: number | null) => void
   onLine?: (stream: 'stdout' | 'stderr', line: string) => void
@@ -21,7 +29,7 @@ export async function runShrinkBatForFile(opts: {
   if (process.platform !== 'win32') {
     throw createError({
       statusCode: 400,
-      statusMessage: 'shrink_video.bat só está disponível quando o servidor corre em Windows.',
+      statusMessage: 'edit_video.bat só está disponível quando o servidor corre em Windows.',
     })
   }
 
@@ -30,10 +38,19 @@ export async function runShrinkBatForFile(opts: {
     throw createError({ statusCode: 400, statusMessage: `Vídeo inexistente: ${videoPath}` })
   }
 
-  const scriptPath = resolve(join(opts.projectRoot, 'scripts', 'shrink_video.bat'))
+  if (!opts.keepSegments.length) {
+    throw createError({ statusCode: 400, statusMessage: 'Nenhum trecho a exportar.' })
+  }
+
+  const scriptPath = resolve(join(opts.projectRoot, 'scripts', 'edit_video.bat'))
   if (!existsSync(scriptPath)) {
     throw createError({ statusCode: 500, statusMessage: `Script em falta: ${scriptPath}` })
   }
+
+  const workDir = join(opts.projectRoot, 'data', 'bat-work', 'edit')
+  await mkdir(workDir, { recursive: true })
+  const cutsPath = join(workDir, `cuts-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`)
+  writeFileSync(cutsPath, formatCutsFile(opts.keepSegments), 'utf8')
 
   const videoDir = dirname(videoPath)
 
@@ -43,10 +60,11 @@ export async function runShrinkBatForFile(opts: {
       env: {
         ...process.env,
         VIDEO_PLAYER_ROOT: opts.projectRoot,
-        VP_SHRINK_INPUT: videoPath,
-        VP_SHRINK_HEIGHT: String(Math.floor(opts.height)),
-        VP_SHRINK_SPEED: String(opts.speed),
-        VP_SHRINK_FORCE: opts.force ? '1' : '0',
+        VP_EDIT_INPUT: videoPath,
+        VP_EDIT_CUTS: cutsPath,
+        VP_EDIT_HEIGHT: String(Math.floor(opts.height)),
+        VP_EDIT_SPEED: String(opts.speed),
+        VP_EDIT_FORCE: opts.force ? '1' : '0',
       },
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -65,7 +83,7 @@ export async function runShrinkBatForFile(opts: {
 
     const emitLines = (chunk: string, stream: 'stdout' | 'stderr') => {
       const carry = stream === 'stdout' ? outCarry : errCarry
-      let combined = carry + chunk
+      const combined = carry + chunk
       const parts = combined.split(/\r?\n/)
       const rest = parts.pop() ?? ''
       if (stream === 'stdout') outCarry = rest

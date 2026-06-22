@@ -1313,6 +1313,8 @@
           Ao clicar no grid, o vídeo completo abre diretamente.
           <NuxtLink to="/admin" class="empty-hint-link">Processar trailers/previews no Admin</NuxtLink>
           ·
+          <NuxtLink to="/editor" class="empty-hint-link">Editor de vídeo</NuxtLink>
+          ·
           <NuxtLink to="/shrink" class="empty-hint-link">Shrink de vídeos</NuxtLink>
         </div>
         <div

@@ -48,7 +48,7 @@ if /I "%~1"=="--sparse" set "TRAILER_COLLECT=sparse"
 if /I "%~1"=="legacy" set "TRAILER_COLLECT=sparse"
 
 echo ====================================================
-echo   TRAILER-MAKER v3.7 (mp4 mkv m4v avi mov webm na raiz - saida trailers\*.mp4)
+echo   TRAILER-MAKER v3.7 (mp4 mkv m4v avi mov webm wmv na raiz - saida trailers\*.mp4)
 echo   TRAILER temp: %TRAILER_TEMP%
 if /I "%TRAILER_COLLECT%"=="padrao" echo   COLETA PADRAO: %TRAILER_PCT_SEG%s em 2x — cada %TRAILER_PCT_STEP%%% se ^<=%TRAILER_LONG_MIN_SEC%s\, cada %TRAILER_LONG_STEP_SEC%s se maior
 if /I not "%TRAILER_COLLECT%"=="padrao" echo   COLETA LEGADO: %TRAILER_COLLECT% ^(so por argumento CLI^)
@@ -80,7 +80,7 @@ set "VENC_ARGS=-c:v h264_nvenc -preset %TRAILER_NVENC_PRESET% -rc vbr -cq 26 -b:
 echo [INFO] Encoder de video: h264_nvenc preset %TRAILER_NVENC_PRESET%.
 :encoder_done
 
-for %%f in (*.mp4 *.mkv *.m4v *.avi *.mov *.webm) do (
+for %%f in (*.mp4 *.mkv *.m4v *.avi *.mov *.webm *.wmv) do (
     set "orig=%%f"
     set "nome=%%~nf"
 

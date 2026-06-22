@@ -105,7 +105,7 @@ export function trailerToMainFilename(trailerName: string): string | null {
 }
 
 /** Completo na raiz: mesmo stem que o trailer; provar extensões (trailer pode ser .mp4 e o filme .mkv). */
-export const MAIN_COMPLETE_TRY_EXTS = ['.mp4', '.mkv', '.m4v', '.webm', '.mov', '.avi'] as const
+export const MAIN_COMPLETE_TRY_EXTS = ['.mp4', '.mkv', '.m4v', '.webm', '.mov', '.avi', '.wmv'] as const
 
 function orderedMainExtensionsForTrailer(trailerName: string): readonly string[] {
   const guessed = trailerToMainFilename(trailerName)

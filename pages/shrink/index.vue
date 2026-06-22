@@ -5,6 +5,7 @@
       <div class="admin-head-links">
         <NuxtLink to="/" class="admin-back">← Reprodutor</NuxtLink>
         <NuxtLink to="/admin" class="admin-back">Admin</NuxtLink>
+        <NuxtLink to="/editor" class="admin-back">Editor</NuxtLink>
       </div>
     </header>
 
@@ -37,7 +38,8 @@
     <section class="admin-card">
       <h2 class="admin-h2">Pasta de origem</h2>
       <p class="admin-muted">
-        Caminho absoluto no servidor onde estão os vídeos. Os nomes da fila são resolvidos relativamente a esta pasta.
+        Escolha a biblioteca no menu (ex.: «_selected»). Os nomes da fila são relativos a essa pasta —
+        use só o nome do ficheiro se os vídeos estiverem na raiz da biblioteca.
       </p>
       <div class="admin-row">
         <select v-model="sourceSession" class="admin-input admin-input--wide" @change="onSourceSessionChange">
@@ -68,8 +70,9 @@
       >
         <p class="drop-zone-title">Arraste vídeos para aqui</p>
         <p class="admin-muted drop-zone-hint">
-          mp4, mkv, m4v, avi, mov, webm — ficheiros na raiz da pasta de origem (só o nome) ou subpastas
-          (use «Escolher pasta»).
+          {{ VIDEO_EXT_LABEL }}. Para muitos ficheiros em subpastas, use
+          <strong>«Escolher pasta»</strong> — arrastar ficheiros soltos só envia o <em>nome</em>, não o caminho;
+          nomes iguais em pastas diferentes contam como duplicado.
         </p>
         <div class="admin-row drop-zone-actions">
           <button type="button" class="admin-btn" @click="pickFiles">Escolher ficheiros</button>
@@ -78,19 +81,56 @@
             Limpar fila
           </button>
         </div>
-        <input ref="fileInputRef" type="file" multiple accept="video/*,.mp4,.mkv,.m4v,.avi,.mov,.webm" class="sr-only" @change="onFileInput" />
+        <input ref="fileInputRef" type="file" multiple :accept="VIDEO_FILE_INPUT_ACCEPT" class="sr-only" @change="onFileInput" />
         <input ref="folderInputRef" type="file" multiple webkitdirectory class="sr-only" @change="onFolderInput" />
       </div>
 
+      <p v-if="importMsg" class="import-summary" role="status">{{ importMsg }}</p>
+      <details v-if="importSkippedExt.length || importSkippedDup.length" class="import-skipped-details">
+        <summary class="import-skipped-summary">
+          Ver {{ importSkippedExt.length + importSkippedDup.length }} ignorado(s)
+        </summary>
+        <ul v-if="importSkippedExt.length" class="import-skipped-list">
+          <li v-for="name in importSkippedExt" :key="`ext:${name}`" class="import-skipped-item">
+            <span class="import-skipped-tag">extensão</span> {{ name }}
+          </li>
+        </ul>
+        <ul v-if="importSkippedDup.length" class="import-skipped-list">
+          <li v-for="name in importSkippedDup" :key="`dup:${name}`" class="import-skipped-item">
+            <span class="import-skipped-tag">duplicado</span> {{ name }}
+          </li>
+        </ul>
+      </details>
+
       <ul v-if="queue.length" class="queue-list">
-        <li v-for="item in queue" :key="item.id" class="queue-item">
-          <span class="queue-rel" :title="item.rel">{{ item.rel }}</span>
+        <li
+          v-for="item in queue"
+          :key="item.id"
+          class="queue-item"
+          :class="queueItemClass(item.rel)"
+        >
+          <span
+            class="queue-rel"
+            :class="queueRelClass(item.rel)"
+            :title="queueItemTitle(item.rel)"
+          >{{ item.rel }}</span>
           <button type="button" class="admin-btn admin-btn--sm admin-btn--ghost" @click="removeQueueItem(item.id)">
             Remover
           </button>
         </li>
       </ul>
       <p v-else class="admin-muted">Nenhum ficheiro na fila.</p>
+
+      <div v-if="failedItems.length" class="queue-errors" role="alert">
+        <h3 class="queue-errors-title">{{ failedItems.length }} ficheiro{{ failedItems.length === 1 ? '' : 's' }} com erro</h3>
+        <ul class="queue-errors-list">
+          <li v-for="f in failedItems" :key="f.rel" class="queue-errors-item">
+            <span class="queue-errors-rel" :title="f.rel">{{ f.rel }}</span>
+            <span class="queue-errors-msg">{{ f.message }}</span>
+          </li>
+        </ul>
+      </div>
+
       <p v-if="validateMsg" :class="validateOk ? 'admin-ok' : 'admin-err'">{{ validateMsg }}</p>
     </section>
 
@@ -189,6 +229,12 @@
 </template>
 
 <script setup lang="ts">
+import {
+  isVideoFileName,
+  VIDEO_EXT_LABEL,
+  VIDEO_FILE_INPUT_ACCEPT,
+} from '#shared/videoExtensions'
+
 interface MenuRow {
   path: string
   title: string
@@ -197,6 +243,23 @@ interface MenuRow {
 interface QueueItem {
   id: string
   rel: string
+}
+
+type QueueFileState = 'ok' | 'err' | 'skip' | 'running'
+
+interface QueueFileMeta {
+  status: QueueFileState
+  message?: string
+}
+
+interface JobFileResult {
+  rel: string
+  exitCode: number | null
+  okCount: number
+  errCount: number
+  skipCount: number
+  error?: string
+  failedItems?: { file: string; message: string }[]
 }
 
 type JobStatus = 'running' | 'done' | 'failed' | 'cancelled'
@@ -218,6 +281,7 @@ interface JobSnapshot {
   totalFiles: number
   currentFileIndex: number
   totals: { ok: number; err: number; skip: number }
+  results?: JobFileResult[]
   lines: JobLine[]
   totalLines: number
   cancelRequested: boolean
@@ -225,7 +289,6 @@ interface JobSnapshot {
   endedAt: number | null
 }
 
-const VIDEO_EXT_RE = /\.(mp4|mkv|m4v|avi|mov|webm)$/i
 const SHRINK_JOB_STORAGE_KEY = 'video_admin_shrink_job_id'
 const VISIBLE_LINES_CAP = 400
 
@@ -236,13 +299,17 @@ const sourceRoot = ref('')
 const loadError = ref('')
 const queue = ref<QueueItem[]>([])
 const dropActive = ref(false)
-const height = ref(540)
+const height = ref(1080)
 const speed = ref<1.25 | 1.5 | 2>(1.5)
 const force = ref(false)
 const validating = ref(false)
 const validateMsg = ref('')
 const validateOk = ref(false)
 const startErr = ref('')
+const queueStatus = ref<Record<string, QueueFileMeta>>({})
+const importMsg = ref('')
+const importSkippedExt = ref<string[]>([])
+const importSkippedDup = ref<string[]>([])
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const folderInputRef = ref<HTMLInputElement | null>(null)
@@ -266,34 +333,229 @@ const canProcess = computed(
     queue.value.length > 0,
 )
 
-function isVideoName(name: string): boolean {
-  return VIDEO_EXT_RE.test(name.trim())
+const failedItems = computed(() => {
+  const out: { rel: string; message: string }[] = []
+  const seen = new Set<string>()
+  for (const item of queue.value) {
+    const st = queueItemStatus(item.rel)
+    if (st?.status !== 'err') continue
+    const key = item.rel.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ rel: item.rel, message: st.message ?? 'Erro' })
+  }
+  return out
+})
+
+function queueStatusKey(rel: string): string {
+  return rel.toLowerCase()
 }
 
-function normalizeRel(raw: string): string {
-  return raw.trim().replace(/\\/g, '/').replace(/^\/+/, '')
+function queueItemStatus(rel: string): QueueFileMeta | null {
+  return queueStatus.value[queueStatusKey(rel)] ?? null
 }
 
-function addToQueue(relRaw: string) {
-  const rel = normalizeRel(relRaw)
-  if (!rel || !isVideoName(rel)) return
-  if (queue.value.some((q) => q.rel.toLowerCase() === rel.toLowerCase())) return
-  queue.value.push({ id: `${rel}-${Date.now()}-${Math.random()}`, rel })
-  validateMsg.value = ''
+function setQueueStatus(rel: string, meta: QueueFileMeta | null) {
+  const key = queueStatusKey(rel)
+  if (!meta) {
+    const next = { ...queueStatus.value }
+    delete next[key]
+    queueStatus.value = next
+    return
+  }
+  queueStatus.value = { ...queueStatus.value, [key]: meta }
 }
 
-function addFilesFromList(list: FileList | File[]) {
-  for (const f of list) {
-    const rel = f.webkitRelativePath ? normalizeRel(f.webkitRelativePath) : normalizeRel(f.name)
-    addToQueue(rel)
+function applyResultStatus(result: JobFileResult) {
+  if (result.exitCode === null) {
+    setQueueStatus(result.rel, { status: 'running' })
+    return
+  }
+  if (result.skipCount > 0) {
+    setQueueStatus(result.rel, { status: 'skip', message: 'Ignorado (já existe ou skip)' })
+    return
+  }
+  if (result.errCount > 0 || (result.exitCode !== 0 && result.okCount === 0)) {
+    const msg =
+      result.failedItems?.[0]?.message ??
+      result.error ??
+      (result.exitCode != null ? `Falhou (exit ${result.exitCode})` : 'Erro')
+    setQueueStatus(result.rel, { status: 'err', message: msg })
+    return
+  }
+  setQueueStatus(result.rel, { status: 'ok' })
+}
+
+function syncQueueStatusFromJob(snap: JobSnapshot) {
+  if (!snap.results?.length) return
+  for (const r of snap.results) {
+    applyResultStatus(r)
   }
 }
 
-function onDrop(e: DragEvent) {
+function queueItemClass(rel: string): string {
+  const st = queueItemStatus(rel)
+  return st ? `queue-item--${st.status}` : ''
+}
+
+function queueRelClass(rel: string): string {
+  const st = queueItemStatus(rel)
+  if (st?.status === 'err') return 'queue-rel--err'
+  if (st?.status === 'ok') return 'queue-rel--ok'
+  if (st?.status === 'skip') return 'queue-rel--skip'
+  if (st?.status === 'running') return 'queue-rel--running'
+  return ''
+}
+
+function queueItemTitle(rel: string): string {
+  const st = queueItemStatus(rel)
+  if (st?.message) return `${rel}\n${st.message}`
+  return rel
+}
+
+function isVideoName(name: string): boolean {
+  return isVideoFileName(name)
+}
+
+function normalizeRel(raw: string): string {
+  let rel = raw.trim().replace(/\\/g, '/').replace(/^\/+/, '')
+  const root = sourceRoot.value.trim()
+  if (root) {
+    const rootName = root.replace(/[/\\]+$/, '').split(/[/\\]/).pop()?.toLowerCase() ?? ''
+    const prefix = rel.split('/')[0]?.toLowerCase() ?? ''
+    if (rootName && prefix === rootName && rel.includes('/')) {
+      rel = rel.split('/').slice(1).join('/')
+    }
+  }
+  return rel
+}
+
+function addToQueue(relRaw: string): 'added' | 'ext' | 'dup' {
+  const rel = normalizeRel(relRaw)
+  if (!rel || !isVideoName(rel)) return 'ext'
+  if (queue.value.some((q) => q.rel.toLowerCase() === rel.toLowerCase())) return 'dup'
+  queue.value.push({ id: `${rel}-${Date.now()}-${Math.random()}`, rel })
+  setQueueStatus(rel, null)
+  validateMsg.value = ''
+  return 'added'
+}
+
+interface QueueImportSummary {
+  received: number
+  added: number
+  skippedExt: string[]
+  skippedDup: string[]
+}
+
+function importRels(rels: string[]): QueueImportSummary {
+  const summary: QueueImportSummary = {
+    received: rels.length,
+    added: 0,
+    skippedExt: [],
+    skippedDup: [],
+  }
+  for (const relRaw of rels) {
+    const display = relRaw.trim() || relRaw
+    const rel = normalizeRel(relRaw)
+    const result = addToQueue(relRaw)
+    if (result === 'added') {
+      summary.added++
+    } else if (result === 'ext') {
+      summary.skippedExt.push(display)
+    } else {
+      summary.skippedDup.push(rel || display)
+    }
+  }
+  return summary
+}
+
+function showImportSummary(summary: QueueImportSummary) {
+  importSkippedExt.value = summary.skippedExt
+  importSkippedDup.value = summary.skippedDup
+  if (!summary.skippedExt.length && !summary.skippedDup.length) {
+    importMsg.value =
+      summary.received > 0
+        ? `${summary.added} ficheiro(s) na fila.`
+        : ''
+    return
+  }
+  const parts: string[] = []
+  if (summary.skippedExt.length) {
+    parts.push(`${summary.skippedExt.length} com extensão não suportada`)
+  }
+  if (summary.skippedDup.length) {
+    parts.push(
+      `${summary.skippedDup.length} duplicado(s) — já na fila ou mesmo nome (arrastar só envia o nome, não a subpasta)`,
+    )
+  }
+  importMsg.value = `De ${summary.received} recebidos → ${summary.added} na fila. Ignorados: ${parts.join('; ')}.`
+}
+
+function relFromFile(f: File): string {
+  return f.webkitRelativePath ? normalizeRel(f.webkitRelativePath) : normalizeRel(f.name)
+}
+
+function addFilesFromList(list: FileList | File[]) {
+  const rels: string[] = []
+  for (const f of list) rels.push(relFromFile(f))
+  showImportSummary(importRels(rels))
+}
+
+async function readEntryFiles(
+  entry: FileSystemEntry,
+  prefix: string,
+  out: string[],
+): Promise<void> {
+  if (entry.isFile) {
+    const file = await new Promise<File>((resolve, reject) => {
+      ;(entry as FileSystemFileEntry).file(resolve, reject)
+    })
+    const rel = prefix ? `${prefix}/${file.name}` : file.name
+    out.push(normalizeRel(rel))
+    return
+  }
+  if (!entry.isDirectory) return
+  const dir = entry as FileSystemDirectoryEntry
+  const nextPrefix = prefix ? `${prefix}/${dir.name}` : dir.name
+  const reader = dir.createReader()
+  let batch: FileSystemEntry[]
+  do {
+    batch = await new Promise<FileSystemEntry[]>((resolve, reject) => {
+      reader.readEntries(resolve, reject)
+    })
+    for (const child of batch) {
+      await readEntryFiles(child, nextPrefix, out)
+    }
+  } while (batch.length > 0)
+}
+
+async function collectDropRels(e: DragEvent): Promise<string[]> {
+  const dt = e.dataTransfer
+  if (!dt) return []
+
+  const rels: string[] = []
+  const items = dt.items ? [...dt.items] : []
+  const fileItems = items.filter((item) => item.kind === 'file')
+  const hasDirectory = fileItems.some((item) => item.webkitGetAsEntry?.()?.isDirectory)
+
+  if (fileItems.length && (hasDirectory || fileItems.length === 1)) {
+    for (const item of fileItems) {
+      const entry = item.webkitGetAsEntry?.()
+      if (entry) await readEntryFiles(entry, '', rels)
+    }
+  }
+
+  if (!rels.length && dt.files?.length) {
+    for (const f of dt.files) rels.push(relFromFile(f))
+  }
+  return rels
+}
+
+async function onDrop(e: DragEvent) {
   dropActive.value = false
-  const files = e.dataTransfer?.files
-  if (!files?.length) return
-  addFilesFromList(files)
+  const rels = await collectDropRels(e)
+  if (!rels.length) return
+  showImportSummary(importRels(rels))
 }
 
 function pickFiles() {
@@ -317,12 +579,18 @@ function onFolderInput(ev: Event) {
 }
 
 function removeQueueItem(id: string) {
+  const item = queue.value.find((q) => q.id === id)
+  if (item) setQueueStatus(item.rel, null)
   queue.value = queue.value.filter((q) => q.id !== id)
 }
 
 function clearQueue() {
   queue.value = []
+  queueStatus.value = {}
   validateMsg.value = ''
+  importMsg.value = ''
+  importSkippedExt.value = []
+  importSkippedDup.value = []
 }
 
 function onSourceSessionChange() {
@@ -370,7 +638,11 @@ async function validateQueue() {
   validating.value = true
   try {
     const h = await adminHeaders()
-    const data = await $fetch<{ count: number }>('/api/admin/shrink-validate', {
+    const data = await $fetch<{
+      count: number
+      failedCount: number
+      failed: { rel: string; message: string }[]
+    }>('/api/admin/shrink-validate', {
       method: 'POST',
       headers: { ...h, 'Content-Type': 'application/json' },
       body: {
@@ -378,8 +650,17 @@ async function validateQueue() {
         files: queue.value.map((q) => q.rel),
       },
     })
-    validateOk.value = true
-    validateMsg.value = `${data.count} ficheiro(s) encontrado(s) no servidor.`
+    queueStatus.value = {}
+    for (const f of data.failed ?? []) {
+      setQueueStatus(f.rel, { status: 'err', message: f.message })
+    }
+    if ((data.failedCount ?? 0) === 0) {
+      validateOk.value = true
+      validateMsg.value = `${data.count} ficheiro(s) encontrado(s) no servidor.`
+    } else {
+      validateOk.value = false
+      validateMsg.value = `${data.failedCount} com erro · ${data.count} OK no servidor.`
+    }
   } catch (e: unknown) {
     const ex = e as { data?: { statusMessage?: string }; message?: string }
     validateMsg.value = ex?.data?.statusMessage || ex?.message || 'Validação falhou.'
@@ -449,6 +730,7 @@ function openStreamForJob(jobId: string) {
   es.addEventListener('snapshot', (ev) => {
     try {
       job.value = JSON.parse((ev as MessageEvent).data) as JobSnapshot
+      syncQueueStatusFromJob(job.value)
       void scrollTailToBottom()
     } catch {
       /* */
@@ -480,6 +762,29 @@ function openStreamForJob(jobId: string) {
       /* */
     }
   })
+  es.addEventListener('file-start', (ev) => {
+    if (!job.value) return
+    try {
+      const data = JSON.parse((ev as MessageEvent).data) as { rel: string }
+      setQueueStatus(data.rel, { status: 'running' })
+    } catch {
+      /* */
+    }
+  })
+  es.addEventListener('file-end', (ev) => {
+    if (!job.value) return
+    try {
+      const data = JSON.parse((ev as MessageEvent).data) as {
+        fileIndex: number
+        result: JobFileResult
+      }
+      if (!job.value.results) job.value.results = []
+      job.value.results[data.fileIndex] = data.result
+      applyResultStatus(data.result)
+    } catch {
+      /* */
+    }
+  })
   es.addEventListener('status', (ev) => {
     if (!job.value) return
     try {
@@ -493,6 +798,7 @@ function openStreamForJob(jobId: string) {
     try {
       const snap = JSON.parse((ev as MessageEvent).data) as JobSnapshot
       job.value = snap
+      syncQueueStatusFromJob(snap)
       void scrollTailToBottom()
     } catch {
       /* */
@@ -527,7 +833,10 @@ async function bootstrapJob() {
         headers: h,
       })
       if (snap.status === 'running') await attachToJob(stored)
-      else job.value = snap
+      else {
+        job.value = snap
+        syncQueueStatusFromJob(snap)
+      }
     }
   } catch {
     /* */
@@ -538,6 +847,9 @@ async function startShrinkJob() {
   if (!canProcess.value) return
   startErr.value = ''
   jobErr.value = ''
+  for (const q of queue.value) {
+    setQueueStatus(q.rel, null)
+  }
   try {
     const h = await adminHeaders()
     const data = await $fetch<{ jobId: string }>('/api/admin/shrink-start', {
@@ -816,6 +1128,53 @@ onUnmounted(() => {
   border: 0;
 }
 
+.import-summary {
+  margin: 0.65rem 0 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #ffd9b8;
+  background: color-mix(in srgb, #d97a2a 14%, transparent);
+  border: 1px solid color-mix(in srgb, #d97a2a 35%, transparent);
+}
+
+.import-skipped-details {
+  margin: 0.35rem 0 0.65rem;
+  font-size: 0.84rem;
+  color: #9aa0a6;
+}
+
+.import-skipped-summary {
+  cursor: pointer;
+  margin-bottom: 0.35rem;
+}
+
+.import-skipped-list {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  max-height: 10rem;
+  overflow: auto;
+}
+
+.import-skipped-item {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.78rem;
+  padding: 0.15rem 0;
+  word-break: break-all;
+}
+
+.import-skipped-tag {
+  display: inline-block;
+  min-width: 4.5rem;
+  color: #f8b4b0;
+  font-family: system-ui, sans-serif;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
 .queue-list {
   list-style: none;
   padding: 0;
@@ -838,6 +1197,77 @@ onUnmounted(() => {
   font-size: 0.82rem;
   word-break: break-all;
   text-align: left;
+}
+
+.queue-item--err {
+  background: color-mix(in srgb, #da3633 8%, transparent);
+  margin: 0 -0.35rem;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+  border-radius: 4px;
+}
+
+.queue-rel--err {
+  color: #f85149;
+  font-weight: 600;
+}
+
+.queue-rel--ok {
+  color: #7ee787;
+}
+
+.queue-rel--skip {
+  color: #9aa0a6;
+}
+
+.queue-rel--running {
+  color: #8ab4f8;
+}
+
+.queue-errors {
+  margin-top: 0.85rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid color-mix(in srgb, #da3633 45%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, #da3633 10%, transparent);
+}
+
+.queue-errors-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.9rem;
+  color: #f85149;
+}
+
+.queue-errors-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.queue-errors-item {
+  padding: 0.3rem 0;
+  border-top: 1px solid color-mix(in srgb, #da3633 25%, transparent);
+  font-size: 0.82rem;
+}
+
+.queue-errors-item:first-child {
+  border-top: none;
+}
+
+.queue-errors-rel {
+  display: block;
+  font-family: ui-monospace, Consolas, monospace;
+  color: #f85149;
+  word-break: break-all;
+}
+
+.queue-errors-msg {
+  display: block;
+  color: #f8b4b0;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
 }
 
 .shrink-options {

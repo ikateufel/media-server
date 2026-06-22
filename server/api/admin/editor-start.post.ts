@@ -3,15 +3,16 @@ import { resolve } from 'node:path'
 import { getVideoMenuItems } from '../../utils/videoMenu'
 import { requireAdminToken } from '../../utils/requireAdmin'
 import {
-  assertAllowedSourceRoot,
-  createShrinkJob,
-  normalizeShrinkSpeed,
-  resolveShrinkFiles,
-} from '../../utils/shrinkJobs'
+  createEditorJob,
+  resolveEditorFile,
+  validateEditorSegments,
+} from '../../utils/editorJobs'
+import { normalizeEditorSpeed } from '../../utils/runEditorBat'
+import { assertAllowedSourceRoot } from '../../utils/shrinkJobs'
 
 /**
- * Inicia job de shrink (shrink_video.bat por ficheiro).
- * Body: { sourceRoot, files[], height?, speed?, force? }
+ * Inicia exportação de vídeo editado (edit_video.bat).
+ * Body: { sourceRoot, file, removeSegments[], duration?, height?, speed?, force? }
  */
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
@@ -20,13 +21,15 @@ export default defineEventHandler(async (event) => {
   if (process.platform !== 'win32') {
     throw createError({
       statusCode: 400,
-      statusMessage: 'Shrink só está disponível quando o servidor corre em Windows.',
+      statusMessage: 'Editor só está disponível quando o servidor corre em Windows.',
     })
   }
 
   const body = (await readBody(event).catch(() => null)) as {
     sourceRoot?: unknown
-    files?: unknown
+    file?: unknown
+    removeSegments?: unknown
+    duration?: unknown
     height?: unknown
     speed?: unknown
     force?: unknown
@@ -46,12 +49,18 @@ export default defineEventHandler(async (event) => {
   }
   const sourceRoot = assertAllowedSourceRoot(sourceRootRaw, allowed)
 
-  const filesRaw = body?.files
-  if (!Array.isArray(filesRaw) || !filesRaw.length) {
-    throw createError({ statusCode: 400, statusMessage: 'Campo "files" (array) obrigatório.' })
+  const fileRel = String(body?.file ?? '').trim()
+  if (!fileRel) {
+    throw createError({ statusCode: 400, statusMessage: 'Campo "file" obrigatório.' })
   }
-  const files = filesRaw.map((f) => String(f ?? '').trim()).filter(Boolean)
-  const resolved = await resolveShrinkFiles(sourceRoot, files)
+  const file = await resolveEditorFile(sourceRoot, fileRel)
+
+  const durationRaw = Number(body?.duration)
+  const duration = Number.isFinite(durationRaw) && durationRaw > 0 ? durationRaw : null
+  const { removeSegments, keepSegments } = validateEditorSegments(
+    duration,
+    Array.isArray(body?.removeSegments) ? body!.removeSegments : [],
+  )
 
   const heightRaw = Number(body?.height ?? 1080)
   const height = Number.isFinite(heightRaw) ? Math.floor(heightRaw) : 1080
@@ -59,29 +68,34 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Altura inválida (144–4320).' })
   }
 
-  const speed = normalizeShrinkSpeed(body?.speed ?? 1.5)
+  const speed = normalizeEditorSpeed(body?.speed ?? 1)
   if (!speed) {
-    throw createError({ statusCode: 400, statusMessage: 'Velocidade inválida: use 1.25, 1.5 ou 2.' })
+    throw createError({ statusCode: 400, statusMessage: 'Velocidade inválida: use 1, 1.25, 1.5 ou 2.' })
   }
 
   const force = body?.force === true || body?.force === 'true' || body?.force === 1
 
-  const snap = createShrinkJob({
+  const snap = createEditorJob({
     projectRoot: process.cwd(),
     sourceRoot,
-    files: resolved,
+    file,
     height,
     speed,
     force,
+    removeSegments,
+    keepSegments,
+    duration,
   })
 
   return {
     jobId: snap.id,
-    totalFiles: snap.totalFiles,
     sourceRoot: snap.sourceRoot,
+    file: snap.fileRel,
     height: snap.height,
     speed: snap.speed,
     force: snap.force,
+    keepCount: snap.keepSegments.length,
+    removeCount: snap.removeSegments.length,
     startedAt: snap.startedAt,
   }
 })

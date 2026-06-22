@@ -3,16 +3,16 @@ import { existsSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { createError } from 'h3'
+import { isVideoFileName } from '#shared/videoExtensions'
 
 export type LibraryBatKind = 'trailers' | 'previews'
 
 const LOG_CAP = 900_000
-const VIDEO_EXT_RE = /\.(mp4|mkv|m4v|avi|mov|webm)$/i
 
 async function hasDirectVideoFiles(dir: string): Promise<boolean> {
   try {
     const entries = await readdir(dir, { withFileTypes: true })
-    return entries.some((e) => e.isFile() && VIDEO_EXT_RE.test(e.name))
+    return entries.some((e) => e.isFile() && isVideoFileName(e.name))
   } catch {
     return false
   }

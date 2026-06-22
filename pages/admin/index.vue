@@ -2,8 +2,11 @@
   <div class="admin-page">
     <header class="admin-head">
       <h1 class="admin-title">Administração</h1>
-      <NuxtLink to="/" class="admin-back">← Reprodutor</NuxtLink>
-      <NuxtLink to="/shrink" class="admin-back">Shrink</NuxtLink>
+      <div class="admin-head-links">
+        <NuxtLink to="/" class="admin-back">← Reprodutor</NuxtLink>
+        <NuxtLink to="/shrink" class="admin-back">Shrink</NuxtLink>
+        <NuxtLink to="/editor" class="admin-back">Editor</NuxtLink>
+      </div>
     </header>
 
     <p class="admin-lead">
@@ -12,6 +15,18 @@
       <code class="admin-code">scripts/trailer.bat</code> e <code class="admin-code">scripts/preview.bat</code> no
       servidor Windows).
     </p>
+
+    <section class="admin-card admin-tools">
+      <h2 class="admin-h2">Ferramentas de vídeo</h2>
+      <p class="admin-muted admin-muted--tight">
+        Encurtar vídeos completos ou cortar trechos — saída em <code class="admin-code">shrinked\</code> ou
+        <code class="admin-code">edited\</code> na pasta de origem.
+      </p>
+      <div class="admin-row admin-tools-links">
+        <NuxtLink to="/shrink" class="admin-tool-link">Shrink</NuxtLink>
+        <NuxtLink to="/editor" class="admin-tool-link">Editor</NuxtLink>
+      </div>
+    </section>
 
     <p v-if="!isWinServer" class="admin-warn" role="status">
       O processo Node está em <strong>{{ serverPlatform }}</strong>: a sincronização por .bat só funciona se o
@@ -1383,6 +1398,41 @@ async function checkFolderStatsAll(mode: 'counts' | 'pairing') {
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 1rem;
+}
+
+.admin-head-links {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.admin-tools-links {
+  margin-top: 0.35rem;
+}
+
+.admin-tool-link {
+  display: inline-block;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  background: #238636;
+  border: 1px solid #2ea043;
+  color: #e8eaed;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.admin-tool-link:hover {
+  background: #2ea043;
+}
+
+.admin-tool-link + .admin-tool-link {
+  background: #2d333b;
+  border-color: #444c56;
+}
+
+.admin-tool-link + .admin-tool-link:hover {
+  background: #373e47;
 }
 
 .admin-title {

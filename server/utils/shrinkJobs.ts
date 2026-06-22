@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { stat } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { createError } from 'h3'
 import { runShrinkBatForFile, type ShrinkSpeed } from './runShrinkBat'
 import { tailText } from './runLibraryBat'
-import { resolveSafeUnderRoot } from './videoPaths'
+import { hasPathTraversal, resolveMediaFileUnderRoot } from './videoPaths'
+import { isVideoFileName } from '#shared/videoExtensions'
 
 export type ShrinkJobStatus = 'running' | 'done' | 'failed' | 'cancelled'
 
@@ -62,7 +61,6 @@ type Listener = (ev: ShrinkJobEvent) => void
 const LINE_RING_CAP = 800
 const STDOUT_TAIL_CAP = 12_000
 const JOB_RETENTION_MS = 30 * 60_000
-const VIDEO_EXT_RE = /\.(mp4|mkv|m4v|avi|mov|webm)$/i
 
 interface InternalJob {
   snapshot: ShrinkJobSnapshot
@@ -124,6 +122,31 @@ function classifyShrinkLine(text: string): 'ok' | 'err' | 'skip' | null {
   return null
 }
 
+function extractShrinkErrorHint(stdout: string, stderr: string): string | null {
+  const lines = `${stdout}\n${stderr}`.split(/\r?\n/)
+  const parts: string[] = []
+  let captureFfmpeg = false
+  for (const line of lines) {
+    const t = line.trim()
+    if (!t) continue
+    if (t.startsWith('[ERRO]')) {
+      parts.push(t)
+      captureFfmpeg = false
+      continue
+    }
+    if (t.startsWith('[DET]')) {
+      captureFfmpeg = true
+      continue
+    }
+    if (captureFfmpeg && parts.length < 12) {
+      parts.push(t)
+    }
+  }
+  if (parts.length) return parts.slice(0, 10).join(' | ')
+  const tail = (stderr || stdout).trim().split(/\r?\n/).filter(Boolean).slice(-4).join(' | ')
+  return tail || null
+}
+
 function pushFailedItem(slot: ShrinkJobFileResult, file: string, message: string) {
   if (!slot.failedItems) slot.failedItems = []
   slot.failedItems.push({ file: file.trim() || '(sem ficheiro)', message: message.trim() })
@@ -175,29 +198,67 @@ export async function resolveShrinkFiles(
       .trim()
       .replace(/\\/g, '/')
       .replace(/^\/+/, '')
-    if (!rel || rel.includes('..')) {
+    if (!rel || hasPathTraversal(rel)) {
       throw createError({ statusCode: 400, statusMessage: `Caminho inválido: ${raw}` })
     }
-    if (!VIDEO_EXT_RE.test(rel)) {
+    if (!isVideoFileName(rel)) {
       throw createError({ statusCode: 400, statusMessage: `Extensão não suportada: ${rel}` })
     }
     const key = rel.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
-    const path = resolveSafeUnderRoot(sourceRoot, rel)
-    if (!existsSync(path)) {
-      throw createError({ statusCode: 400, statusMessage: `Ficheiro não encontrado: ${path}` })
-    }
-    const st = await stat(path)
-    if (!st.isFile()) {
-      throw createError({ statusCode: 400, statusMessage: `Não é um ficheiro: ${path}` })
-    }
-    out.push({ rel, path })
+    const resolved = await resolveMediaFileUnderRoot(sourceRoot, rel)
+    out.push({ rel: resolved.rel, path: resolved.path })
   }
   if (!out.length) {
     throw createError({ statusCode: 400, statusMessage: 'Lista de ficheiros vazia.' })
   }
   return out
+}
+
+export async function validateShrinkFilesReport(
+  sourceRoot: string,
+  files: string[],
+): Promise<{
+  ok: { rel: string; path: string }[]
+  failed: { rel: string; message: string }[]
+}> {
+  const ok: { rel: string; path: string }[] = []
+  const failed: { rel: string; message: string }[] = []
+  const seen = new Set<string>()
+
+  for (const raw of files) {
+    const rel = String(raw ?? '')
+      .trim()
+      .replace(/\\/g, '/')
+      .replace(/^\/+/, '')
+    if (!rel) continue
+    const key = rel.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    if (hasPathTraversal(rel)) {
+      failed.push({ rel, message: 'Caminho inválido.' })
+      continue
+    }
+    if (!isVideoFileName(rel)) {
+      failed.push({ rel, message: 'Extensão não suportada.' })
+      continue
+    }
+
+    try {
+      const resolved = await resolveMediaFileUnderRoot(sourceRoot, rel)
+      ok.push({ rel: resolved.rel, path: resolved.path })
+    } catch (e: unknown) {
+      const ex = e as { statusMessage?: string; message?: string }
+      failed.push({
+        rel,
+        message: ex?.statusMessage || ex?.message || 'Ficheiro não encontrado.',
+      })
+    }
+  }
+
+  return { ok, failed }
 }
 
 async function runJob(job: InternalJob, projectRoot: string) {
@@ -256,19 +317,19 @@ async function runJob(job: InternalJob, projectRoot: string) {
           },
           onLine: (stream, text) => {
             pushLine(job, i, stream, text)
-            if (stream === 'stdout') {
-              parseStdoutHints(text, slot, hintRef)
-              const cls = classifyShrinkLine(text)
-              if (cls === 'ok') {
-                slot.okCount = 1
-                job.snapshot.totals.ok++
-              } else if (cls === 'err') {
-                slot.errCount = 1
-                job.snapshot.totals.err++
-              } else if (cls === 'skip') {
-                slot.skipCount = 1
-                job.snapshot.totals.skip++
-              }
+            parseStdoutHints(text, slot, hintRef)
+            const cls = classifyShrinkLine(text)
+            if (cls === 'ok') {
+              slot.okCount = 1
+              job.snapshot.totals.ok++
+            } else if (cls === 'err') {
+              slot.errCount = 1
+              job.snapshot.totals.err++
+            } else if (cls === 'skip') {
+              slot.skipCount = 1
+              job.snapshot.totals.skip++
+            }
+            if (cls) {
               emit(job, {
                 type: 'progress',
                 totals: { ...job.snapshot.totals },
@@ -287,7 +348,8 @@ async function runJob(job: InternalJob, projectRoot: string) {
           } else {
             slot.errCount = 1
             job.snapshot.totals.err++
-            pushFailedItem(slot, slot.rel, `[exit ${r.exitCode}]`)
+            const errHint = extractShrinkErrorHint(r.stdout, r.stderr)
+            pushFailedItem(slot, slot.rel, errHint || `[exit ${r.exitCode}]`)
           }
         }
       } catch (e) {

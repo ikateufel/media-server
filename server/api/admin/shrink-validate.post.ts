@@ -4,9 +4,7 @@ import { getVideoMenuItems } from '../../utils/videoMenu'
 import { requireAdminToken } from '../../utils/requireAdmin'
 import {
   assertAllowedSourceRoot,
-  createShrinkJob,
-  normalizeShrinkSpeed,
-  resolveShrinkFiles,
+  validateShrinkFilesReport,
 } from '../../utils/shrinkJobs'
 
 /**
@@ -42,10 +40,12 @@ export default defineEventHandler(async (event) => {
   }
   const files = filesRaw.map((f) => String(f ?? '').trim()).filter(Boolean)
 
-  const resolved = await resolveShrinkFiles(sourceRoot, files)
+  const report = await validateShrinkFilesReport(sourceRoot, files)
   return {
     sourceRoot,
-    count: resolved.length,
-    items: resolved.map((r) => ({ rel: r.rel, path: r.path })),
+    count: report.ok.length,
+    items: report.ok,
+    failed: report.failed,
+    failedCount: report.failed.length,
   }
 })
