@@ -8,10 +8,11 @@ import {
   normalizeShrinkSpeed,
   resolveShrinkFiles,
 } from '../../utils/shrinkJobs'
+import { normalizeShrinkCodec } from '../../utils/runShrinkBat'
 
 /**
  * Inicia job de shrink (shrink_video.bat por ficheiro).
- * Body: { sourceRoot, files[], height?, speed?, force? }
+ * Body: { sourceRoot, files[], height?, speed?, codec?, force?, prioritizeSize? }
  */
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
@@ -29,7 +30,9 @@ export default defineEventHandler(async (event) => {
     files?: unknown
     height?: unknown
     speed?: unknown
+    codec?: unknown
     force?: unknown
+    prioritizeSize?: unknown
   } | null
 
   const allowed = getVideoMenuItems(config).map((e) => resolve(e.path.trim()))
@@ -64,7 +67,18 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Velocidade inválida: use 1.25, 1.5 ou 2.' })
   }
 
+  const codec = normalizeShrinkCodec(body?.codec ?? 'auto')
+  if (!codec) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Codec inválido: use auto, h264_nvenc, libx264, hevc_nvenc ou libx265.',
+    })
+  }
+
   const force = body?.force === true || body?.force === 'true' || body?.force === 1
+  const prioritizeSize =
+    codec === 'auto' &&
+    (body?.prioritizeSize === true || body?.prioritizeSize === 'true' || body?.prioritizeSize === 1)
 
   const snap = createShrinkJob({
     projectRoot: process.cwd(),
@@ -72,7 +86,9 @@ export default defineEventHandler(async (event) => {
     files: resolved,
     height,
     speed,
+    codec,
     force,
+    prioritizeSize,
   })
 
   return {
@@ -81,7 +97,9 @@ export default defineEventHandler(async (event) => {
     sourceRoot: snap.sourceRoot,
     height: snap.height,
     speed: snap.speed,
+    codec: snap.codec,
     force: snap.force,
+    prioritizeSize: snap.prioritizeSize,
     startedAt: snap.startedAt,
   }
 })

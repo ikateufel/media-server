@@ -3,10 +3,19 @@ import { resolve } from 'node:path'
 import { createError } from 'h3'
 import {
   computeKeepSegments,
+  mergeSegments,
   normalizeRemoveSegments,
   type CutSegment,
 } from './editorCuts'
+
+export type EditorEditMode = 'exclude' | 'keep'
+
+export function normalizeEditMode(raw: unknown): EditorEditMode {
+  const s = String(raw ?? 'exclude').trim().toLowerCase()
+  return s === 'keep' ? 'keep' : 'exclude'
+}
 import { runEditorBatForFile, type EditorSpeed } from './runEditorBat'
+import { logIfOutputLargerThanSource, oversizedOutputMessage, type OversizedOutputEntry } from './oversizedOutputLog'
 import { tailText } from './runLibraryBat'
 import { hasPathTraversal, resolveMediaFileUnderRoot } from './videoPaths'
 import { isVideoFileName } from '#shared/videoExtensions'
@@ -29,6 +38,7 @@ export interface EditorJobSnapshot {
   height: number
   speed: EditorSpeed
   force: boolean
+  editMode: EditorEditMode
   removeSegments: CutSegment[]
   keepSegments: CutSegment[]
   duration: number | null
@@ -40,6 +50,7 @@ export interface EditorJobSnapshot {
   lines: EditorJobLine[]
   totalLines: number
   cancelRequested: boolean
+  oversizedOutput: OversizedOutputEntry | null
 }
 
 export type EditorJobEvent =
@@ -119,17 +130,21 @@ export async function resolveEditorFile(
 
 export function validateEditorSegments(
   duration: number | null,
-  remove: CutSegment[],
-): { removeSegments: CutSegment[]; keepSegments: CutSegment[] } {
-  const removeSegments = normalizeRemoveSegments(remove)
-  if (!removeSegments.length) {
+  mode: EditorEditMode,
+  marked: CutSegment[],
+): { markedSegments: CutSegment[]; keepSegments: CutSegment[]; editMode: EditorEditMode } {
+  const markedSegments = normalizeRemoveSegments(marked)
+  if (!markedSegments.length) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'Marque pelo menos um trecho a remover.',
+      statusMessage:
+        mode === 'keep'
+          ? 'Marque pelo menos um trecho a recortar.'
+          : 'Marque pelo menos um trecho a excluir.',
     })
   }
   if (duration != null && Number.isFinite(duration) && duration > 0) {
-    for (const s of removeSegments) {
+    for (const s of markedSegments) {
       if (s.start >= duration || s.end <= 0) {
         throw createError({
           statusCode: 400,
@@ -137,17 +152,31 @@ export function validateEditorSegments(
         })
       }
     }
-    const keepSegments = computeKeepSegments(duration, removeSegments)
+    const keepSegments =
+      mode === 'keep'
+        ? mergeSegments(
+            markedSegments.map((s) => ({
+              start: Math.max(0, s.start),
+              end: Math.min(duration, s.end),
+            })),
+          )
+        : computeKeepSegments(duration, markedSegments)
     if (!keepSegments.length) {
       throw createError({
         statusCode: 400,
-        statusMessage: 'Remover estes trechos deixaria o vídeo vazio.',
+        statusMessage:
+          mode === 'keep'
+            ? 'Nenhum trecho válido para recortar.'
+            : 'Excluir estes trechos deixaria o vídeo vazio.',
       })
     }
-    return { removeSegments, keepSegments }
+    return { markedSegments, keepSegments, editMode: mode }
   }
-  const keepSegments = computeKeepSegments(Number.MAX_SAFE_INTEGER, removeSegments)
-  return { removeSegments, keepSegments }
+  const keepSegments =
+    mode === 'keep'
+      ? mergeSegments(markedSegments)
+      : computeKeepSegments(Number.MAX_SAFE_INTEGER, markedSegments)
+  return { markedSegments, keepSegments, editMode: mode }
 }
 
 async function runJob(job: InternalJob, projectRoot: string) {
@@ -162,7 +191,7 @@ async function runJob(job: InternalJob, projectRoot: string) {
     pushLine(
       job,
       'meta',
-      `[INICIO] ${snap.fileRel} · ${snap.keepSegments.length} trecho(s) a manter · ${snap.speed}x · ${snap.height}px`,
+      `[INICIO] ${snap.fileRel} · modo ${snap.editMode === 'keep' ? 'recortar' : 'excluir'} · ${snap.keepSegments.length} trecho(s) a exportar · ${snap.speed}x · ${snap.height}px`,
     )
 
     const r = await runEditorBatForFile({
@@ -195,6 +224,19 @@ async function runJob(job: InternalJob, projectRoot: string) {
     }
 
     if (r.exitCode === 0) {
+      const logged = await logIfOutputLargerThanSource({
+        projectRoot,
+        sourcePath: snap.filePath,
+        outputSubdir: 'edited',
+        tool: 'editor',
+        fileRel: snap.fileRel,
+      })
+      if (logged) {
+        snap.oversizedOutput = logged
+        const msg = oversizedOutputMessage(logged)
+        pushLine(job, 'meta', `[OVERSIZED] ${msg}`)
+        pushLine(job, 'stderr', `[AVISO] ${msg}`)
+      }
       setStatus(job, 'done')
     } else {
       pushLine(job, 'stderr', `[ERRO] exit code ${r.exitCode}`)
@@ -216,6 +258,7 @@ export interface CreateEditorJobOpts {
   height: number
   speed: EditorSpeed
   force: boolean
+  editMode: EditorEditMode
   removeSegments: CutSegment[]
   keepSegments: CutSegment[]
   duration: number | null
@@ -233,6 +276,7 @@ export function createEditorJob(opts: CreateEditorJobOpts): EditorJobSnapshot {
     height: opts.height,
     speed: opts.speed,
     force: opts.force,
+    editMode: opts.editMode,
     removeSegments: opts.removeSegments,
     keepSegments: opts.keepSegments,
     duration: opts.duration,
@@ -242,6 +286,7 @@ export function createEditorJob(opts: CreateEditorJobOpts): EditorJobSnapshot {
     lines: [],
     totalLines: 0,
     cancelRequested: false,
+    oversizedOutput: null,
   }
   const internal: InternalJob = {
     snapshot,

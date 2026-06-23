@@ -3,6 +3,15 @@ export interface CutSegment {
   end: number
 }
 
+/** exclude = marca o que sai; keep = marca o que fica */
+export type EditorMarkMode = 'exclude' | 'keep'
+
+export interface MarkedSegment extends CutSegment {
+  id: string
+  mode: EditorMarkMode
+}
+
+/** @deprecated use MarkedSegment */
 export interface RemoveSegment extends CutSegment {
   id: string
 }
@@ -43,6 +52,24 @@ export function computeKeepSegments(duration: number, remove: CutSegment[]): Cut
     keep.push({ start: prev, end: duration })
   }
   return keep
+}
+
+/** Trechos finais a exportar conforme o modo de marcação. */
+export function keepSegmentsForExport(
+  duration: number,
+  mode: EditorMarkMode,
+  marked: CutSegment[],
+): CutSegment[] {
+  if (!marked.length) return []
+  if (mode === 'keep') {
+    return mergeSegments(
+      marked.map((s) => ({
+        start: Math.max(0, s.start),
+        end: duration > 0 ? Math.min(duration, s.end) : s.end,
+      })),
+    )
+  }
+  return computeKeepSegments(duration, marked)
 }
 
 export function formatTime(sec: number): string {

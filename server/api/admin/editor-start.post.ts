@@ -4,6 +4,7 @@ import { getVideoMenuItems } from '../../utils/videoMenu'
 import { requireAdminToken } from '../../utils/requireAdmin'
 import {
   createEditorJob,
+  normalizeEditMode,
   resolveEditorFile,
   validateEditorSegments,
 } from '../../utils/editorJobs'
@@ -12,7 +13,7 @@ import { assertAllowedSourceRoot } from '../../utils/shrinkJobs'
 
 /**
  * Inicia exportação de vídeo editado (edit_video.bat).
- * Body: { sourceRoot, file, removeSegments[], duration?, height?, speed?, force? }
+ * Body: { sourceRoot, file, editMode?, markedSegments[] | removeSegments[], duration?, height?, speed?, force? }
  */
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
@@ -28,6 +29,8 @@ export default defineEventHandler(async (event) => {
   const body = (await readBody(event).catch(() => null)) as {
     sourceRoot?: unknown
     file?: unknown
+    editMode?: unknown
+    markedSegments?: unknown
     removeSegments?: unknown
     duration?: unknown
     height?: unknown
@@ -57,10 +60,13 @@ export default defineEventHandler(async (event) => {
 
   const durationRaw = Number(body?.duration)
   const duration = Number.isFinite(durationRaw) && durationRaw > 0 ? durationRaw : null
-  const { removeSegments, keepSegments } = validateEditorSegments(
-    duration,
-    Array.isArray(body?.removeSegments) ? body!.removeSegments : [],
-  )
+  const editMode = normalizeEditMode(body?.editMode)
+  const markedRaw = Array.isArray(body?.markedSegments)
+    ? body!.markedSegments
+    : Array.isArray(body?.removeSegments)
+      ? body!.removeSegments
+      : []
+  const { markedSegments, keepSegments } = validateEditorSegments(duration, editMode, markedRaw)
 
   const heightRaw = Number(body?.height ?? 1080)
   const height = Number.isFinite(heightRaw) ? Math.floor(heightRaw) : 1080
@@ -82,7 +88,8 @@ export default defineEventHandler(async (event) => {
     height,
     speed,
     force,
-    removeSegments,
+    editMode,
+    removeSegments: markedSegments,
     keepSegments,
     duration,
   })
@@ -94,8 +101,9 @@ export default defineEventHandler(async (event) => {
     height: snap.height,
     speed: snap.speed,
     force: snap.force,
+    editMode: snap.editMode,
     keepCount: snap.keepSegments.length,
-    removeCount: snap.removeSegments.length,
+    markedCount: snap.removeSegments.length,
     startedAt: snap.startedAt,
   }
 })

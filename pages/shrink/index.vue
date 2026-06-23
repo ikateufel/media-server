@@ -131,6 +131,22 @@
         </ul>
       </div>
 
+      <div v-if="oversizedItems.length" class="queue-oversized" role="status">
+        <h3 class="queue-oversized-title">
+          {{ oversizedItems.length }} ficheiro{{ oversizedItems.length === 1 ? '' : 's' }} com saída maior que a origem
+        </h3>
+        <p class="admin-muted queue-oversized-hint">
+          A saída ficou maior que o original. Lista em
+          <code class="admin-code">data\shrink-oversized.log</code>.
+        </p>
+        <ul class="queue-oversized-list">
+          <li v-for="f in oversizedItems" :key="f.rel" class="queue-oversized-item">
+            <span class="queue-oversized-rel" :title="f.rel">{{ f.rel }}</span>
+            <span class="queue-oversized-msg">{{ f.message }}</span>
+          </li>
+        </ul>
+      </div>
+
       <p v-if="validateMsg" :class="validateOk ? 'admin-ok' : 'admin-err'">{{ validateMsg }}</p>
     </section>
 
@@ -149,12 +165,31 @@
             <option :value="2">2×</option>
           </select>
         </label>
+        <label class="shrink-field shrink-field--codec">
+          <span class="shrink-label">Codec de vídeo</span>
+          <select v-model="codec" class="admin-input">
+            <option value="auto">Automático (mesma família do original)</option>
+            <option value="h264_nvenc">H.264 NVENC (GPU, rápido)</option>
+            <option value="libx264">H.264 libx264 (CPU)</option>
+            <option value="hevc_nvenc">HEVC NVENC (GPU, menor)</option>
+            <option value="libx265">HEVC libx265 (CPU, lento)</option>
+          </select>
+        </label>
+        <label v-if="codec === 'auto'" class="admin-check-label shrink-prioritize">
+          <input v-model="prioritizeSize" type="checkbox" />
+          Priorizar tamanho reduzido (HEVC + retry com resolução menor se a saída ficar maior)
+        </label>
         <label class="admin-check-label shrink-force">
           <input v-model="force" type="checkbox" />
           Substituir se já existir em shrinked\ (--force)
         </label>
       </div>
-      <div class="admin-row">
+      <p class="admin-muted shrink-codec-hint">
+        <strong>Automático</strong> lê o codec do ficheiro (ffprobe): H.264 → H.264, HEVC → H.265, com GPU se
+        existir. Com <strong>priorizar tamanho</strong>, usa HEVC e, se a saída ainda for maior que o original,
+        tenta resoluções mais baixas e codecs mais compactos. Áudio AAC 96–128 kbps nos retries.
+      </p>
+      <div class="admin-row shrink-actions">
         <button
           type="button"
           class="admin-btn admin-btn--primary"
@@ -245,11 +280,17 @@ interface QueueItem {
   rel: string
 }
 
-type QueueFileState = 'ok' | 'err' | 'skip' | 'running'
+type QueueFileState = 'ok' | 'err' | 'skip' | 'running' | 'oversized'
 
 interface QueueFileMeta {
   status: QueueFileState
   message?: string
+}
+
+interface OversizedOutputEntry {
+  rel: string
+  sourceBytes: number
+  outputBytes: number
 }
 
 interface JobFileResult {
@@ -260,6 +301,7 @@ interface JobFileResult {
   skipCount: number
   error?: string
   failedItems?: { file: string; message: string }[]
+  oversizedOutput?: OversizedOutputEntry
 }
 
 type JobStatus = 'running' | 'done' | 'failed' | 'cancelled'
@@ -271,13 +313,17 @@ interface JobLine {
   text: string
 }
 
+type ShrinkCodec = 'auto' | 'h264_nvenc' | 'libx264' | 'hevc_nvenc' | 'libx265'
+
 interface JobSnapshot {
   id: string
   status: JobStatus
   sourceRoot: string
   height: number
   speed: number
+  codec: ShrinkCodec
   force: boolean
+  prioritizeSize?: boolean
   totalFiles: number
   currentFileIndex: number
   totals: { ok: number; err: number; skip: number }
@@ -287,6 +333,7 @@ interface JobSnapshot {
   cancelRequested: boolean
   startedAt: number
   endedAt: number | null
+  oversizedOutputs?: OversizedOutputEntry[]
 }
 
 const SHRINK_JOB_STORAGE_KEY = 'video_admin_shrink_job_id'
@@ -301,7 +348,13 @@ const queue = ref<QueueItem[]>([])
 const dropActive = ref(false)
 const height = ref(1080)
 const speed = ref<1.25 | 1.5 | 2>(1.5)
+const codec = ref<ShrinkCodec>('auto')
+const prioritizeSize = ref(false)
 const force = ref(false)
+
+watch(codec, (c) => {
+  if (c !== 'auto') prioritizeSize.value = false
+})
 const validating = ref(false)
 const validateMsg = ref('')
 const validateOk = ref(false)
@@ -347,6 +400,34 @@ const failedItems = computed(() => {
   return out
 })
 
+function formatBytes(n: number): string {
+  if (n >= 1_073_741_824) return `${(n / 1_073_741_824).toFixed(1)} GB`
+  if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(1)} MB`
+  return `${Math.round(n / 1024)} KB`
+}
+
+function oversizedMessage(entry: OversizedOutputEntry): string {
+  const pct =
+    entry.sourceBytes > 0
+      ? Math.round(((entry.outputBytes - entry.sourceBytes) * 100) / entry.sourceBytes)
+      : 0
+  return `${formatBytes(entry.outputBytes)} vs origem ${formatBytes(entry.sourceBytes)} (+${pct}%)`
+}
+
+const oversizedItems = computed(() => {
+  const out: { rel: string; message: string }[] = []
+  const seen = new Set<string>()
+  for (const item of queue.value) {
+    const st = queueItemStatus(item.rel)
+    if (st?.status !== 'oversized') continue
+    const key = item.rel.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ rel: item.rel, message: st.message ?? 'Saída maior que origem' })
+  }
+  return out
+})
+
 function queueStatusKey(rel: string): string {
   return rel.toLowerCase()
 }
@@ -369,6 +450,13 @@ function setQueueStatus(rel: string, meta: QueueFileMeta | null) {
 function applyResultStatus(result: JobFileResult) {
   if (result.exitCode === null) {
     setQueueStatus(result.rel, { status: 'running' })
+    return
+  }
+  if (result.oversizedOutput) {
+    setQueueStatus(result.rel, {
+      status: 'oversized',
+      message: oversizedMessage(result.oversizedOutput),
+    })
     return
   }
   if (result.skipCount > 0) {
@@ -401,6 +489,7 @@ function queueItemClass(rel: string): string {
 function queueRelClass(rel: string): string {
   const st = queueItemStatus(rel)
   if (st?.status === 'err') return 'queue-rel--err'
+  if (st?.status === 'oversized') return 'queue-rel--oversized'
   if (st?.status === 'ok') return 'queue-rel--ok'
   if (st?.status === 'skip') return 'queue-rel--skip'
   if (st?.status === 'running') return 'queue-rel--running'
@@ -860,7 +949,9 @@ async function startShrinkJob() {
         files: queue.value.map((q) => q.rel),
         height: height.value,
         speed: speed.value,
+        codec: codec.value,
         force: force.value,
+        prioritizeSize: codec.value === 'auto' && prioritizeSize.value,
       },
     })
     rememberJobId(data.jobId)
@@ -1224,6 +1315,60 @@ onUnmounted(() => {
   color: #8ab4f8;
 }
 
+.queue-rel--oversized {
+  color: #d29922;
+}
+
+.queue-oversized {
+  margin-top: 0.85rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid color-mix(in srgb, #d29922 45%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, #d29922 10%, transparent);
+}
+
+.queue-oversized-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.9rem;
+  color: #e3b341;
+}
+
+.queue-oversized-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+}
+
+.queue-oversized-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.queue-oversized-item {
+  padding: 0.3rem 0;
+  border-top: 1px solid color-mix(in srgb, #d29922 25%, transparent);
+  font-size: 0.82rem;
+}
+
+.queue-oversized-item:first-child {
+  border-top: none;
+}
+
+.queue-oversized-rel {
+  display: block;
+  font-family: ui-monospace, Consolas, monospace;
+  color: #e8eaed;
+  word-break: break-all;
+}
+
+.queue-oversized-msg {
+  display: block;
+  color: #d29922;
+  margin-top: 0.15rem;
+}
+
 .queue-errors {
   margin-top: 0.85rem;
   padding: 0.65rem 0.75rem;
@@ -1290,8 +1435,31 @@ onUnmounted(() => {
   width: 6rem;
 }
 
+.shrink-field--codec {
+  min-width: min(100%, 16rem);
+  flex: 1;
+}
+
+.shrink-field--codec .admin-input {
+  min-width: 100%;
+}
+
+.shrink-codec-hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.84rem;
+}
+
+.shrink-actions {
+  margin-top: 0;
+}
+
 .shrink-force {
   margin-left: 0.25rem;
+}
+
+.shrink-prioritize {
+  flex: 1 1 100%;
+  margin-top: 0.35rem;
 }
 
 .admin-check-label {

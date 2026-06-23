@@ -10,8 +10,8 @@
     </header>
 
     <p class="admin-lead">
-      Reproduza um vídeo, marque trechos a <strong>remover</strong> e gere um novo ficheiro em
-      <code class="admin-code">edited\</code> com a velocidade e resolução escolhidas.
+      Reproduza um vídeo, marque trechos a <strong>excluir</strong> (vermelho) ou a <strong>recortar</strong> (verde)
+      e gere um novo ficheiro em <code class="admin-code">edited\</code> com a velocidade e resolução escolhidas.
     </p>
 
     <p v-if="!isWinServer" class="admin-warn" role="status">
@@ -125,27 +125,71 @@
       >
         <div class="editor-timeline-track">
           <div
-            v-for="seg in removeSegments"
+            v-for="seg in markedSegments"
             :key="seg.id"
-            class="editor-timeline-remove"
+            class="editor-timeline-mark"
+            :class="
+              seg.mode === 'exclude' ? 'editor-timeline-mark--exclude' : 'editor-timeline-mark--keep'
+            "
             :style="segmentStyle(seg)"
           />
           <div class="editor-timeline-playhead" :style="{ left: playheadPct + '%' }" />
-          <div v-if="pendingStart != null" class="editor-timeline-pending" :style="pendingStyle" />
+          <div
+            v-if="pendingStart != null"
+            class="editor-timeline-pending"
+            :class="
+              activeMarkMode === 'exclude'
+                ? 'editor-timeline-pending--exclude'
+                : 'editor-timeline-pending--keep'
+            "
+            :style="pendingStyle"
+          />
         </div>
+      </div>
+
+      <div class="editor-mode-toggle" role="group" aria-label="Modo de marcação pendente">
+        <button
+          type="button"
+          class="editor-mode-btn"
+          :class="{ 'editor-mode-btn--active': activeMarkMode === 'exclude' }"
+          @click="activeMarkMode = 'exclude'"
+        >
+          Excluir
+        </button>
+        <button
+          type="button"
+          class="editor-mode-btn"
+          :class="{ 'editor-mode-btn--active': activeMarkMode === 'keep' }"
+          @click="activeMarkMode = 'keep'"
+        >
+          Recortar
+        </button>
       </div>
 
       <div class="admin-row editor-mark-row">
         <button type="button" class="admin-btn" title="Atalho: I" @click="markIn">Marcar início (I)</button>
         <button type="button" class="admin-btn" title="Atalho: O" @click="markOut">Marcar fim (O)</button>
-        <button type="button" class="admin-btn admin-btn--primary" :disabled="!canAddRemoval" @click="addRemoval">
-          Adicionar remoção (Enter)
+        <button
+          type="button"
+          class="admin-btn admin-btn--danger"
+          :disabled="!canAddMark"
+          @click="addMarked('exclude')"
+        >
+          Adicionar exclusão
         </button>
         <button
-          v-if="removeSegments.length"
+          type="button"
+          class="admin-btn admin-btn--success"
+          :disabled="!canAddMark"
+          @click="addMarked('keep')"
+        >
+          Adicionar recorte
+        </button>
+        <button
+          v-if="markedSegments.length"
           type="button"
           class="admin-btn admin-btn--ghost"
-          @click="clearAllRemovals"
+          @click="clearAllMarks"
         >
           Limpar trechos
         </button>
@@ -155,29 +199,47 @@
         </span>
       </div>
       <p class="admin-muted editor-mark-help">
-        Podes marcar <strong>vários trechos</strong> diferentes — repete início/fim e «Adicionar remoção» para cada um.
-        Trechos sobrepostos são fundidos na exportação.
+        <strong>Excluir</strong> — marca o que sai; exporta o resto.
+        <strong>Recortar</strong> — marca o que fica; exporta só esses pedaços.
+        Repete início/fim para cada trecho. Trechos sobrepostos do mesmo tipo são fundidos na exportação.
+        Atalho <kbd>Enter</kbd> usa o modo seleccionado acima.
       </p>
 
-      <div v-if="removeSegments.length" class="editor-segments">
-        <h3 class="editor-h3">Trechos a remover ({{ removeSegments.length }})</h3>
+      <div v-if="markedSegments.length" class="editor-segments">
+        <h3 class="editor-h3">Marcações ({{ markedSegments.length }})</h3>
         <ul class="editor-segment-list">
-          <li v-for="seg in removeSegments" :key="seg.id" class="editor-segment-item">
+          <li v-for="seg in markedSegments" :key="seg.id" class="editor-segment-item">
+            <span
+              class="editor-segment-badge"
+              :class="
+                seg.mode === 'exclude' ? 'editor-segment-badge--exclude' : 'editor-segment-badge--keep'
+              "
+            >
+              {{ seg.mode === 'exclude' ? 'Excluir' : 'Recortar' }}
+            </span>
             <button type="button" class="editor-segment-range" @click="seekTo(seg.start)">
               {{ formatTime(seg.start) }} – {{ formatTime(seg.end) }}
               <span class="editor-segment-dur">({{ formatTime(seg.end - seg.start) }})</span>
             </button>
-            <button type="button" class="admin-btn admin-btn--sm admin-btn--ghost" @click="removeSegment(seg.id)">
-              Remover
+            <button type="button" class="admin-btn admin-btn--sm admin-btn--ghost" @click="removeMarked(seg.id)">
+              Apagar
             </button>
           </li>
         </ul>
-        <p class="admin-muted editor-keep-summary">
-          Ficam {{ keepPreview.length }} trecho{{ keepPreview.length === 1 ? '' : 's' }} · duração estimada
-          {{ formatTime(keepDurationEst) }} (antes de acelerar)
+        <p v-if="excludeMarked.length" class="admin-muted editor-keep-summary">
+          <strong>Excluir:</strong> ficam {{ excludeExportPreview.length }} trecho{{
+            excludeExportPreview.length === 1 ? '' : 's'
+          }}
+          · {{ formatTime(excludeExportDuration) }}
+        </p>
+        <p v-if="keepMarked.length" class="admin-muted editor-keep-summary">
+          <strong>Recortar:</strong> exportam {{ keepExportPreview.length }} trecho{{
+            keepExportPreview.length === 1 ? '' : 's'
+          }}
+          · {{ formatTime(keepExportDuration) }}
         </p>
       </div>
-      <p v-else class="admin-muted">Nenhum trecho marcado para remover.</p>
+      <p v-else class="admin-muted">Nenhum trecho marcado.</p>
     </section>
 
     <section v-if="videoSrc" class="admin-card">
@@ -201,12 +263,40 @@
           Substituir se já existir em edited\
         </label>
       </div>
-      <div class="admin-row">
-        <button type="button" class="admin-btn admin-btn--primary" :disabled="!canExport" @click="startExport">
-          Gerar vídeo editado
+      <div class="admin-row editor-export-actions">
+        <button
+          type="button"
+          class="admin-btn admin-btn--danger"
+          :disabled="!canExportExclude"
+          @click="startExport('exclude')"
+        >
+          Gerar (excluir marcados)
         </button>
-        <button type="button" class="admin-btn admin-btn--ghost" :disabled="!canExport || validating" @click="validateExport">
-          Validar no servidor
+        <button
+          type="button"
+          class="admin-btn admin-btn--success"
+          :disabled="!canExportKeep"
+          @click="startExport('keep')"
+        >
+          Gerar (só recortes)
+        </button>
+      </div>
+      <div class="admin-row">
+        <button
+          type="button"
+          class="admin-btn admin-btn--ghost"
+          :disabled="!canExportExclude || validating"
+          @click="validateExport('exclude')"
+        >
+          Validar exclusão
+        </button>
+        <button
+          type="button"
+          class="admin-btn admin-btn--ghost"
+          :disabled="!canExportKeep || validating"
+          @click="validateExport('keep')"
+        >
+          Validar recorte
         </button>
       </div>
       <p v-if="validateMsg" :class="validateOk ? 'admin-ok' : 'admin-err'">{{ validateMsg }}</p>
@@ -236,6 +326,14 @@
         </div>
       </div>
       <p v-if="jobErr" class="admin-err">{{ jobErr }}</p>
+      <div v-if="job?.oversizedOutput" class="editor-oversized" role="status">
+        <h3 class="editor-oversized-title">Saída maior que a origem</h3>
+        <p class="admin-muted editor-oversized-hint">
+          O ficheiro gerado ficou maior que o original. Registo em
+          <code class="admin-code">data\editor-oversized.log</code>.
+        </p>
+        <p class="editor-oversized-msg">{{ oversizedOutputMsg }}</p>
+      </div>
       <details v-if="job && job.lines.length" class="job-tail-details" open>
         <summary class="job-tail-summary">
           Saída ao vivo
@@ -255,11 +353,12 @@
 
 <script setup lang="ts">
 import {
-  computeKeepSegments,
   formatTime,
+  keepSegmentsForExport,
   mergeSegments,
   type CutSegment,
-  type RemoveSegment,
+  type EditorMarkMode,
+  type MarkedSegment,
 } from '~/composables/useVideoEditor'
 import {
   isVideoFileName,
@@ -280,12 +379,19 @@ interface JobLine {
   text: string
 }
 
+interface OversizedOutputEntry {
+  rel: string
+  sourceBytes: number
+  outputBytes: number
+}
+
 interface JobSnapshot {
   id: string
   status: JobStatus
   lines: JobLine[]
   totalLines: number
   cancelRequested: boolean
+  oversizedOutput?: OversizedOutputEntry | null
 }
 
 const EDITOR_JOB_STORAGE_KEY = 'video_admin_editor_job_id'
@@ -309,7 +415,8 @@ const currentTime = ref(0)
 
 const markInTime = ref<number | null>(null)
 const markOutTime = ref<number | null>(null)
-const removeSegments = ref<RemoveSegment[]>([])
+const activeMarkMode = ref<EditorMarkMode>('exclude')
+const markedSegments = ref<MarkedSegment[]>([])
 
 const height = ref(1080)
 const speed = ref<1 | 1.25 | 1.5 | 2>(1)
@@ -327,19 +434,41 @@ const jobErr = ref('')
 const jobActive = computed(() => job.value?.status === 'running')
 const tailRef = ref<HTMLPreElement | null>(null)
 const autoScrollTail = ref(true)
+
+function formatBytes(n: number): string {
+  if (n >= 1_073_741_824) return `${(n / 1_073_741_824).toFixed(1)} GB`
+  if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(1)} MB`
+  return `${Math.round(n / 1024)} KB`
+}
+
+const oversizedOutputMsg = computed(() => {
+  const e = job.value?.oversizedOutput
+  if (!e) return ''
+  const pct =
+    e.sourceBytes > 0 ? Math.round(((e.outputBytes - e.sourceBytes) * 100) / e.sourceBytes) : 0
+  return `${e.rel}: ${formatBytes(e.outputBytes)} vs origem ${formatBytes(e.sourceBytes)} (+${pct}%)`
+})
 let eventSource: EventSource | null = null
 
-const mergedRemovals = computed(() =>
-  mergeSegments(removeSegments.value.map((s) => ({ start: s.start, end: s.end }))),
-)
+const excludeMarked = computed(() => markedSegments.value.filter((s) => s.mode === 'exclude'))
+const keepMarked = computed(() => markedSegments.value.filter((s) => s.mode === 'keep'))
 
-const keepPreview = computed(() => {
+const excludeExportPreview = computed(() => {
   if (!duration.value) return []
-  return computeKeepSegments(duration.value, removeSegments.value)
+  return keepSegmentsForExport(duration.value, 'exclude', excludeMarked.value)
 })
 
-const keepDurationEst = computed(() =>
-  keepPreview.value.reduce((acc, s) => acc + (s.end - s.start), 0),
+const keepExportPreview = computed(() => {
+  if (!duration.value) return []
+  return keepSegmentsForExport(duration.value, 'keep', keepMarked.value)
+})
+
+const excludeExportDuration = computed(() =>
+  excludeExportPreview.value.reduce((acc, s) => acc + (s.end - s.start), 0),
+)
+
+const keepExportDuration = computed(() =>
+  keepExportPreview.value.reduce((acc, s) => acc + (s.end - s.start), 0),
 )
 
 const playheadPct = computed(() =>
@@ -364,21 +493,23 @@ const canLoadVideo = computed(
   () => !!sourceRoot.value.trim() && !!fileRel.value.trim() && isVideoName(fileRel.value),
 )
 
-const canAddRemoval = computed(() => {
+const canAddMark = computed(() => {
   if (markInTime.value == null || markOutTime.value == null) return false
   return markOutTime.value - markInTime.value > 0.1
 })
 
-const canExport = computed(
+const exportBaseOk = computed(
   () =>
     isWinServer.value &&
     !jobActive.value &&
     !!token.value.trim() &&
     !!sourceRoot.value.trim() &&
     !!fileRel.value.trim() &&
-    removeSegments.value.length > 0 &&
     !!videoSrc.value,
 )
+
+const canExportExclude = computed(() => exportBaseOk.value && excludeMarked.value.length > 0)
+const canExportKeep = computed(() => exportBaseOk.value && keepMarked.value.length > 0)
 
 function isVideoName(name: string): boolean {
   return isVideoFileName(name)
@@ -499,7 +630,7 @@ async function loadVideo() {
     return
   }
   fileRel.value = rel
-  removeSegments.value = []
+  markedSegments.value = []
   markInTime.value = null
   markOutTime.value = null
   duration.value = 0
@@ -564,32 +695,33 @@ function markOut() {
   }
 }
 
-function addRemoval() {
-  if (!canAddRemoval.value || markInTime.value == null || markOutTime.value == null) return
+function addMarked(mode: EditorMarkMode) {
+  if (!canAddMark.value || markInTime.value == null || markOutTime.value == null) return
   const start = Math.max(0, markInTime.value)
   const end = Math.min(duration.value || markOutTime.value, markOutTime.value)
   if (end - start < 0.1) return
 
-  removeSegments.value.push({
-    id: `${start}-${end}-${Date.now()}-${Math.random()}`,
+  markedSegments.value.push({
+    id: `${mode}-${start}-${end}-${Date.now()}-${Math.random()}`,
     start,
     end,
+    mode,
   })
-  removeSegments.value.sort((a, b) => a.start - b.start)
+  markedSegments.value.sort((a, b) => a.start - b.start)
   markInTime.value = currentTime.value
   markOutTime.value = null
   validateMsg.value = ''
 }
 
-function clearAllRemovals() {
-  removeSegments.value = []
+function clearAllMarks() {
+  markedSegments.value = []
   markInTime.value = null
   markOutTime.value = null
   validateMsg.value = ''
 }
 
-function removeSegment(id: string) {
-  removeSegments.value = removeSegments.value.filter((s) => s.id !== id)
+function removeMarked(id: string) {
+  markedSegments.value = markedSegments.value.filter((s) => s.id !== id)
   validateMsg.value = ''
 }
 
@@ -625,11 +757,20 @@ async function loadMenu() {
   }
 }
 
-function exportBody() {
+function markedForMode(mode: EditorMarkMode) {
+  return mergeSegments(
+    markedSegments.value
+      .filter((s) => s.mode === mode)
+      .map((s) => ({ start: s.start, end: s.end })),
+  )
+}
+
+function exportBody(mode: EditorMarkMode) {
   return {
     sourceRoot: sourceRoot.value.trim(),
     file: normalizeRel(fileRel.value),
-    removeSegments: mergedRemovals.value.map((s) => ({ start: s.start, end: s.end })),
+    editMode: mode,
+    markedSegments: markedForMode(mode),
     duration: duration.value > 0 ? duration.value : undefined,
     height: height.value,
     speed: speed.value,
@@ -637,20 +778,25 @@ function exportBody() {
   }
 }
 
-async function validateExport() {
+async function validateExport(mode: EditorMarkMode) {
   validateMsg.value = ''
   validateOk.value = false
-  if (!canExport.value) return
+  const can = mode === 'exclude' ? canExportExclude.value : canExportKeep.value
+  if (!can) return
   validating.value = true
   try {
     const h = await adminHeaders()
-    const data = await $fetch<{ keepCount: number; removeCount: number }>('/api/admin/editor-validate', {
-      method: 'POST',
-      headers: { ...h, 'Content-Type': 'application/json' },
-      body: exportBody(),
-    })
+    const data = await $fetch<{ keepCount: number; markedCount: number; editMode: EditorMarkMode }>(
+      '/api/admin/editor-validate',
+      {
+        method: 'POST',
+        headers: { ...h, 'Content-Type': 'application/json' },
+        body: exportBody(mode),
+      },
+    )
     validateOk.value = true
-    validateMsg.value = `OK — ${data.removeCount} remoção(ões), ${data.keepCount} trecho(s) a exportar.`
+    const modeLabel = data.editMode === 'keep' ? 'recorte' : 'exclusão'
+    validateMsg.value = `OK (${modeLabel}) — ${data.markedCount} marcação(ões), ${data.keepCount} trecho(s) a exportar.`
   } catch (e: unknown) {
     const ex = e as { data?: { statusMessage?: string }; message?: string }
     validateMsg.value = ex?.data?.statusMessage || ex?.message || 'Validação falhou.'
@@ -787,8 +933,9 @@ async function bootstrapJob() {
   }
 }
 
-async function startExport() {
-  if (!canExport.value) return
+async function startExport(mode: EditorMarkMode) {
+  const can = mode === 'exclude' ? canExportExclude.value : canExportKeep.value
+  if (!can) return
   startErr.value = ''
   jobErr.value = ''
   try {
@@ -796,7 +943,7 @@ async function startExport() {
     const data = await $fetch<{ jobId: string }>('/api/admin/editor-start', {
       method: 'POST',
       headers: { ...h, 'Content-Type': 'application/json' },
-      body: exportBody(),
+      body: exportBody(mode),
     })
     rememberJobId(data.jobId)
     openStreamForJob(data.jobId)
@@ -838,9 +985,13 @@ function statusLabel(s: JobStatus): string {
 }
 
 function lineCssClass(line: JobLine): string {
-  if (line.stream === 'stderr') return 'tail-line tail-line--err'
-  if (line.stream === 'meta') return 'tail-line tail-line--meta'
   const t = line.text.trimStart()
+  if (t.startsWith('[OVERSIZED]')) return 'tail-line tail-line--warn'
+  if (line.stream === 'stderr') {
+    if (t.startsWith('[AVISO]')) return 'tail-line tail-line--warn'
+    return 'tail-line tail-line--err'
+  }
+  if (line.stream === 'meta') return 'tail-line tail-line--meta'
   if (t.startsWith('[OK]')) return 'tail-line tail-line--ok'
   if (t.startsWith('[ERRO]')) return 'tail-line tail-line--err'
   if (t.startsWith('[AVISO]')) return 'tail-line tail-line--meta'
@@ -858,9 +1009,9 @@ function onKeyDown(ev: KeyboardEvent) {
   } else if (ev.key === 'o' || ev.key === 'O') {
     ev.preventDefault()
     markOut()
-  } else if (ev.key === 'Enter' && canAddRemoval.value) {
+  } else if (ev.key === 'Enter' && canAddMark.value) {
     ev.preventDefault()
-    addRemoval()
+    addMarked(activeMarkMode.value)
   }
 }
 
@@ -1151,23 +1302,40 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-.editor-timeline-remove {
+.editor-timeline-mark {
   position: absolute;
   top: 0;
   bottom: 0;
+  pointer-events: none;
+}
+
+.editor-timeline-mark--exclude {
   background: color-mix(in srgb, #da3633 55%, transparent);
   border-left: 1px solid #da3633;
   border-right: 1px solid #da3633;
-  pointer-events: none;
+}
+
+.editor-timeline-mark--keep {
+  background: color-mix(in srgb, #3fb950 55%, transparent);
+  border-left: 1px solid #3fb950;
+  border-right: 1px solid #3fb950;
 }
 
 .editor-timeline-pending {
   position: absolute;
   top: 0;
   bottom: 0;
-  background: color-mix(in srgb, #fdd663 45%, transparent);
-  border: 1px dashed #fdd663;
   pointer-events: none;
+}
+
+.editor-timeline-pending--exclude {
+  background: color-mix(in srgb, #fdd663 45%, transparent);
+  border: 1px dashed #da3633;
+}
+
+.editor-timeline-pending--keep {
+  background: color-mix(in srgb, #3fb950 35%, transparent);
+  border: 1px dashed #3fb950;
 }
 
 .editor-timeline-playhead {
@@ -1183,6 +1351,71 @@ onUnmounted(() => {
 
 .editor-mark-row {
   margin-bottom: 0.75rem;
+}
+
+.editor-mode-toggle {
+  display: inline-flex;
+  margin-bottom: 0.65rem;
+  border: 1px solid #3d444d;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.editor-mode-btn {
+  padding: 0.35rem 0.85rem;
+  font-size: 0.85rem;
+  border: none;
+  background: #21262d;
+  color: #9aa0a6;
+  cursor: pointer;
+}
+
+.editor-mode-btn + .editor-mode-btn {
+  border-left: 1px solid #3d444d;
+}
+
+.editor-mode-btn--active.editor-mode-btn:first-child {
+  background: color-mix(in srgb, #da3633 25%, #21262d);
+  color: #f85149;
+}
+
+.editor-mode-btn--active.editor-mode-btn:last-child {
+  background: color-mix(in srgb, #3fb950 25%, #21262d);
+  color: #3fb950;
+}
+
+.editor-export-actions {
+  margin-bottom: 0.5rem;
+}
+
+.admin-btn--success {
+  background: #238636;
+  border-color: #2ea043;
+  color: #fff;
+}
+
+.admin-btn--success:hover:not(:disabled) {
+  background: #3fb950;
+}
+
+.editor-segment-badge {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+}
+
+.editor-segment-badge--exclude {
+  background: color-mix(in srgb, #da3633 30%, transparent);
+  color: #f85149;
+}
+
+.editor-segment-badge--keep {
+  background: color-mix(in srgb, #3fb950 30%, transparent);
+  color: #3fb950;
 }
 
 .editor-mark-hint {
@@ -1346,5 +1579,35 @@ onUnmounted(() => {
 
 .tail-line--meta {
   color: #9aa0a6;
+}
+
+.tail-line--warn {
+  color: #e3b341;
+}
+
+.editor-oversized {
+  margin: 0.75rem 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid color-mix(in srgb, #d29922 45%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, #d29922 10%, transparent);
+}
+
+.editor-oversized-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  color: #e3b341;
+}
+
+.editor-oversized-hint {
+  margin: 0 0 0.45rem;
+  font-size: 0.82rem;
+}
+
+.editor-oversized-msg {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #d29922;
+  font-family: ui-monospace, Consolas, monospace;
 }
 </style>

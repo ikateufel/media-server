@@ -67,7 +67,7 @@ for %%F in ("!VIDEO_IN!") do (
 set "outFile=!OUT_DIR!\!NOME!.mp4"
 
 echo ====================================================
-echo   EDIT-VIDEO v1.0 — remove trechos e junta o resto
+echo   EDIT-VIDEO v1.1 — corta trechos e junta (excluir ou recortar)
 echo   Entrada: !ORIG!
 echo   Cortes: !CUTS_FILE!
 echo   Altura alvo: !H_OUT! px  ^|  Velocidade: !vel!x  ^|  Saida: !outFile!
@@ -251,6 +251,9 @@ endlocal
 exit /b 1
 
 :cleanup_ok
+for %%F in ("!ORIG!") do set "ORIG_BYTES=%%~zF"
+for %%F in ("!outFile!") do set "OUT_BYTES=%%~zF"
+if !OUT_BYTES! GTR !ORIG_BYTES! call :log_if_oversized "!ORIG!" "!outFile!" !ORIG_BYTES! !OUT_BYTES! editor
 del /q "!EDIT_TEMP!\e_*_!tid!.mp4" >nul 2>&1
 if exist "!LISTA!" del "!LISTA!" >nul 2>&1
 endlocal
@@ -306,3 +309,14 @@ exit /b 1
 :cuts_not_found
 echo [ERRO] Ficheiro de cortes nao encontrado: %CUTS_FILE%
 exit /b 1
+
+:log_if_oversized
+set "RV_ORI=%~1"
+set "RV_OUT=%~2"
+set "RV_OB=%~3"
+set "RV_NB=%~4"
+set "RV_TOOL=%~5"
+echo [OVERSIZED] saida maior que origem ^(!RV_NB! ^> !RV_OB!^) — registado em data\%~5-oversized.log
+if not exist "!VP_REPO_ROOT!\data" mkdir "!VP_REPO_ROOT!\data" 2>nul
+powershell -NoProfile -Command "Add-Content -LiteralPath '!VP_REPO_ROOT!\data\%~5-oversized.log' -Value ((Get-Date -Format o)+'`t%~5`t%~1`t%~2`t%~3`t%~4')" 2>nul
+exit /b 0

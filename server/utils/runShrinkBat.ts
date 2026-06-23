@@ -5,6 +5,22 @@ import { createError } from 'h3'
 
 export type ShrinkSpeed = 1.25 | 1.5 | 2
 
+export type ShrinkCodec = 'auto' | 'h264_nvenc' | 'libx264' | 'hevc_nvenc' | 'libx265'
+
+export function normalizeShrinkCodec(raw: unknown): ShrinkCodec | null {
+  const s = String(raw ?? 'auto').trim().toLowerCase()
+  if (
+    s === 'auto' ||
+    s === 'h264_nvenc' ||
+    s === 'libx264' ||
+    s === 'hevc_nvenc' ||
+    s === 'libx265'
+  ) {
+    return s
+  }
+  return null
+}
+
 /**
  * Executa `scripts/shrink_video.bat` para um ficheiro.
  * Caminho do vídeo via `VP_SHRINK_INPUT` (evita parênteses/espaços na linha de comando do cmd).
@@ -14,7 +30,9 @@ export async function runShrinkBatForFile(opts: {
   videoAbsolutePath: string
   height: number
   speed: ShrinkSpeed
+  codec: ShrinkCodec
   force: boolean
+  prioritizeSize: boolean
   onSpawn?: (pid: number | null) => void
   onLine?: (stream: 'stdout' | 'stderr', line: string) => void
 }): Promise<{ exitCode: number; stdout: string; stderr: string }> {
@@ -46,7 +64,9 @@ export async function runShrinkBatForFile(opts: {
         VP_SHRINK_INPUT: videoPath,
         VP_SHRINK_HEIGHT: String(Math.floor(opts.height)),
         VP_SHRINK_SPEED: String(opts.speed),
+        VP_SHRINK_CODEC: opts.codec,
         VP_SHRINK_FORCE: opts.force ? '1' : '0',
+        VP_SHRINK_PRIORITIZE_SIZE: opts.prioritizeSize ? '1' : '0',
       },
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],

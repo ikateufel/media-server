@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { resolve, sep } from 'node:path'
 import { createError } from 'h3'
-import { runShrinkBatForFile, type ShrinkSpeed } from './runShrinkBat'
+import { runShrinkBatForFile, type ShrinkCodec, type ShrinkSpeed } from './runShrinkBat'
+import { logIfOutputLargerThanSource, oversizedOutputMessage, type OversizedOutputEntry } from './oversizedOutputLog'
 import { tailText } from './runLibraryBat'
 import { hasPathTraversal, resolveMediaFileUnderRoot } from './videoPaths'
 import { isVideoFileName } from '#shared/videoExtensions'
@@ -29,6 +30,7 @@ export interface ShrinkJobFileResult {
   startedAt?: number
   endedAt?: number
   failedItems?: { file: string; message: string }[]
+  oversizedOutput?: OversizedOutputEntry
 }
 
 export interface ShrinkJobSnapshot {
@@ -37,7 +39,9 @@ export interface ShrinkJobSnapshot {
   sourceRoot: string
   height: number
   speed: ShrinkSpeed
+  codec: ShrinkCodec
   force: boolean
+  prioritizeSize: boolean
   startedAt: number
   endedAt: number | null
   totalFiles: number
@@ -47,6 +51,7 @@ export interface ShrinkJobSnapshot {
   lines: ShrinkJobLine[]
   totalLines: number
   cancelRequested: boolean
+  oversizedOutputs: OversizedOutputEntry[]
 }
 
 export type ShrinkJobEvent =
@@ -304,7 +309,9 @@ async function runJob(job: InternalJob, projectRoot: string) {
           videoAbsolutePath: slot.path,
           height: job.snapshot.height,
           speed: job.snapshot.speed,
+          codec: job.snapshot.codec,
           force: job.snapshot.force,
+          prioritizeSize: job.snapshot.prioritizeSize,
           onSpawn: (pid) => {
             job.currentPid = pid
             if (job.cancelRequested && pid != null) {
@@ -341,6 +348,22 @@ async function runJob(job: InternalJob, projectRoot: string) {
         slot.exitCode = r.exitCode
         slot.stdoutTail = tailText(r.stdout, STDOUT_TAIL_CAP)
         slot.stderrTail = tailText(r.stderr, STDOUT_TAIL_CAP)
+        if (r.exitCode === 0 && slot.skipCount === 0) {
+          const logged = await logIfOutputLargerThanSource({
+            projectRoot,
+            sourcePath: slot.path,
+            outputSubdir: 'shrinked',
+            tool: 'shrink',
+            fileRel: slot.rel,
+          })
+          if (logged) {
+            slot.oversizedOutput = logged
+            job.snapshot.oversizedOutputs.push(logged)
+            const msg = oversizedOutputMessage(logged)
+            pushLine(job, i, 'meta', `[OVERSIZED] ${slot.rel} — ${msg}`)
+            pushLine(job, i, 'stderr', `[AVISO] ${msg}`)
+          }
+        }
         if (slot.okCount === 0 && slot.errCount === 0 && slot.skipCount === 0) {
           if (r.exitCode === 0) {
             slot.okCount = 1
@@ -392,7 +415,9 @@ export interface CreateShrinkJobOpts {
   files: { rel: string; path: string }[]
   height: number
   speed: ShrinkSpeed
+  codec: ShrinkCodec
   force: boolean
+  prioritizeSize: boolean
 }
 
 export function createShrinkJob(opts: CreateShrinkJobOpts): ShrinkJobSnapshot {
@@ -412,7 +437,9 @@ export function createShrinkJob(opts: CreateShrinkJobOpts): ShrinkJobSnapshot {
     sourceRoot: opts.sourceRoot,
     height: opts.height,
     speed: opts.speed,
+    codec: opts.codec,
     force: opts.force,
+    prioritizeSize: opts.prioritizeSize,
     startedAt: Date.now(),
     endedAt: null,
     totalFiles: results.length,
@@ -422,6 +449,7 @@ export function createShrinkJob(opts: CreateShrinkJobOpts): ShrinkJobSnapshot {
     lines: [],
     totalLines: 0,
     cancelRequested: false,
+    oversizedOutputs: [],
   }
   const internal: InternalJob = {
     snapshot,
@@ -434,7 +462,7 @@ export function createShrinkJob(opts: CreateShrinkJobOpts): ShrinkJobSnapshot {
     internal,
     -1,
     'meta',
-    `[INICIO] shrink ${results.length} ficheiro(s) · ${opts.speed}x · altura ${opts.height}px · origem ${opts.sourceRoot}`,
+    `[INICIO] shrink ${results.length} ficheiro(s) · ${opts.speed}x · altura ${opts.height}px · codec ${opts.codec}${opts.prioritizeSize ? ' · priorizar tamanho' : ''} · origem ${opts.sourceRoot}`,
   )
   void runJob(internal, opts.projectRoot)
   return snapshot
