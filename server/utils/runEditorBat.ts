@@ -23,6 +23,7 @@ export async function runEditorBatForFile(opts: {
   height: number
   speed: EditorSpeed
   force: boolean
+  outputSuffix?: string
   onSpawn?: (pid: number | null) => void
   onLine?: (stream: 'stdout' | 'stderr', line: string) => void
 }): Promise<{ exitCode: number; stdout: string; stderr: string }> {
@@ -65,6 +66,7 @@ export async function runEditorBatForFile(opts: {
         VP_EDIT_HEIGHT: String(Math.floor(opts.height)),
         VP_EDIT_SPEED: String(opts.speed),
         VP_EDIT_FORCE: opts.force ? '1' : '0',
+        VP_EDIT_SUFFIX: opts.outputSuffix ?? '',
       },
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],

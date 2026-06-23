@@ -7,6 +7,11 @@ import {
   normalizeRemoveSegments,
   type CutSegment,
 } from './editorCuts'
+import {
+  buildChunkExportPlans,
+  normalizeSplitTimes,
+  type EditorChunkPlan,
+} from '#shared/editorSplit'
 
 export type EditorEditMode = 'exclude' | 'keep'
 
@@ -16,7 +21,6 @@ export function normalizeEditMode(raw: unknown): EditorEditMode {
 }
 import { runEditorBatForFile, type EditorSpeed } from './runEditorBat'
 import { logIfOutputLargerThanSource, oversizedOutputMessage, type OversizedOutputEntry } from './oversizedOutputLog'
-import { tailText } from './runLibraryBat'
 import { hasPathTraversal, resolveMediaFileUnderRoot } from './videoPaths'
 import { isVideoFileName } from '#shared/videoExtensions'
 
@@ -39,8 +43,12 @@ export interface EditorJobSnapshot {
   speed: EditorSpeed
   force: boolean
   editMode: EditorEditMode
+  splitPoints: number[]
+  excludeSegments: CutSegment[]
+  keepMarkedSegments: CutSegment[]
   removeSegments: CutSegment[]
   keepSegments: CutSegment[]
+  chunkPlans: EditorChunkPlan[]
   duration: number | null
   startedAt: number
   endedAt: number | null
@@ -179,6 +187,123 @@ export function validateEditorSegments(
   return { markedSegments, keepSegments, editMode: mode }
 }
 
+export interface EditorExportValidation {
+  editMode: EditorEditMode
+  splitPoints: number[]
+  excludeSegments: CutSegment[]
+  keepMarkedSegments: CutSegment[]
+  markedSegments: CutSegment[]
+  keepSegments: CutSegment[]
+  chunkPlans: EditorChunkPlan[]
+  splitExport: boolean
+}
+
+export function validateEditorExport(opts: {
+  duration: number | null
+  editMode: EditorEditMode
+  excludeSegments: CutSegment[]
+  keepMarkedSegments: CutSegment[]
+  splitPoints: unknown
+}): EditorExportValidation {
+  const splitPoints = normalizeSplitTimes(opts.splitPoints, opts.duration)
+  const excludeSegments = mergeSegments(normalizeRemoveSegments(opts.excludeSegments))
+  const keepMarkedSegments = mergeSegments(normalizeRemoveSegments(opts.keepMarkedSegments))
+  const splitExport = splitPoints.length > 0
+
+  if (splitExport) {
+    if (opts.duration == null || !Number.isFinite(opts.duration) || opts.duration <= 0) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Carregue o vídeo no player para obter a duração antes de exportar em partes.',
+      })
+    }
+    const chunkPlans = buildChunkExportPlans(
+      opts.duration,
+      splitPoints,
+      excludeSegments,
+      keepMarkedSegments,
+    )
+    if (!chunkPlans.length) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Nenhuma parte válida para exportar (splits ou marcações deixam pedaços vazios).',
+      })
+    }
+    const keepSegments = chunkPlans.flatMap((p) => p.keepSegments)
+    return {
+      editMode: opts.editMode,
+      splitPoints,
+      excludeSegments,
+      keepMarkedSegments,
+      markedSegments: [...excludeSegments, ...keepMarkedSegments],
+      keepSegments,
+      chunkPlans,
+      splitExport: true,
+    }
+  }
+
+  const mode = opts.editMode
+  const marked = mode === 'keep' ? keepMarkedSegments : excludeSegments
+  const { markedSegments, keepSegments } = validateEditorSegments(opts.duration, mode, marked)
+  return {
+    editMode: mode,
+    splitPoints: [],
+    excludeSegments,
+    keepMarkedSegments,
+    markedSegments,
+    keepSegments,
+    chunkPlans: [],
+    splitExport: false,
+  }
+}
+
+async function runEditorExport(
+  job: InternalJob,
+  projectRoot: string,
+  snap: EditorJobSnapshot,
+  keepSegments: CutSegment[],
+  outputSuffix: string,
+  label: string,
+): Promise<number> {
+  pushLine(job, 'meta', `[EXPORT] ${label} · ${keepSegments.length} trecho(s)`)
+  const r = await runEditorBatForFile({
+    projectRoot,
+    videoAbsolutePath: snap.filePath,
+    keepSegments,
+    height: snap.height,
+    speed: snap.speed,
+    force: snap.force,
+    outputSuffix,
+    onSpawn: (pid) => {
+      job.currentPid = pid
+      if (job.cancelRequested && pid != null) {
+        try {
+          process.kill(pid)
+        } catch {
+          /* */
+        }
+      }
+    },
+    onLine: (stream, text) => pushLine(job, stream, text),
+  })
+  if (r.exitCode === 0) {
+    const logged = await logIfOutputLargerThanSource({
+      projectRoot,
+      sourcePath: snap.filePath,
+      outputSubdir: 'edited',
+      tool: 'editor',
+      fileRel: `${snap.fileRel}${outputSuffix}.mp4`,
+    })
+    if (logged) {
+      snap.oversizedOutput = logged
+      const msg = oversizedOutputMessage(logged)
+      pushLine(job, 'meta', `[OVERSIZED] ${msg}`)
+      pushLine(job, 'stderr', `[AVISO] ${msg}`)
+    }
+  }
+  return r.exitCode
+}
+
 async function runJob(job: InternalJob, projectRoot: string) {
   const snap = job.snapshot
   try {
@@ -188,58 +313,64 @@ async function runJob(job: InternalJob, projectRoot: string) {
       return
     }
 
+    const splitExport = snap.chunkPlans.length > 0
     pushLine(
       job,
       'meta',
-      `[INICIO] ${snap.fileRel} · modo ${snap.editMode === 'keep' ? 'recortar' : 'excluir'} · ${snap.keepSegments.length} trecho(s) a exportar · ${snap.speed}x · ${snap.height}px`,
+      splitExport
+        ? `[INICIO] ${snap.fileRel} · split ${snap.chunkPlans.length} parte(s) · ${snap.speed}x · ${snap.height}px`
+        : `[INICIO] ${snap.fileRel} · modo ${snap.editMode === 'keep' ? 'recortar' : 'excluir'} · ${snap.keepSegments.length} trecho(s) · ${snap.speed}x · ${snap.height}px`,
     )
 
-    const r = await runEditorBatForFile({
-      projectRoot,
-      videoAbsolutePath: snap.filePath,
-      keepSegments: snap.keepSegments,
-      height: snap.height,
-      speed: snap.speed,
-      force: snap.force,
-      onSpawn: (pid) => {
-        job.currentPid = pid
-        if (job.cancelRequested && pid != null) {
-          try {
-            process.kill(pid)
-          } catch {
-            /* */
-          }
-        }
-      },
-      onLine: (stream, text) => pushLine(job, stream, text),
-    })
+    let lastExit = 0
+    let okCount = 0
 
-    snap.exitCode = r.exitCode
-    snap.stdoutTail = tailText(r.stdout, STDOUT_TAIL_CAP)
-    snap.stderrTail = tailText(r.stderr, STDOUT_TAIL_CAP)
+    if (splitExport) {
+      for (const plan of snap.chunkPlans) {
+        if (job.cancelRequested) {
+          setStatus(job, 'cancelled')
+          return
+        }
+        const code = await runEditorExport(
+          job,
+          projectRoot,
+          snap,
+          plan.keepSegments,
+          `_${plan.label}`,
+          `${plan.label} (${plan.keepSegments.length} trecho(s) em ${formatChunkRange(plan.chunk)})`,
+        )
+        lastExit = code
+        if (code === 0) okCount++
+        else pushLine(job, 'stderr', `[ERRO] ${plan.label} exit ${code}`)
+      }
+      snap.exitCode = lastExit
+      if (job.cancelRequested) {
+        setStatus(job, 'cancelled')
+        return
+      }
+      if (okCount === 0) {
+        setStatus(job, 'failed')
+      } else if (okCount < snap.chunkPlans.length) {
+        pushLine(job, 'meta', `[AVISO] ${okCount}/${snap.chunkPlans.length} parte(s) OK`)
+        setStatus(job, okCount > 0 ? 'done' : 'failed')
+      } else {
+        setStatus(job, 'done')
+      }
+      return
+    }
+
+    lastExit = await runEditorExport(job, projectRoot, snap, snap.keepSegments, '', snap.fileRel)
+    snap.exitCode = lastExit
 
     if (job.cancelRequested) {
       setStatus(job, 'cancelled')
       return
     }
 
-    if (r.exitCode === 0) {
-      const logged = await logIfOutputLargerThanSource({
-        projectRoot,
-        sourcePath: snap.filePath,
-        outputSubdir: 'edited',
-        tool: 'editor',
-        fileRel: snap.fileRel,
-      })
-      if (logged) {
-        snap.oversizedOutput = logged
-        const msg = oversizedOutputMessage(logged)
-        pushLine(job, 'meta', `[OVERSIZED] ${msg}`)
-        pushLine(job, 'stderr', `[AVISO] ${msg}`)
-      }
+    if (lastExit === 0) {
       setStatus(job, 'done')
     } else {
-      pushLine(job, 'stderr', `[ERRO] exit code ${r.exitCode}`)
+      pushLine(job, 'stderr', `[ERRO] exit code ${lastExit}`)
       setStatus(job, 'failed')
     }
   } catch (e) {
@@ -251,6 +382,10 @@ async function runJob(job: InternalJob, projectRoot: string) {
   }
 }
 
+function formatChunkRange(chunk: CutSegment): string {
+  return `${chunk.start.toFixed(1)}s–${chunk.end.toFixed(1)}s`
+}
+
 export interface CreateEditorJobOpts {
   projectRoot: string
   sourceRoot: string
@@ -258,15 +393,14 @@ export interface CreateEditorJobOpts {
   height: number
   speed: EditorSpeed
   force: boolean
-  editMode: EditorEditMode
-  removeSegments: CutSegment[]
-  keepSegments: CutSegment[]
+  validation: EditorExportValidation
   duration: number | null
 }
 
 export function createEditorJob(opts: CreateEditorJobOpts): EditorJobSnapshot {
   pruneOldJobs()
   const id = randomUUID()
+  const v = opts.validation
   const snapshot: EditorJobSnapshot = {
     id,
     status: 'running',
@@ -276,9 +410,13 @@ export function createEditorJob(opts: CreateEditorJobOpts): EditorJobSnapshot {
     height: opts.height,
     speed: opts.speed,
     force: opts.force,
-    editMode: opts.editMode,
-    removeSegments: opts.removeSegments,
-    keepSegments: opts.keepSegments,
+    editMode: v.editMode,
+    splitPoints: v.splitPoints,
+    excludeSegments: v.excludeSegments,
+    keepMarkedSegments: v.keepMarkedSegments,
+    removeSegments: v.markedSegments,
+    keepSegments: v.keepSegments,
+    chunkPlans: v.chunkPlans,
     duration: opts.duration,
     startedAt: Date.now(),
     endedAt: null,

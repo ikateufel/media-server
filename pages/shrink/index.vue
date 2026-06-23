@@ -175,9 +175,9 @@
             <option value="libx265">HEVC libx265 (CPU, lento)</option>
           </select>
         </label>
-        <label v-if="codec === 'auto'" class="admin-check-label shrink-prioritize">
+        <label class="admin-check-label shrink-prioritize">
           <input v-model="prioritizeSize" type="checkbox" />
-          Priorizar tamanho reduzido (HEVC + retry com resolução menor se a saída ficar maior)
+          Priorizar tamanho (retry com bitrate menor em 720p+ se a saída ficar maior)
         </label>
         <label class="admin-check-label shrink-force">
           <input v-model="force" type="checkbox" />
@@ -185,9 +185,11 @@
         </label>
       </div>
       <p class="admin-muted shrink-codec-hint">
-        <strong>Automático</strong> lê o codec do ficheiro (ffprobe): H.264 → H.264, HEVC → H.265, com GPU se
-        existir. Com <strong>priorizar tamanho</strong>, usa HEVC e, se a saída ainda for maior que o original,
-        tenta resoluções mais baixas e codecs mais compactos. Áudio AAC 96–128 kbps nos retries.
+        Todos os codecs usam <strong>bitrate alvo ≈ origem ÷ velocidade</strong> (lido do ficheiro ou estimado pela
+        duração) — 1,5× costuma dar ~67% do tamanho sem perder muita qualidade. Mínimo <strong>720p</strong>.
+        <strong>Automático</strong> mantém a família (H.264→H.264, HEVC→HEVC); HEVC em origem H.264 usa ~85% do
+        bitrate alvo. <strong>Priorizar tamanho</strong>: retry com bitrate mais baixo se ainda ficar maior que o
+        original.
       </p>
       <div class="admin-row shrink-actions">
         <button
@@ -352,8 +354,8 @@ const codec = ref<ShrinkCodec>('auto')
 const prioritizeSize = ref(false)
 const force = ref(false)
 
-watch(codec, (c) => {
-  if (c !== 'auto') prioritizeSize.value = false
+watch(codec, () => {
+  /* priorizar tamanho disponível para todos os codecs */
 })
 const validating = ref(false)
 const validateMsg = ref('')
@@ -951,7 +953,7 @@ async function startShrinkJob() {
         speed: speed.value,
         codec: codec.value,
         force: force.value,
-        prioritizeSize: codec.value === 'auto' && prioritizeSize.value,
+        prioritizeSize: prioritizeSize.value,
       },
     })
     rememberJobId(data.jobId)

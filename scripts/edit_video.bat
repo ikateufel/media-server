@@ -64,7 +64,8 @@ for %%F in ("!VIDEO_IN!") do (
     set "NOME=%%~nF"
 )
 
-set "outFile=!OUT_DIR!\!NOME!.mp4"
+if not defined VP_EDIT_SUFFIX set "VP_EDIT_SUFFIX="
+set "outFile=!OUT_DIR!\!NOME!!VP_EDIT_SUFFIX!.mp4"
 
 echo ====================================================
 echo   EDIT-VIDEO v1.1 — corta trechos e junta (excluir ou recortar)

@@ -1,6 +1,7 @@
 #Requires -Version 5.1
-# Re-encoda com alturas/codecs mais compactos quando a saida ficou maior que a origem.
-# Env: VP_IN, VP_OUT, VP_ORIG_BYTES, VP_SRC_H, VP_H_OUT, VP_VEL, VP_FFMPEG, VP_FFPROBE, VP_TRAILER_NVENC_PRESET
+# Retry em 720p+ com bitrate menor (mesma familia de codec) quando a saida ficou maior que a origem.
+# Env: VP_IN, VP_OUT, VP_ORIG_BYTES, VP_SRC_H, VP_H_OUT, VP_VEL, VP_SRC_V_BPS, VP_ENCODER_KIND,
+#      VP_SHRINK_H_MIN, VP_FFMPEG, VP_FFPROBE, VP_TRAILER_NVENC_PRESET
 
 $ErrorActionPreference = 'Stop'
 
@@ -10,6 +11,9 @@ $origBytes = [int64]$env:VP_ORIG_BYTES
 $srcH = [int]$env:VP_SRC_H
 $hOut = [int]$env:VP_H_OUT
 $vel = [double]$env:VP_VEL
+$srcVBps = [int64]($env:VP_SRC_V_BPS ?? '0')
+$encoderKind = $env:VP_ENCODER_KIND
+$minH = [int](if ($env:VP_SHRINK_H_MIN) { $env:VP_SHRINK_H_MIN } else { 720 })
 $ffmpeg = $env:FFMPEG
 $ffprobe = $env:FFPROBE
 $nvencPreset = if ($env:VP_TRAILER_NVENC_PRESET) { $env:VP_TRAILER_NVENC_PRESET } else { 'p4' }
@@ -28,29 +32,36 @@ function Test-HasAudio([string]$path) {
     return [bool]($r -and $r.Trim())
 }
 
-function Get-HeightLadder([int]$sourceH, [int]$targetH) {
+function Get-HeightLadder([int]$sourceH, [int]$targetH, [int]$floorH) {
     $start = if ($sourceH -gt 0) { [Math]::Min($sourceH, $targetH) } else { $targetH }
     $list = [System.Collections.Generic.List[int]]::new()
-    foreach ($h in @(270, 360, 480, 540, 720, 900, 1080)) {
-        if ($h -le $start -and $h -ge 144) { [void]$list.Add($h) }
+    foreach ($h in @(1080, 900, 720)) {
+        if ($h -le $start -and $h -ge $floorH) { [void]$list.Add($h) }
     }
-    if ($start -ge 144 -and -not $list.Contains($start)) { [void]$list.Add($start) }
-    return ($list | Sort-Object -Unique)
+    if ($start -ge $floorH -and -not $list.Contains($start)) { [void]$list.Add($start) }
+    return ($list | Sort-Object -Descending -Unique)
 }
 
-function Get-CodecPlans() {
-    $plans = @(
-        @{ id = 'hevc_nvenc'; args = @('-c:v', 'hevc_nvenc', '-preset', $nvencPreset, '-rc', 'vbr', '-cq', '32', '-b:v', '0', '-tag:v', 'hvc1'); nvenc = 'hevc_nvenc' }
-        @{ id = 'libx265'; args = @('-c:v', 'libx265', '-preset', 'fast', '-crf', '32', '-tag:v', 'hvc1'); nvenc = $null }
-        @{ id = 'h264_nvenc'; args = @('-c:v', 'h264_nvenc', '-preset', $nvencPreset, '-rc', 'vbr', '-cq', '30', '-b:v', '0'); nvenc = 'h264_nvenc' }
-        @{ id = 'libx264'; args = @('-c:v', 'libx264', '-preset', 'superfast', '-tune', 'zerolatency', '-crf', '28'); nvenc = $null }
-    )
-    $outPlans = @()
-    foreach ($p in $plans) {
-        if ($p.nvenc -and -not (Test-Nvenc $p.nvenc)) { continue }
-        $outPlans += $p
+function Get-VencArgs([string]$kind, [int]$targetK) {
+    $maxK = [math]::Max(400, [int][math]::Round($targetK * 1.15))
+    $bufK = [math]::Max(800, $targetK * 2)
+    switch ($kind) {
+        'hevc_nvenc' {
+            if (-not (Test-Nvenc 'hevc_nvenc')) { return $null }
+            return @('-c:v', 'hevc_nvenc', '-preset', $nvencPreset, '-rc', 'vbr', '-b:v', "${targetK}k", '-maxrate', "${maxK}k", '-bufsize', "${bufK}k", '-tag:v', 'hvc1')
+        }
+        'libx265' {
+            return @('-c:v', 'libx265', '-preset', 'fast', '-b:v', "${targetK}k", '-maxrate', "${maxK}k", '-bufsize', "${bufK}k", '-tag:v', 'hvc1')
+        }
+        'h264_nvenc' {
+            if (-not (Test-Nvenc 'h264_nvenc')) { return $null }
+            return @('-c:v', 'h264_nvenc', '-preset', $nvencPreset, '-rc', 'vbr', '-b:v', "${targetK}k", '-maxrate', "${maxK}k", '-bufsize', "${bufK}k")
+        }
+        'libx264' {
+            return @('-c:v', 'libx264', '-preset', 'superfast', '-tune', 'zerolatency', '-b:v', "${targetK}k", '-maxrate', "${maxK}k", '-bufsize', "${bufK}k")
+        }
+        default { return $null }
     }
-    return $outPlans
 }
 
 function Invoke-ShrinkAttempt {
@@ -59,9 +70,11 @@ function Invoke-ShrinkAttempt {
         [string]$tempOut,
         [int]$height,
         [string[]]$vencArgs,
-        [bool]$hasAudio
+        [bool]$hasAudio,
+        [int]$audioK
     )
-    $vf = "setpts=PTS/$vel,scale=-2:${height}:flags=bilinear"
+    $scalePart = if ($height -gt 0) { ",scale=-2:${height}:flags=bilinear" } else { '' }
+    $vf = "setpts=PTS/$vel$scalePart"
     $meta = @(
         '-metadata', 'vp_shrink=1',
         '-metadata', "vp_shrink_speed=$vel",
@@ -76,7 +89,7 @@ function Invoke-ShrinkAttempt {
             '-y', '-hide_banner', '-loglevel', 'error', '-i', $inputPath,
             '-filter_complex', "[0:v]$vf[v];[0:a]$af[a]",
             '-map', '[v]', '-map', '[a]'
-        ) + $vencArgs + @('-c:a', 'aac', '-b:a', '96k') + $meta + @('-movflags', '+faststart', '-threads', '0', $tempOut)
+        ) + $vencArgs + @('-c:a', 'aac', '-b:a', "${audioK}k") + $meta + @('-movflags', '+faststart', '-threads', '0', $tempOut)
     } else {
         $args = @(
             '-y', '-hide_banner', '-loglevel', 'error', '-i', $inputPath,
@@ -93,14 +106,16 @@ function Invoke-ShrinkAttempt {
     return (Get-Item -LiteralPath $tempOut).Length
 }
 
-$hasAudio = Test-HasAudio $in
-$codecPlans = Get-CodecPlans
-if (-not $codecPlans.Count) {
-    Write-Output '[AVISO] Nenhum encoder disponivel para optimizar tamanho.'
-    exit 0
-}
+$baseTargetK = if ($srcVBps -gt 0) {
+    [math]::Max(400, [int][math]::Floor(($srcVBps / 1000.0) / $vel * 0.92))
+} else { 900 }
 
-$heights = Get-HeightLadder $srcH $hOut
+$kind = if ($encoderKind) { $encoderKind } else { 'h264_nvenc' }
+$bitrateFactors = @(0.85, 0.75, 0.65, 0.55)
+$heights = Get-HeightLadder $srcH $hOut $minH
+$hasAudio = Test-HasAudio $in
+$audioK = 96
+
 $bestPath = $out
 $bestBytes = if (Test-Path -LiteralPath $out) { (Get-Item -LiteralPath $out).Length } else { [int64]::MaxValue }
 $tmpdir = Join-Path $env:TEMP ("vp-shrink-opt-" + [guid]::NewGuid().ToString('N'))
@@ -108,12 +123,15 @@ New-Item -ItemType Directory -Path $tmpdir -Force | Out-Null
 
 try {
     $foundUnderOrig = $false
-  heightLoop: foreach ($h in ($heights | Sort-Object)) {
-        foreach ($plan in $codecPlans) {
-            $tmp = Join-Path $tmpdir ("try_${h}_$($plan.id).mp4")
-            $bytes = Invoke-ShrinkAttempt -inputPath $in -tempOut $tmp -height $h -vencArgs $plan.args -hasAudio $hasAudio
+  factorLoop: foreach ($factor in $bitrateFactors) {
+        $targetK = [math]::Max(400, [int][math]::Floor($baseTargetK * $factor))
+        $vencArgs = Get-VencArgs $kind $targetK
+        if (-not $vencArgs) { continue }
+        foreach ($h in $heights) {
+            $tmp = Join-Path $tmpdir ("try_${h}_${targetK}_$kind.mp4")
+            $bytes = Invoke-ShrinkAttempt -inputPath $in -tempOut $tmp -height $h -vencArgs $vencArgs -hasAudio $hasAudio -audioK $audioK
             if (-not $bytes) { continue }
-            Write-Output "[META] retry ${h}px $($plan.id): $([math]::Round($bytes/1MB, 1)) MB"
+            Write-Output "[META] retry ${h}px $kind ${targetK}k: $([math]::Round($bytes/1MB, 1)) MB"
             if ($bytes -lt $bestBytes) {
                 $bestBytes = $bytes
                 $bestPath = $tmp
@@ -121,9 +139,9 @@ try {
             if ($bytes -le $origBytes) {
                 Copy-Item -LiteralPath $tmp -Destination $out -Force
                 $pct = [math]::Round(($origBytes - $bytes) * 100.0 / $origBytes)
-                Write-Output "[RETRY-OK] $h px $($plan.id) — $([math]::Round($bytes/1MB, 1)) MB (origem $([math]::Round($origBytes/1MB, 1)) MB, -$pct%)"
+                Write-Output "[RETRY-OK] ${h}px $kind ${targetK}k — $([math]::Round($bytes/1MB, 1)) MB (origem $([math]::Round($origBytes/1MB, 1)) MB, -$pct%)"
                 $foundUnderOrig = $true
-                break heightLoop
+                break factorLoop
             }
         }
     }
@@ -133,7 +151,7 @@ try {
             Copy-Item -LiteralPath $bestPath -Destination $out -Force
             $sign = if ($bestBytes -le $origBytes) { '-' } else { '+' }
             $pct = [math]::Abs([math]::Round(($bestBytes - $origBytes) * 100.0 / $origBytes))
-            Write-Output "[RETRY-BEST] menor saida possivel: $([math]::Round($bestBytes/1MB, 1)) MB (origem $([math]::Round($origBytes/1MB, 1)) MB, ${sign}${pct}%)"
+            Write-Output "[RETRY-BEST] menor saida em >=${minH}px: $([math]::Round($bestBytes/1MB, 1)) MB (origem $([math]::Round($origBytes/1MB, 1)) MB, ${sign}${pct}%)"
         } else {
             Write-Output '[AVISO] retries nao melhoraram o tamanho.'
         }

@@ -77,8 +77,7 @@ export default defineEventHandler(async (event) => {
 
   const force = body?.force === true || body?.force === 'true' || body?.force === 1
   const prioritizeSize =
-    codec === 'auto' &&
-    (body?.prioritizeSize === true || body?.prioritizeSize === 'true' || body?.prioritizeSize === 1)
+    body?.prioritizeSize === true || body?.prioritizeSize === 'true' || body?.prioritizeSize === 1
 
   const snap = createShrinkJob({
     projectRoot: process.cwd(),

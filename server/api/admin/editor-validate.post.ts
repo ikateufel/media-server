@@ -5,13 +5,13 @@ import { requireAdminToken } from '../../utils/requireAdmin'
 import {
   normalizeEditMode,
   resolveEditorFile,
-  validateEditorSegments,
+  validateEditorExport,
 } from '../../utils/editorJobs'
+import { normalizeRemoveSegments } from '../../utils/editorCuts'
 import { assertAllowedSourceRoot } from '../../utils/shrinkJobs'
 
 /**
- * Valida ficheiro e trechos a remover antes de exportar.
- * Body: { sourceRoot, file, editMode?, markedSegments[] | removeSegments[], duration? }
+ * Valida ficheiro, splits e marcações antes de exportar.
  */
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
@@ -21,6 +21,9 @@ export default defineEventHandler(async (event) => {
     sourceRoot?: unknown
     file?: unknown
     editMode?: unknown
+    splitPoints?: unknown
+    excludeSegments?: unknown
+    keepMarkedSegments?: unknown
     markedSegments?: unknown
     removeSegments?: unknown
     duration?: unknown
@@ -49,21 +52,42 @@ export default defineEventHandler(async (event) => {
   const durationRaw = Number(body?.duration)
   const duration = Number.isFinite(durationRaw) && durationRaw > 0 ? durationRaw : null
   const editMode = normalizeEditMode(body?.editMode)
-  const markedRaw = Array.isArray(body?.markedSegments)
-    ? body!.markedSegments
+
+  const excludeRaw = Array.isArray(body?.excludeSegments)
+    ? body!.excludeSegments
     : Array.isArray(body?.removeSegments)
       ? body!.removeSegments
       : []
-  const { markedSegments, keepSegments } = validateEditorSegments(duration, editMode, markedRaw)
+  const keepRaw = Array.isArray(body?.keepMarkedSegments)
+    ? body!.keepMarkedSegments
+    : Array.isArray(body?.markedSegments) && editMode === 'keep'
+      ? body!.markedSegments
+      : []
+
+  const validation = validateEditorExport({
+    duration,
+    editMode,
+    excludeSegments: normalizeRemoveSegments(excludeRaw),
+    keepMarkedSegments: normalizeRemoveSegments(keepRaw),
+    splitPoints: body?.splitPoints,
+  })
 
   return {
     sourceRoot,
     file: file.rel,
     path: file.path,
-    editMode,
-    markedSegments,
-    keepSegments,
-    keepCount: keepSegments.length,
-    markedCount: markedSegments.length,
+    editMode: validation.editMode,
+    splitExport: validation.splitExport,
+    splitPoints: validation.splitPoints,
+    chunkPlans: validation.chunkPlans.map((p) => ({
+      label: p.label,
+      chunk: p.chunk,
+      keepCount: p.keepSegments.length,
+      keepSegments: p.keepSegments,
+    })),
+    keepCount: validation.keepSegments.length,
+    markedCount: validation.markedSegments.length,
+    excludeCount: validation.excludeSegments.length,
+    keepMarkedCount: validation.keepMarkedSegments.length,
   }
 })

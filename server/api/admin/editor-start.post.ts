@@ -6,14 +6,15 @@ import {
   createEditorJob,
   normalizeEditMode,
   resolveEditorFile,
-  validateEditorSegments,
+  validateEditorExport,
 } from '../../utils/editorJobs'
+import { normalizeRemoveSegments } from '../../utils/editorCuts'
 import { normalizeEditorSpeed } from '../../utils/runEditorBat'
 import { assertAllowedSourceRoot } from '../../utils/shrinkJobs'
 
 /**
  * Inicia exportação de vídeo editado (edit_video.bat).
- * Body: { sourceRoot, file, editMode?, markedSegments[] | removeSegments[], duration?, height?, speed?, force? }
+ * Body: { sourceRoot, file, editMode?, splitPoints?, excludeSegments?, keepMarkedSegments?, duration?, height?, speed?, force? }
  */
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
@@ -30,6 +31,9 @@ export default defineEventHandler(async (event) => {
     sourceRoot?: unknown
     file?: unknown
     editMode?: unknown
+    splitPoints?: unknown
+    excludeSegments?: unknown
+    keepMarkedSegments?: unknown
     markedSegments?: unknown
     removeSegments?: unknown
     duration?: unknown
@@ -61,12 +65,25 @@ export default defineEventHandler(async (event) => {
   const durationRaw = Number(body?.duration)
   const duration = Number.isFinite(durationRaw) && durationRaw > 0 ? durationRaw : null
   const editMode = normalizeEditMode(body?.editMode)
-  const markedRaw = Array.isArray(body?.markedSegments)
-    ? body!.markedSegments
+
+  const excludeRaw = Array.isArray(body?.excludeSegments)
+    ? body!.excludeSegments
     : Array.isArray(body?.removeSegments)
       ? body!.removeSegments
       : []
-  const { markedSegments, keepSegments } = validateEditorSegments(duration, editMode, markedRaw)
+  const keepRaw = Array.isArray(body?.keepMarkedSegments)
+    ? body!.keepMarkedSegments
+    : Array.isArray(body?.markedSegments) && editMode === 'keep'
+      ? body!.markedSegments
+      : []
+
+  const validation = validateEditorExport({
+    duration,
+    editMode,
+    excludeSegments: normalizeRemoveSegments(excludeRaw),
+    keepMarkedSegments: normalizeRemoveSegments(keepRaw),
+    splitPoints: body?.splitPoints,
+  })
 
   const heightRaw = Number(body?.height ?? 1080)
   const height = Number.isFinite(heightRaw) ? Math.floor(heightRaw) : 1080
@@ -88,9 +105,7 @@ export default defineEventHandler(async (event) => {
     height,
     speed,
     force,
-    editMode,
-    removeSegments: markedSegments,
-    keepSegments,
+    validation,
     duration,
   })
 
@@ -102,6 +117,8 @@ export default defineEventHandler(async (event) => {
     speed: snap.speed,
     force: snap.force,
     editMode: snap.editMode,
+    splitExport: validation.splitExport,
+    partCount: snap.chunkPlans.length,
     keepCount: snap.keepSegments.length,
     markedCount: snap.removeSegments.length,
     startedAt: snap.startedAt,

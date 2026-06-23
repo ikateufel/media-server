@@ -40,7 +40,13 @@ if ($mode -eq 'av') {
         '-map', '[v]', '-map', '[a]'
     )
     $args += $vencParts
-    $args += @('-c:a', 'aac', '-b:a', '128k')
+    $audioBk = $env:VP_AUDIO_BK
+    if ($audioBk -and $audioBk.Trim()) {
+        $ab = if ($audioBk -match 'k$') { $audioBk } else { "$audioBk`k" }
+    } else {
+        $ab = '128k'
+    }
+    $args += @('-c:a', 'aac', '-b:a', $ab)
     $args += $metaParts
     $args += @('-movflags', '+faststart', '-threads', '0', $out)
 } else {

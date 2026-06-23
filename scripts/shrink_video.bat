@@ -49,6 +49,7 @@ echo ^(ver scripts\shrink_video.env.example.bat^)
 exit /b 1
 
 :ffmpeg_on_path_ok
+call :resolve_powershell
 
 if /I "%~1"=="--help" goto :show_help
 if /I "%~1"=="-h" goto :show_help
@@ -169,7 +170,7 @@ set "outFile=%OUT_DIR%\%NOME%.mp4"
 for %%F in ("%outFile%") do set "outFile=%%~fF"
 
 echo ====================================================
-echo   SHRINK-VIDEO v1.9 — video completo ^(%vel%x, sem cortes^)
+echo   SHRINK-VIDEO v2.0 — video completo ^(%vel%x, sem cortes^)
 echo   Entrada: "%ORIG%"
 echo   Altura alvo: %H_OUT% px  ^|  Velocidade: %vel%x  ^|  Codec: %CODEC_MODE%  ^|  Priorizar tamanho: %PRIORITIZE_SIZE%  ^|  Saida: "%outFile%"
 echo   setpts=PTS/%vel%, atempo=%vel%
@@ -290,7 +291,7 @@ set "VP_VENC_ARGS=%VENC_ARGS%"
 set "VP_META_ARGS=%META_ARGS%"
 set "VP_AUDIO_BK=%TARGET_A_K%"
 set "VP_ENCODE_MODE=av"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%VP_SCRIPTS_DIR%vp-shrink-encode.ps1"
+"%VP_POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%VP_SCRIPTS_DIR%vp-shrink-encode.ps1"
 if errorlevel 1 goto :encode_no_audio
 call :literal_exists "%outFile%" _VP_EXISTS
 if "%_VP_EXISTS%"=="1" set "ENC_OK=1"
@@ -312,7 +313,7 @@ set "VP_VENC_ARGS=%VENC_ARGS%"
 set "VP_META_ARGS=%META_ARGS%"
 set "VP_AUDIO_BK=%TARGET_A_K%"
 set "VP_ENCODE_MODE=v"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%VP_SCRIPTS_DIR%vp-shrink-encode.ps1"
+"%VP_POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%VP_SCRIPTS_DIR%vp-shrink-encode.ps1"
 if errorlevel 1 goto :encode_failed
 call :literal_exists "%outFile%" _VP_EXISTS
 if not "%_VP_EXISTS%"=="1" goto :encode_failed
@@ -367,14 +368,21 @@ for %%F in ("%outFile%") do set "OUT_BYTES=%%~zF"
 goto :output_ok_finish
 
 :optimize_for_size
-echo [RETRY] saida maior que origem — a optimizar resolucao/codec...
+echo [RETRY] saida maior que origem — a optimizar bitrate (min %H_MIN%px)...
 set "VP_SHRINK_ORIG_BYTES=%ORIG_BYTES%"
 set "VP_SHRINK_SRC_H=%SRC_H%"
 set "VP_SHRINK_H_OUT=%H_OUT%"
+set "VP_SHRINK_H_MIN=%H_MIN%"
 set "VP_SHRINK_VEL=%vel%"
+set "VP_SRC_VCODEC=%SRC_VCODEC%"
+set "VP_SRC_V_BPS=%SRC_V_BPS%"
+set "VP_ENCODER_KIND=%ENCODER_KIND%"
 set "VP_IN=%ORIG%"
 set "VP_OUT=%outFile%"
-for /f "usebackq delims=" %%L in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%VP_SCRIPTS_DIR%vp-shrink-size-optimize.ps1"`) do echo %%L
+set "_retry_log=%TEMP%\vp-sh-retry_%RANDOM%_%RANDOM%.txt"
+"%VP_POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%VP_SCRIPTS_DIR%vp-shrink-size-optimize.ps1" > "%_retry_log%" 2>&1
+if exist "%_retry_log%" type "%_retry_log%"
+if exist "%_retry_log%" del "%_retry_log%" >nul 2>&1
 set "OUT_BYTES=0"
 for %%F in ("%outFile%") do set "OUT_BYTES=%%~zF"
 if %OUT_BYTES% GTR %ORIG_BYTES% call :log_if_oversized "%ORIG%" "%outFile%" %ORIG_BYTES% %OUT_BYTES% shrink
@@ -529,7 +537,7 @@ exit /b 2
 :append_sync_log
 if "%~1"=="" exit /b 0
 set "VP_LOG_LINE=%~1"
-powershell -NoProfile -Command "if ($env:VP_REPO_ROOT) { $p = Join-Path $env:VP_REPO_ROOT 'data\sync-bat-processing.log'; $d = Split-Path -Parent -Path $p; if ($d -and -not (Test-Path -LiteralPath $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }; Add-Content -LiteralPath $p -Value $env:VP_LOG_LINE }" >nul 2>&1
+"%VP_POWERSHELL%" -NoProfile -Command "if ($env:VP_REPO_ROOT) { $p = Join-Path $env:VP_REPO_ROOT 'data\sync-bat-processing.log'; $d = Split-Path -Parent -Path $p; if ($d -and -not (Test-Path -LiteralPath $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }; Add-Content -LiteralPath $p -Value $env:VP_LOG_LINE }" >nul 2>&1
 set "VP_LOG_LINE="
 exit /b 0
 
@@ -547,7 +555,7 @@ exit /b 0
 set "%~2=0"
 if "%~1"=="" exit /b 0
 set "VP_LITERAL_PATH=%~1"
-powershell -NoProfile -Command "if (Test-Path -LiteralPath $env:VP_LITERAL_PATH) { exit 0 } else { exit 1 }" >nul 2>&1
+"%VP_POWERSHELL%" -NoProfile -Command "if (Test-Path -LiteralPath $env:VP_LITERAL_PATH) { exit 0 } else { exit 1 }" >nul 2>&1
 if not errorlevel 1 set "%~2=1"
 set "VP_LITERAL_PATH="
 exit /b 0
@@ -555,7 +563,7 @@ exit /b 0
 :literal_del
 if "%~1"=="" exit /b 0
 set "VP_LITERAL_PATH=%~1"
-powershell -NoProfile -Command "Remove-Item -LiteralPath $env:VP_LITERAL_PATH -Force -ErrorAction SilentlyContinue" >nul 2>&1
+"%VP_POWERSHELL%" -NoProfile -Command "Remove-Item -LiteralPath $env:VP_LITERAL_PATH -Force -ErrorAction SilentlyContinue" >nul 2>&1
 set "VP_LITERAL_PATH="
 exit /b 0
 
@@ -563,7 +571,7 @@ exit /b 0
 set "%~2=0"
 if "%~1"=="" exit /b 0
 set "VP_LITERAL_PATH=%~1"
-powershell -NoProfile -Command "if ($env:VP_LITERAL_PATH -match '(?i)[\\/]shrinked[\\/]') { exit 0 } else { exit 1 }" >nul 2>&1
+"%VP_POWERSHELL%" -NoProfile -Command "if ($env:VP_LITERAL_PATH -match '(?i)[\\/]shrinked[\\/]') { exit 0 } else { exit 1 }" >nul 2>&1
 if not errorlevel 1 set "%~2=1"
 set "VP_LITERAL_PATH="
 exit /b 0
@@ -595,12 +603,92 @@ call :probe_read_first_line "%_pf%" %2
 if exist "%_pf%" del "%_pf%" >nul 2>&1
 exit /b 0
 
+:probe_stream_bitrate
+set "%~3="
+if not defined FFPROBE exit /b 0
+if "%~2"=="" exit /b 0
+set "_pf=%TEMP%\vp-sh_%RANDOM%_%RANDOM%.txt"
+"%FFPROBE%" -v error -select_streams %~2 -show_entries stream=bit_rate -of default=noprint_wrappers=1:nokey=1 "%~1" > "%_pf%" 2>nul
+call :probe_read_first_line "%_pf%" %3
+if exist "%_pf%" del "%_pf%" >nul 2>&1
+exit /b 0
+
+:probe_format_bitrate
+set "%~2="
+if not defined FFPROBE exit /b 0
+set "_pf=%TEMP%\vp-sh_%RANDOM%_%RANDOM%.txt"
+"%FFPROBE%" -v error -show_entries format=bit_rate -of default=noprint_wrappers=1:nokey=1 "%~1" > "%_pf%" 2>nul
+call :probe_read_first_line "%_pf%" %2
+if exist "%_pf%" del "%_pf%" >nul 2>&1
+exit /b 0
+
+:probe_source_bitrates
+set "SRC_V_BPS="
+set "SRC_A_BPS="
+call :probe_stream_bitrate "%ORIG%" v:0 SRC_V_BPS
+call :probe_stream_bitrate "%ORIG%" a:0 SRC_A_BPS
+if defined SRC_V_BPS if %SRC_V_BPS% GTR 0 goto :probe_bitrates_done
+set "FMT_BPS="
+call :probe_format_bitrate "%ORIG%" FMT_BPS
+if not defined FMT_BPS goto :probe_bitrates_done
+if %FMT_BPS% LEQ 0 goto :probe_bitrates_done
+set /a SRC_V_BPS=FMT_BPS * 85 / 100
+if defined SRC_A_BPS if %SRC_A_BPS% GTR 0 goto :probe_bitrates_done
+set /a SRC_A_BPS=FMT_BPS * 12 / 100
+:probe_bitrates_done
+exit /b 0
+
+:apply_bitrate_target
+if not defined SRC_V_BPS goto :bitrate_done
+if %SRC_V_BPS% LEQ 0 goto :bitrate_done
+if not defined ENCODER_KIND goto :bitrate_done
+call :velo_div_for_bitrate
+set /a SRC_V_KBPS=SRC_V_BPS / 1000
+set /a TARGET_V_K=SRC_V_KBPS * 92 / VELO_DIV
+if %TARGET_V_K% LSS 400 set "TARGET_V_K=400"
+set /a TARGET_V_MAX=TARGET_V_K * 115 / 100
+set /a TARGET_V_BUF=TARGET_V_K * 2
+echo [META] bitrate video alvo: %TARGET_V_K% kbps (origem ~%SRC_V_KBPS% kbps, %vel%x mais rapido)
+set "TARGET_A_K=96"
+if not defined SRC_A_BPS goto :audio_k_done
+if %SRC_A_BPS% LEQ 0 goto :audio_k_done
+set /a SRC_A_KBPS=SRC_A_BPS / 1000
+set /a TARGET_A_K=SRC_A_KBPS * 95 / VELO_DIV
+if %TARGET_A_K% LSS 64 set /a TARGET_A_K=64
+if %TARGET_A_K% GTR 128 set /a TARGET_A_K=128
+:audio_k_done
+if /I "%ENCODER_KIND%"=="h264_nvenc" (
+    set "VENC_ARGS=-c:v h264_nvenc -preset %TRAILER_NVENC_PRESET% -rc vbr -b:v %TARGET_V_K%k -maxrate %TARGET_V_MAX%k -bufsize %TARGET_V_BUF%k"
+    set "ENCODER_LABEL=h264_nvenc VBR %TARGET_V_K%k (origem/%vel%x)"
+    goto :bitrate_done
+)
+if /I "%ENCODER_KIND%"=="libx264" (
+    set "VENC_ARGS=-c:v libx264 -preset superfast -tune zerolatency -b:v %TARGET_V_K%k -maxrate %TARGET_V_MAX%k -bufsize %TARGET_V_BUF%k"
+    set "ENCODER_LABEL=libx264 VBR %TARGET_V_K%k (origem/%vel%x)"
+    goto :bitrate_done
+)
+if /I "%ENCODER_KIND%"=="hevc_nvenc" (
+    set "VENC_ARGS=-c:v hevc_nvenc -preset %TRAILER_NVENC_PRESET% -rc vbr -b:v %TARGET_V_K%k -maxrate %TARGET_V_MAX%k -bufsize %TARGET_V_BUF%k -tag:v hvc1"
+    set "ENCODER_LABEL=hevc_nvenc VBR %TARGET_V_K%k (origem/%vel%x)"
+    goto :bitrate_done
+)
+if /I "%ENCODER_KIND%"=="libx265" (
+    set "VENC_ARGS=-c:v libx265 -preset fast -b:v %TARGET_V_K%k -maxrate %TARGET_V_MAX%k -bufsize %TARGET_V_BUF%k -tag:v hvc1"
+    set "ENCODER_LABEL=libx265 VBR %TARGET_V_K%k (origem/%vel%x)"
+    goto :bitrate_done
+)
+:bitrate_done
+exit /b 0
+
 :probe_media_summary
 set "%~2="
 if not defined FFPROBE exit /b 0
 if "%~1"=="" exit /b 0
+set "_pf=%TEMP%\vp-sh_%RANDOM%_%RANDOM%.txt"
 set "VP_LITERAL_PATH=%~1"
-for /f "usebackq delims=" %%L in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%VP_SCRIPTS_DIR%vp-probe-media.ps1"`) do set "%~2=%%L"
+"%VP_POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%VP_SCRIPTS_DIR%vp-probe-media.ps1" > "%_pf%" 2>nul
+call :probe_read_first_line "%_pf%" %2
+if exist "%_pf%" del "%_pf%" >nul 2>&1
 set "VP_LITERAL_PATH="
 exit /b 0
 
@@ -610,7 +698,10 @@ if "%~1"=="" exit /b 0
 if "%~2"=="" exit /b 0
 set "VP_SZ_ORIG=%~1"
 set "VP_SZ_OUT=%~2"
-for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "$o=[int64]$env:VP_SZ_ORIG; $n=[int64]$env:VP_SZ_OUT; function F($b){if($b -ge 1GB){'{0:N1} GB' -f ($b/1GB)}elseif($b -ge 1MB){'{0:N1} MB' -f ($b/1MB)}else{'{0:N0} KB' -f ($b/1KB)}}; if($o -le 0){'tamanho saida '+$(F $n)} else { $pct=($n-$o)*100.0/$o; $sign=if($pct -ge 0){'+'}else{''}; 'origem {0}, saida {1} ({2}{3:N0}%%)' -f (F $o),(F $n),$sign,$pct }"`) do set "%~3=%%P"
+set "_pf=%TEMP%\vp-sh_%RANDOM%_%RANDOM%.txt"
+"%VP_POWERSHELL%" -NoProfile -Command "$o=[int64]$env:VP_SZ_ORIG; $n=[int64]$env:VP_SZ_OUT; function F($b){if($b -ge 1GB){'{0:N1} GB' -f ($b/1GB)}elseif($b -ge 1MB){'{0:N1} MB' -f ($b/1MB)}else{'{0:N0} KB' -f ($b/1KB)}}; if($o -le 0){'tamanho saida '+$(F $n)} else { $pct=($n-$o)*100.0/$o; $sign=if($pct -ge 0){'+'}else{''}; 'origem {0}, saida {1} ({2}{3:N0}%%)' -f (F $o),(F $n),$sign,$pct }" > "%_pf%" 2>nul
+call :probe_read_first_line "%_pf%" %3
+if exist "%_pf%" del "%_pf%" >nul 2>&1
 set "VP_SZ_ORIG="
 set "VP_SZ_OUT="
 exit /b 0
@@ -623,7 +714,7 @@ set "RV_NB=%~4"
 set "RV_TOOL=%~5"
 echo [OVERSIZED] saida maior que origem ^(%RV_NB% ^> %RV_OB%^) — registado em data\%~5-oversized.log
 if not exist "%VP_REPO_ROOT%\data" mkdir "%VP_REPO_ROOT%\data" 2>nul
-powershell -NoProfile -Command "Add-Content -LiteralPath '%VP_REPO_ROOT%\data\%~5-oversized.log' -Value ((Get-Date -Format o)+'`t%~5`t%~1`t%~2`t%~3`t%~4')" 2>nul
+"%VP_POWERSHELL%" -NoProfile -Command "Add-Content -LiteralPath '%VP_REPO_ROOT%\data\%~5-oversized.log' -Value ((Get-Date -Format o)+'`t%~5`t%~1`t%~2`t%~3`t%~4')" 2>nul
 exit /b 0
 
 :apply_speed
@@ -643,6 +734,33 @@ if /I "%SPD%"=="2.0" (
 )
 echo [ERRO] Velocidade invalida: %~1  ^(use 1.25, 1.5 ou 2^)
 exit /b 1
+
+:velo_div_for_bitrate
+set "VELO_DIV=150"
+if /I "%vel%"=="1.25" set "VELO_DIV=125"
+if /I "%vel%"=="1.5" set "VELO_DIV=150"
+if /I "%vel%"=="2.0" set "VELO_DIV=200"
+if /I "%vel%"=="2" set "VELO_DIV=200"
+exit /b 0
+
+:resolve_powershell
+if defined VP_POWERSHELL if exist "%VP_POWERSHELL%" exit /b 0
+set "VP_POWERSHELL="
+if defined SystemRoot if exist "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" (
+    set "VP_POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+    exit /b 0
+)
+if defined windir if exist "%windir%\System32\WindowsPowerShell\v1.0\powershell.exe" (
+    set "VP_POWERSHELL=%windir%\System32\WindowsPowerShell\v1.0\powershell.exe"
+    exit /b 0
+)
+for /f "delims=" %%P in ('where powershell.exe 2^>nul') do (
+    set "VP_POWERSHELL=%%P"
+    goto :resolve_powershell_done
+)
+:resolve_powershell_done
+if not defined VP_POWERSHELL set "VP_POWERSHELL=powershell.exe"
+exit /b 0
 
 :missing_video
 echo [ERRO] Indique o video a encolher.
@@ -666,7 +784,8 @@ echo   shrink_video.bat --force "filme.mkv"
 echo.
 echo Velocidade: 1.25, 1.5 ou 2 ^(predefinido 1.5^). Flag --speed= ou valor decimal posicional.
 echo Codec: auto ^(predef.^) usa a familia do original ^(H.264/HEVC^); ou h264_nvenc, libx264, hevc_nvenc, libx265.
-echo   --prioritize-size com auto: prefere HEVC; se saida ^> origem, retry com resolucao/codec menores.
+echo   --prioritize-size com auto: se saida ^> origem, retry bitrate menor em 720p+.
+echo Bitrate alvo: origem / velocidade (1.5x ~ 67%% do tamanho se mesma compressao). Minimo 720p.
 echo Reencode + AAC 128k — HEVC costuma gerar ficheiros menores; H.264 e mais compativel.
 echo Saida: shrinked\^<nome^>.mp4
 echo Marca vp_shrink_speed no ficheiro; origem ja marcada ou em shrinked\ e ignorada ^(--force repete^).

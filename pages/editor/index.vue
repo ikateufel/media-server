@@ -10,8 +10,9 @@
     </header>
 
     <p class="admin-lead">
-      Reproduza um vídeo, marque trechos a <strong>excluir</strong> (vermelho) ou a <strong>recortar</strong> (verde)
-      e gere um novo ficheiro em <code class="admin-code">edited\</code> com a velocidade e resolução escolhidas.
+      Marque trechos a <strong>excluir</strong> (vermelho) ou <strong>recortar</strong> (verde), opcionalmente
+      <strong>pontos de split</strong> (azul) para gerar <code class="admin-code">edited\nome_c1.mp4</code>,
+      <code class="admin-code">_c2</code>… — exclusões e recortes aplicam-se dentro de cada parte.
     </p>
 
     <p v-if="!isWinServer" class="admin-warn" role="status">
@@ -133,6 +134,13 @@
             "
             :style="segmentStyle(seg)"
           />
+          <div
+            v-for="sp in splitPoints"
+            :key="sp.id"
+            class="editor-timeline-split"
+            :style="{ left: splitPointPct(sp.time) + '%' }"
+            :title="`Split ${formatTime(sp.time)}`"
+          />
           <div class="editor-timeline-playhead" :style="{ left: playheadPct + '%' }" />
           <div
             v-if="pendingStart != null"
@@ -205,6 +213,53 @@
         Atalho <kbd>Enter</kbd> usa o modo seleccionado acima.
       </p>
 
+      <div class="editor-split-section">
+        <h3 class="editor-h3">Split em partes (c1, c2, …)</h3>
+        <div class="admin-row editor-mark-row">
+          <button type="button" class="admin-btn editor-btn-split" title="Atalho: P" @click="addSplitPoint">
+            Marcar split (P)
+          </button>
+          <button
+            v-if="splitPoints.length"
+            type="button"
+            class="admin-btn admin-btn--ghost"
+            @click="clearSplitPoints"
+          >
+            Limpar splits
+          </button>
+        </div>
+        <p class="admin-muted editor-mark-help">
+          Cada ponto de split divide o vídeo. Com 3 pontos obténs 4 ficheiros
+          (<code class="admin-code">nome_c1.mp4</code> … <code class="admin-code">nome_c4.mp4</code>).
+          Podes combinar com exclusões — por exemplo remover um trecho só no pedaço c3.
+        </p>
+        <ul v-if="splitPoints.length" class="editor-split-list">
+          <li v-for="sp in splitPoints" :key="sp.id" class="editor-split-item">
+            <button type="button" class="editor-split-time" @click="seekTo(sp.time)">
+              {{ formatTime(sp.time) }}
+            </button>
+            <button type="button" class="admin-btn admin-btn--sm admin-btn--ghost" @click="removeSplitPoint(sp.id)">
+              Apagar
+            </button>
+          </li>
+        </ul>
+        <div v-if="chunkPlansPreview.length" class="editor-chunks-preview">
+          <h4 class="editor-chunks-title">Pré-visualização das partes</h4>
+          <ul class="editor-chunks-list">
+            <li v-for="plan in chunkPlansPreview" :key="plan.label" class="editor-chunk-row">
+              <span class="editor-chunk-label">{{ plan.label }}</span>
+              <span class="editor-chunk-range">
+                {{ formatTime(plan.chunk.start) }} – {{ formatTime(plan.chunk.end) }}
+              </span>
+              <span class="editor-chunk-meta">
+                → {{ plan.keepSegments.length }} trecho{{ plan.keepSegments.length === 1 ? '' : 's' }}
+                · {{ formatTime(chunkKeepDuration(plan)) }}
+              </span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
       <div v-if="markedSegments.length" class="editor-segments">
         <h3 class="editor-h3">Marcações ({{ markedSegments.length }})</h3>
         <ul class="editor-segment-list">
@@ -266,11 +321,19 @@
       <div class="admin-row editor-export-actions">
         <button
           type="button"
+          class="admin-btn editor-btn-split-export"
+          :disabled="!canExportSplit"
+          @click="startExportSplit"
+        >
+          Gerar partes (c1…)
+        </button>
+        <button
+          type="button"
           class="admin-btn admin-btn--danger"
           :disabled="!canExportExclude"
           @click="startExport('exclude')"
         >
-          Gerar (excluir marcados)
+          Gerar ficheiro único (excluir)
         </button>
         <button
           type="button"
@@ -278,10 +341,18 @@
           :disabled="!canExportKeep"
           @click="startExport('keep')"
         >
-          Gerar (só recortes)
+          Gerar ficheiro único (recortes)
         </button>
       </div>
       <div class="admin-row">
+        <button
+          type="button"
+          class="admin-btn admin-btn--ghost"
+          :disabled="!canExportSplit || validating"
+          @click="validateExportSplit"
+        >
+          Validar partes
+        </button>
         <button
           type="button"
           class="admin-btn admin-btn--ghost"
@@ -353,10 +424,13 @@
 
 <script setup lang="ts">
 import {
+  buildChunkExportPlans,
   formatTime,
   keepSegmentsForExport,
   mergeSegments,
+  normalizeSplitTimes,
   type CutSegment,
+  type EditorChunkPlan,
   type EditorMarkMode,
   type MarkedSegment,
 } from '~/composables/useVideoEditor'
@@ -365,6 +439,11 @@ import {
   VIDEO_EXT_LABEL,
   VIDEO_FILE_INPUT_ACCEPT,
 } from '#shared/videoExtensions'
+
+interface SplitPoint {
+  id: string
+  time: number
+}
 
 interface MenuRow {
   path: string
@@ -417,6 +496,7 @@ const markInTime = ref<number | null>(null)
 const markOutTime = ref<number | null>(null)
 const activeMarkMode = ref<EditorMarkMode>('exclude')
 const markedSegments = ref<MarkedSegment[]>([])
+const splitPoints = ref<SplitPoint[]>([])
 
 const height = ref(1080)
 const speed = ref<1 | 1.25 | 1.5 | 2>(1)
@@ -471,6 +551,23 @@ const keepExportDuration = computed(() =>
   keepExportPreview.value.reduce((acc, s) => acc + (s.end - s.start), 0),
 )
 
+const splitTimes = computed(() => splitPoints.value.map((s) => s.time))
+
+const chunkPlansPreview = computed((): EditorChunkPlan[] => {
+  if (!duration.value || !splitPoints.value.length) return []
+  const exclude = mergeSegments(
+    markedSegments.value
+      .filter((s) => s.mode === 'exclude')
+      .map((s) => ({ start: s.start, end: s.end })),
+  )
+  const keep = mergeSegments(
+    markedSegments.value
+      .filter((s) => s.mode === 'keep')
+      .map((s) => ({ start: s.start, end: s.end })),
+  )
+  return buildChunkExportPlans(duration.value, splitTimes.value, exclude, keep)
+})
+
 const playheadPct = computed(() =>
   duration.value > 0 ? Math.min(100, (currentTime.value / duration.value) * 100) : 0,
 )
@@ -508,8 +605,24 @@ const exportBaseOk = computed(
     !!videoSrc.value,
 )
 
-const canExportExclude = computed(() => exportBaseOk.value && excludeMarked.value.length > 0)
-const canExportKeep = computed(() => exportBaseOk.value && keepMarked.value.length > 0)
+const canExportExclude = computed(
+  () => exportBaseOk.value && excludeMarked.value.length > 0 && !splitPoints.value.length,
+)
+const canExportKeep = computed(
+  () => exportBaseOk.value && keepMarked.value.length > 0 && !splitPoints.value.length,
+)
+const canExportSplit = computed(
+  () => exportBaseOk.value && splitPoints.value.length > 0 && duration.value > 0,
+)
+
+function splitPointPct(time: number): number {
+  if (!duration.value) return 0
+  return Math.min(100, Math.max(0, (time / duration.value) * 100))
+}
+
+function chunkKeepDuration(plan: EditorChunkPlan): number {
+  return plan.keepSegments.reduce((acc, s) => acc + (s.end - s.start), 0)
+}
 
 function isVideoName(name: string): boolean {
   return isVideoFileName(name)
@@ -631,6 +744,7 @@ async function loadVideo() {
   }
   fileRel.value = rel
   markedSegments.value = []
+  splitPoints.value = []
   markInTime.value = null
   markOutTime.value = null
   duration.value = 0
@@ -720,6 +834,33 @@ function clearAllMarks() {
   validateMsg.value = ''
 }
 
+function addSplitPoint() {
+  if (!duration.value) return
+  const t = currentTime.value
+  const before = splitTimes.value.length
+  const next = normalizeSplitTimes([...splitTimes.value, t], duration.value)
+  if (next.length <= before) {
+    validateMsg.value = 'Split inválido — muito perto do início, do fim ou de outro split.'
+    validateOk.value = false
+    return
+  }
+  splitPoints.value = next.map((time) => {
+    const found = splitPoints.value.find((s) => Math.abs(s.time - time) < 0.02)
+    return found ?? { id: `split-${time}-${Date.now()}-${Math.random()}`, time }
+  })
+  validateMsg.value = ''
+}
+
+function removeSplitPoint(id: string) {
+  splitPoints.value = splitPoints.value.filter((s) => s.id !== id)
+  validateMsg.value = ''
+}
+
+function clearSplitPoints() {
+  splitPoints.value = []
+  validateMsg.value = ''
+}
+
 function removeMarked(id: string) {
   markedSegments.value = markedSegments.value.filter((s) => s.id !== id)
   validateMsg.value = ''
@@ -765,16 +906,70 @@ function markedForMode(mode: EditorMarkMode) {
   )
 }
 
-function exportBody(mode: EditorMarkMode) {
+function exportBody(mode?: EditorMarkMode) {
   return {
     sourceRoot: sourceRoot.value.trim(),
     file: normalizeRel(fileRel.value),
-    editMode: mode,
-    markedSegments: markedForMode(mode),
+    editMode: mode ?? 'exclude',
+    splitPoints: splitTimes.value,
+    excludeSegments: markedForMode('exclude'),
+    keepMarkedSegments: markedForMode('keep'),
     duration: duration.value > 0 ? duration.value : undefined,
     height: height.value,
     speed: speed.value,
     force: force.value,
+  }
+}
+
+function exportBodySingle(mode: EditorMarkMode) {
+  return {
+    ...exportBody(mode),
+    splitPoints: [],
+  }
+}
+
+async function validateExportSplit() {
+  validateMsg.value = ''
+  validateOk.value = false
+  if (!canExportSplit.value) return
+  validating.value = true
+  try {
+    const h = await adminHeaders()
+    const data = await $fetch<{ partCount: number; chunkPlans: { label: string }[] }>(
+      '/api/admin/editor-validate',
+      {
+        method: 'POST',
+        headers: { ...h, 'Content-Type': 'application/json' },
+        body: exportBody(),
+      },
+    )
+    validateOk.value = true
+    const labels = data.chunkPlans.map((p) => p.label).join(', ')
+    validateMsg.value = `OK — ${data.partCount} parte(s): ${labels}`
+  } catch (e: unknown) {
+    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    validateMsg.value = ex?.data?.statusMessage || ex?.message || 'Validação falhou.'
+  } finally {
+    validating.value = false
+  }
+}
+
+async function startExportSplit() {
+  if (!canExportSplit.value) return
+  startErr.value = ''
+  jobErr.value = ''
+  try {
+    const h = await adminHeaders()
+    const data = await $fetch<{ jobId: string }>('/api/admin/editor-start', {
+      method: 'POST',
+      headers: { ...h, 'Content-Type': 'application/json' },
+      body: exportBody(),
+    })
+    rememberJobId(data.jobId)
+    openStreamForJob(data.jobId)
+  } catch (e: unknown) {
+    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    startErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao iniciar exportação.'
   }
 }
 
@@ -791,7 +986,7 @@ async function validateExport(mode: EditorMarkMode) {
       {
         method: 'POST',
         headers: { ...h, 'Content-Type': 'application/json' },
-        body: exportBody(mode),
+        body: exportBodySingle(mode),
       },
     )
     validateOk.value = true
@@ -943,7 +1138,7 @@ async function startExport(mode: EditorMarkMode) {
     const data = await $fetch<{ jobId: string }>('/api/admin/editor-start', {
       method: 'POST',
       headers: { ...h, 'Content-Type': 'application/json' },
-      body: exportBody(mode),
+      body: exportBodySingle(mode),
     })
     rememberJobId(data.jobId)
     openStreamForJob(data.jobId)
@@ -1009,6 +1204,9 @@ function onKeyDown(ev: KeyboardEvent) {
   } else if (ev.key === 'o' || ev.key === 'O') {
     ev.preventDefault()
     markOut()
+  } else if (ev.key === 'p' || ev.key === 'P') {
+    ev.preventDefault()
+    addSplitPoint()
   } else if (ev.key === 'Enter' && canAddMark.value) {
     ev.preventDefault()
     addMarked(activeMarkMode.value)
@@ -1347,6 +1545,110 @@ onUnmounted(() => {
   background: #8ab4f8;
   pointer-events: none;
   z-index: 2;
+}
+
+.editor-timeline-split {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  margin-left: -1.5px;
+  background: #58a6ff;
+  box-shadow: 0 0 6px color-mix(in srgb, #58a6ff 60%, transparent);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.editor-split-section {
+  margin: 1rem 0 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #2d333b;
+}
+
+.editor-btn-split {
+  border-color: #58a6ff;
+  color: #8ab4f8;
+}
+
+.editor-btn-split-export {
+  background: color-mix(in srgb, #58a6ff 25%, #238636);
+  border-color: #58a6ff;
+}
+
+.editor-split-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+}
+
+.editor-split-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid #2d333b;
+}
+
+.editor-split-time {
+  background: none;
+  border: none;
+  color: #8ab4f8;
+  cursor: pointer;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.85rem;
+  padding: 0;
+}
+
+.editor-split-time:hover {
+  text-decoration: underline;
+}
+
+.editor-chunks-preview {
+  background: color-mix(in srgb, #58a6ff 6%, transparent);
+  border: 1px solid color-mix(in srgb, #58a6ff 25%, #2d333b);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+}
+
+.editor-chunks-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.88rem;
+  color: #8ab4f8;
+}
+
+.editor-chunks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.editor-chunk-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  padding: 0.3rem 0;
+  font-size: 0.82rem;
+  border-top: 1px solid color-mix(in srgb, #58a6ff 15%, transparent);
+}
+
+.editor-chunk-row:first-child {
+  border-top: none;
+}
+
+.editor-chunk-label {
+  font-weight: 650;
+  color: #58a6ff;
+  font-family: ui-monospace, Consolas, monospace;
+  min-width: 2rem;
+}
+
+.editor-chunk-range {
+  font-family: ui-monospace, Consolas, monospace;
+  color: #e8eaed;
+}
+
+.editor-chunk-meta {
+  color: #9aa0a6;
 }
 
 .editor-mark-row {

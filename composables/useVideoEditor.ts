@@ -102,3 +102,11 @@ export function parseTimeInput(raw: string): number | null {
   }
   return null
 }
+
+export type { EditorChunkPlan } from '#shared/editorSplit'
+export {
+  buildChunkExportPlans,
+  computeChunksFromSplits,
+  keepSegmentsForChunk,
+  normalizeSplitTimes,
+} from '#shared/editorSplit'
