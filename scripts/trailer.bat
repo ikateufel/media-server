@@ -28,12 +28,14 @@ if not exist "%TRAILER_TEMP%" (
 :: PROCESSAMENTO PADRAO (unico; Admin/sync chama trailer.bat sem argumentos):
 ::   15 s em 2x a cada 5%% do filme se duracao ^<= TRAILER_LONG_MIN_SEC (60 min)
 ::   15 s em 2x a cada TRAILER_LONG_STEP_SEC (5 min) se duracao ^> 60 min
-:: Ajuste fino via .env: TRAILER_PCT_SEG, TRAILER_PCT_STEP, TRAILER_LONG_MIN_SEC, TRAILER_LONG_STEP_SEC
+::   + bloco unico dos ultimos TRAILER_TAIL_SEC (40 s) no fim — sem duplicar cortes nessa zona
+:: Ajuste fino via .env: TRAILER_PCT_SEG, TRAILER_PCT_STEP, TRAILER_LONG_MIN_SEC, TRAILER_LONG_STEP_SEC, TRAILER_TAIL_SEC
 :: TRAILER_MODE no .env e ignorado (valores minuto* nao mudam o algoritmo).
 if not defined TRAILER_PCT_SEG set "TRAILER_PCT_SEG=15"
 if not defined TRAILER_PCT_STEP set "TRAILER_PCT_STEP=5"
 if not defined TRAILER_LONG_MIN_SEC set "TRAILER_LONG_MIN_SEC=3600"
 if not defined TRAILER_LONG_STEP_SEC set "TRAILER_LONG_STEP_SEC=300"
+if not defined TRAILER_TAIL_SEC set "TRAILER_TAIL_SEC=40"
 :: Modos legado: so com argumento explicito na linha de comando (nao via .env).
 if not defined TRAILER_MAX_OUT_SEC set "TRAILER_MAX_OUT_SEC=120"
 set "TRAILER_COLLECT=padrao"
@@ -48,9 +50,9 @@ if /I "%~1"=="--sparse" set "TRAILER_COLLECT=sparse"
 if /I "%~1"=="legacy" set "TRAILER_COLLECT=sparse"
 
 echo ====================================================
-echo   TRAILER-MAKER v3.7 (mp4 mkv m4v avi mov webm wmv na raiz - saida trailers\*.mp4)
+echo   TRAILER-MAKER v3.8 (mp4 mkv m4v avi mov webm wmv na raiz - saida trailers\*.mp4)
 echo   TRAILER temp: %TRAILER_TEMP%
-if /I "%TRAILER_COLLECT%"=="padrao" echo   COLETA PADRAO: %TRAILER_PCT_SEG%s em 2x — cada %TRAILER_PCT_STEP%%% se ^<=%TRAILER_LONG_MIN_SEC%s\, cada %TRAILER_LONG_STEP_SEC%s se maior
+if /I "%TRAILER_COLLECT%"=="padrao" echo   COLETA PADRAO: %TRAILER_PCT_SEG%s em 2x — cada %TRAILER_PCT_STEP%%% se ^<=%TRAILER_LONG_MIN_SEC%s\, cada %TRAILER_LONG_STEP_SEC%s se maior + ultimos %TRAILER_TAIL_SEC%s
 if /I not "%TRAILER_COLLECT%"=="padrao" echo   COLETA LEGADO: %TRAILER_COLLECT% ^(so por argumento CLI^)
 if /I not "%TRAILER_COLLECT%"=="padrao" echo   Duracao maxima saida legado: %TRAILER_MAX_OUT_SEC%s (apos 2x)
 echo ====================================================
@@ -137,19 +139,24 @@ for %%f in (*.mp4 *.mkv *.m4v *.avi *.mov *.webm *.wmv) do (
                 if !PCT_STEP! LSS 1 set /a "PCT_STEP=5"
                 if !LONG_MIN! LSS 1 set /a "LONG_MIN=3600"
                 if !LONG_STEP! LSS 60 set /a "LONG_STEP=300"
+                set /a "TAIL_SEC=!TRAILER_TAIL_SEC!"
+                if !TAIL_SEC! LSS 1 set /a "TAIL_SEC=40"
+                set /a "TAIL_INI=!DUR_INT!-!TAIL_SEC!"
+                if !TAIL_INI! LSS 0 set /a "TAIL_INI=0"
+                set /a "TAIL_LEN=!DUR_INT!-!TAIL_INI!"
 
                 if !DUR_INT! GTR !LONG_MIN! (
                     set /a "max_m=( !DUR_INT! - 1 ) / !LONG_STEP!"
                     if !max_m! LSS 0 set /a "max_m=0"
                     set /a "npc=!max_m!+1"
-                    echo [META] padrao-longo: filme ~!DUR_INT!s ^(ffprobe !dur_raw!^) - !PCT_SEG!s em 2x a cada !LONG_STEP!s ^(!npc! cortes^) ^| setpts=!pts!*PTS\, atempo=!vel!
+                    echo [META] padrao-longo: filme ~!DUR_INT!s ^(ffprobe !dur_raw!^) - !PCT_SEG!s em 2x a cada !LONG_STEP!s ^(!npc! cortes^) + !TAIL_LEN!s finais ^| setpts=!pts!*PTS\, atempo=!vel!
 
                     for /L %%m in (0,1,!max_m!) do (
                         set /a "st=%%m*!LONG_STEP!"
                         set /a "seg_t=!PCT_SEG!"
                         set /a "rem=!DUR_INT!-!st!"
                         if !rem! LSS !seg_t! set /a "seg_t=!rem!"
-                        if !seg_t! GTR 0 (
+                        if !seg_t! GTR 0 if !st! LSS !TAIL_INI! (
                             set "tmp=!TRAILER_TEMP!\tm_%%m_!tid!.mp4"
                             if "!HAS_A!"=="1" (
                                 "!FFMPEG!" -y -ss !st! -t !seg_t! -i "!orig!" -filter_complex "[0:v]!VF_CHAIN![v];[0:a]!AF_CHAIN![a]" -map "[v]" -map "[a]" !VENC_ARGS! -c:a aac -b:a 128k -threads 0 "!tmp!" >nul 2>&1
@@ -173,14 +180,14 @@ for %%f in (*.mp4 *.mkv *.m4v *.avi *.mov *.webm *.wmv) do (
                     set /a "pct_max=100-!PCT_STEP!"
                     if !pct_max! LSS 0 set /a "pct_max=0"
                     set /a "npc=!pct_max!/!PCT_STEP!+1"
-                    echo [META] padrao: filme ~!DUR_INT!s ^(ffprobe !dur_raw!^) - !PCT_SEG!s em 2x a cada !PCT_STEP!%% ^(!npc! cortes 0-!pct_max!%%^) ^| setpts=!pts!*PTS\, atempo=!vel!
+                    echo [META] padrao: filme ~!DUR_INT!s ^(ffprobe !dur_raw!^) - !PCT_SEG!s em 2x a cada !PCT_STEP!%% ^(0-!pct_max!%%^, fora ultimos !TAIL_SEC!s^) + !TAIL_LEN!s finais ^| setpts=!pts!*PTS\, atempo=!vel!
 
                     for /L %%p in (0,!PCT_STEP!,!pct_max!) do (
                         set /a "st=!DUR_INT!*%%p/100"
                         set /a "seg_t=!PCT_SEG!"
                         set /a "rem=!DUR_INT!-!st!"
                         if !rem! LSS !seg_t! set /a "seg_t=!rem!"
-                        if !seg_t! GTR 0 (
+                        if !seg_t! GTR 0 if !st! LSS !TAIL_INI! (
                             set "tmp=!TRAILER_TEMP!\tp_%%p_!tid!.mp4"
                             if "!HAS_A!"=="1" (
                                 "!FFMPEG!" -y -ss !st! -t !seg_t! -i "!orig!" -filter_complex "[0:v]!VF_CHAIN![v];[0:a]!AF_CHAIN![a]" -map "[v]" -map "[a]" !VENC_ARGS! -c:a aac -b:a 128k -threads 0 "!tmp!" >nul 2>&1
@@ -198,6 +205,26 @@ for %%f in (*.mp4 *.mkv *.m4v *.avi *.mov *.webm *.wmv) do (
                                     set /a "SEG_COUNT+=1"
                                 )
                             )
+                        )
+                    )
+                )
+
+                if !TAIL_LEN! GTR 0 (
+                    set "tmp_f=!TRAILER_TEMP!\t_tail_!tid!.mp4"
+                    if "!HAS_A!"=="1" (
+                        "!FFMPEG!" -y -ss !TAIL_INI! -t !TAIL_LEN! -i "!orig!" -filter_complex "[0:v]!VF_CHAIN![v];[0:a]!AF_CHAIN![a]" -map "[v]" -map "[a]" !VENC_ARGS! -c:a aac -b:a 128k -threads 0 "!tmp_f!" >nul 2>&1
+                    ) else (
+                        "!FFMPEG!" -y -ss !TAIL_INI! -t !TAIL_LEN! -i "!orig!" -vf "!VF_CHAIN!" -an !VENC_ARGS! -threads 0 "!tmp_f!" >nul 2>&1
+                    )
+                    if exist "!tmp_f!" (
+                        "!FFPROBE!" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "!tmp_f!" >nul 2>&1
+                        if errorlevel 1 (
+                            echo [AVISO] segmento final invalido ignorado: !tmp_f!
+                            del "!tmp_f!" >nul 2>&1
+                        ) else (
+                            set "tmpfSlash=!tmp_f:\=/!"
+                            echo file '!tmpfSlash!' >> "!LISTA!"
+                            set /a "SEG_COUNT+=1"
                         )
                     )
                 )
@@ -390,7 +417,7 @@ for %%f in (*.mp4 *.mkv *.m4v *.avi *.mov *.webm *.wmv) do (
             ) else (
                 echo [ERRO] nenhum segmento valido foi gerado.
             )
-            del /q "!TRAILER_TEMP!\t_*_!tid!.mp4" "!TRAILER_TEMP!\tq_*_!tid!.mp4" "!TRAILER_TEMP!\tp_*_!tid!.mp4" "!TRAILER_TEMP!\tm_*_!tid!.mp4" "!TRAILER_TEMP!\t_fin_!tid!.mp4" >nul 2>&1
+            del /q "!TRAILER_TEMP!\t_*_!tid!.mp4" "!TRAILER_TEMP!\tq_*_!tid!.mp4" "!TRAILER_TEMP!\tp_*_!tid!.mp4" "!TRAILER_TEMP!\tm_*_!tid!.mp4" "!TRAILER_TEMP!\t_fin_!tid!.mp4" "!TRAILER_TEMP!\t_tail_!tid!.mp4" >nul 2>&1
             del /q "!LISTA!" >nul 2>&1
         )
     )
