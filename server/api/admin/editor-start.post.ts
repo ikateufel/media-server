@@ -1,6 +1,4 @@
 import { createError, readBody } from 'h3'
-import { resolve } from 'node:path'
-import { getVideoMenuItems } from '../../utils/videoMenu'
 import { requireAdminToken } from '../../utils/requireAdmin'
 import {
   createEditorJob,
@@ -17,7 +15,6 @@ import { assertAllowedSourceRoot } from '../../utils/shrinkJobs'
  * Body: { sourceRoot, file, editMode?, splitPoints?, excludeSegments?, keepMarkedSegments?, duration?, height?, speed?, force? }
  */
 export default defineEventHandler(async (event) => {
-  const config = useRuntimeConfig(event)
   requireAdminToken(event)
 
   if (process.platform !== 'win32') {
@@ -42,19 +39,11 @@ export default defineEventHandler(async (event) => {
     force?: unknown
   } | null
 
-  const allowed = getVideoMenuItems(config).map((e) => resolve(e.path.trim()))
-  if (!allowed.length) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Nenhuma biblioteca configurada (menu ou VIDEO_ROOT).',
-    })
-  }
-
   const sourceRootRaw = String(body?.sourceRoot ?? '').trim()
   if (!sourceRootRaw) {
     throw createError({ statusCode: 400, statusMessage: 'Campo "sourceRoot" obrigatório.' })
   }
-  const sourceRoot = assertAllowedSourceRoot(sourceRootRaw, allowed)
+  const sourceRoot = await assertAllowedSourceRoot(sourceRootRaw)
 
   const fileRel = String(body?.file ?? '').trim()
   if (!fileRel) {

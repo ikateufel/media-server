@@ -33,12 +33,13 @@ function Test-HasAudio([string]$path) {
 }
 
 function Get-HeightLadder([int]$sourceH, [int]$targetH, [int]$floorH) {
+    $floor = if ($sourceH -gt 0) { [Math]::Min($floorH, $sourceH) } else { $floorH }
     $start = if ($sourceH -gt 0) { [Math]::Min($sourceH, $targetH) } else { $targetH }
     $list = [System.Collections.Generic.List[int]]::new()
-    foreach ($h in @(1080, 900, 720)) {
-        if ($h -le $start -and $h -ge $floorH) { [void]$list.Add($h) }
+    foreach ($h in @(1080, 900, 720, 540, 480, 360)) {
+        if ($h -le $start -and $h -ge $floor) { [void]$list.Add($h) }
     }
-    if ($start -ge $floorH -and -not $list.Contains($start)) { [void]$list.Add($start) }
+    if ($start -ge $floor -and -not $list.Contains($start)) { [void]$list.Add($start) }
     return ($list | Sort-Object -Descending -Unique)
 }
 
@@ -111,7 +112,15 @@ $baseTargetK = if ($srcVBps -gt 0) {
 } else { 900 }
 
 $kind = if ($encoderKind) { $encoderKind } else { 'h264_nvenc' }
-$bitrateFactors = @(0.85, 0.75, 0.65, 0.55)
+$prioritize = $env:VP_SHRINK_PRIORITIZE_SIZE -eq '1'
+$bitrateFactors = if ($prioritize) {
+    @(0.75, 0.65, 0.55, 0.45, 0.35)
+} else {
+    @(0.85, 0.75, 0.65, 0.55)
+}
+if ($prioritize) {
+    Write-Output '[META] retry agressivo (priorizar tamanho)'
+}
 $heights = Get-HeightLadder $srcH $hOut $minH
 $hasAudio = Test-HasAudio $in
 $audioK = 96
@@ -147,11 +156,12 @@ try {
     }
 
     if (-not $foundUnderOrig) {
-        if ($bestPath -ne $out -and (Test-Path -LiteralPath $bestPath)) {
+        if ($bestPath -ne $out -and (Test-Path -LiteralPath $bestPath) -and $bestBytes -lt $origBytes) {
             Copy-Item -LiteralPath $bestPath -Destination $out -Force
-            $sign = if ($bestBytes -le $origBytes) { '-' } else { '+' }
-            $pct = [math]::Abs([math]::Round(($bestBytes - $origBytes) * 100.0 / $origBytes))
-            Write-Output "[RETRY-BEST] menor saida em >=${minH}px: $([math]::Round($bestBytes/1MB, 1)) MB (origem $([math]::Round($origBytes/1MB, 1)) MB, ${sign}${pct}%)"
+            $pct = [math]::Round(($origBytes - $bestBytes) * 100.0 / $origBytes)
+            Write-Output "[RETRY-BEST] menor saida: $([math]::Round($bestBytes/1MB, 1)) MB (origem $([math]::Round($origBytes/1MB, 1)) MB, -$pct%)"
+        } elseif ($bestBytes -gt $origBytes) {
+            Write-Output '[AVISO] retries nao ficaram menores que a origem — nao substitui saida.'
         } else {
             Write-Output '[AVISO] retries nao melhoraram o tamanho.'
         }

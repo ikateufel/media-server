@@ -1,10 +1,9 @@
 import { createError, readBody } from 'h3'
-import { resolve } from 'node:path'
-import { getVideoMenuItems } from '../../utils/videoMenu'
 import { requireAdminToken } from '../../utils/requireAdmin'
 import {
   assertAllowedSourceRoot,
   createShrinkJob,
+  normalizeMinSizeMb,
   normalizeShrinkSpeed,
   resolveShrinkFiles,
 } from '../../utils/shrinkJobs'
@@ -12,10 +11,9 @@ import { normalizeShrinkCodec } from '../../utils/runShrinkBat'
 
 /**
  * Inicia job de shrink (shrink_video.bat por ficheiro).
- * Body: { sourceRoot, files[], height?, speed?, codec?, force?, prioritizeSize? }
+ * Body: { sourceRoot, files[], height?, speed?, codec?, force?, prioritizeSize?, minSizeMb? }
  */
 export default defineEventHandler(async (event) => {
-  const config = useRuntimeConfig(event)
   requireAdminToken(event)
 
   if (process.platform !== 'win32') {
@@ -33,21 +31,14 @@ export default defineEventHandler(async (event) => {
     codec?: unknown
     force?: unknown
     prioritizeSize?: unknown
+    minSizeMb?: unknown
   } | null
-
-  const allowed = getVideoMenuItems(config).map((e) => resolve(e.path.trim()))
-  if (!allowed.length) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Nenhuma biblioteca configurada (menu ou VIDEO_ROOT).',
-    })
-  }
 
   const sourceRootRaw = String(body?.sourceRoot ?? '').trim()
   if (!sourceRootRaw) {
     throw createError({ statusCode: 400, statusMessage: 'Campo "sourceRoot" obrigatório.' })
   }
-  const sourceRoot = assertAllowedSourceRoot(sourceRootRaw, allowed)
+  const sourceRoot = await assertAllowedSourceRoot(sourceRootRaw)
 
   const filesRaw = body?.files
   if (!Array.isArray(filesRaw) || !filesRaw.length) {
@@ -78,6 +69,7 @@ export default defineEventHandler(async (event) => {
   const force = body?.force === true || body?.force === 'true' || body?.force === 1
   const prioritizeSize =
     body?.prioritizeSize === true || body?.prioritizeSize === 'true' || body?.prioritizeSize === 1
+  const minSizeMb = normalizeMinSizeMb(body?.minSizeMb ?? 0)
 
   const snap = createShrinkJob({
     projectRoot: process.cwd(),
@@ -88,6 +80,7 @@ export default defineEventHandler(async (event) => {
     codec,
     force,
     prioritizeSize,
+    minSizeMb,
   })
 
   return {
@@ -99,6 +92,7 @@ export default defineEventHandler(async (event) => {
     codec: snap.codec,
     force: snap.force,
     prioritizeSize: snap.prioritizeSize,
+    minSizeMb: snap.minSizeMb ?? 0,
     startedAt: snap.startedAt,
   }
 })

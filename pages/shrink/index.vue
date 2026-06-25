@@ -38,8 +38,8 @@
     <section class="admin-card">
       <h2 class="admin-h2">Pasta de origem</h2>
       <p class="admin-muted">
-        Escolha a biblioteca no menu (ex.: «_selected»). Os nomes da fila são relativos a essa pasta —
-        use só o nome do ficheiro se os vídeos estiverem na raiz da biblioteca.
+        Escolha uma biblioteca no menu ou escreva qualquer caminho de pasta existente. Os nomes da fila
+        são relativos a essa pasta — use só o nome do ficheiro se os vídeos estiverem na raiz.
       </p>
       <div class="admin-row">
         <select v-model="sourceSession" class="admin-input admin-input--wide" @change="onSourceSessionChange">
@@ -56,6 +56,23 @@
         spellcheck="false"
         placeholder="H:\videos\biblioteca"
       />
+      <div class="admin-row shrink-list-actions">
+        <button
+          type="button"
+          class="admin-btn"
+          :disabled="listLoading"
+          @click="loadReprocessList"
+        >
+          Carregar lista
+        </button>
+      </div>
+      <p class="admin-muted shrink-list-hint">
+        <strong>Guardar fila</strong> abre o diálogo do sistema para gravar a fila onde quiser
+        (pasta + nomes em <code class="admin-code">.txt</code>).
+        <strong>Carregar lista</strong> abre o diálogo para escolher esse ficheiro
+        (compare / multipass com <code class="admin-code">2|</code> / <code class="admin-code">3|</code>, ou fila guardada).
+      </p>
+      <p v-if="listMsg" :class="listMsgOk ? 'admin-ok' : 'admin-err'">{{ listMsg }}</p>
     </section>
 
     <section class="admin-card">
@@ -77,18 +94,33 @@
         <div class="admin-row drop-zone-actions">
           <button type="button" class="admin-btn" @click="pickFiles">Escolher ficheiros</button>
           <button type="button" class="admin-btn admin-btn--ghost" @click="pickFolder">Escolher pasta</button>
+          <button
+            type="button"
+            class="admin-btn admin-btn--ghost"
+            :disabled="!canSaveQueue || saveQueueLoading"
+            @click="saveQueueList"
+          >
+            Guardar fila
+          </button>
           <button type="button" class="admin-btn admin-btn--ghost" :disabled="!queue.length" @click="clearQueue">
             Limpar fila
           </button>
         </div>
         <input ref="fileInputRef" type="file" multiple :accept="VIDEO_FILE_INPUT_ACCEPT" class="sr-only" @change="onFileInput" />
+        <input
+          ref="queueListFileInputRef"
+          type="file"
+          accept=".txt,text/plain"
+          class="sr-only"
+          @change="onQueueListFileInput"
+        />
         <input ref="folderInputRef" type="file" multiple webkitdirectory class="sr-only" @change="onFolderInput" />
       </div>
 
       <p v-if="importMsg" class="import-summary" role="status">{{ importMsg }}</p>
-      <details v-if="importSkippedExt.length || importSkippedDup.length" class="import-skipped-details">
+      <details v-if="importSkippedExt.length || importSkippedDup.length || importSkippedSmall.length" class="import-skipped-details">
         <summary class="import-skipped-summary">
-          Ver {{ importSkippedExt.length + importSkippedDup.length }} ignorado(s)
+          Ver {{ importSkippedExt.length + importSkippedDup.length + importSkippedSmall.length }} ignorado(s)
         </summary>
         <ul v-if="importSkippedExt.length" class="import-skipped-list">
           <li v-for="name in importSkippedExt" :key="`ext:${name}`" class="import-skipped-item">
@@ -98,6 +130,11 @@
         <ul v-if="importSkippedDup.length" class="import-skipped-list">
           <li v-for="name in importSkippedDup" :key="`dup:${name}`" class="import-skipped-item">
             <span class="import-skipped-tag">duplicado</span> {{ name }}
+          </li>
+        </ul>
+        <ul v-if="importSkippedSmall.length" class="import-skipped-list">
+          <li v-for="name in importSkippedSmall" :key="`small:${name}`" class="import-skipped-item">
+            <span class="import-skipped-tag">&lt; {{ minSizeMb }} MB</span> {{ name }}
           </li>
         </ul>
       </details>
@@ -136,8 +173,11 @@
           {{ oversizedItems.length }} ficheiro{{ oversizedItems.length === 1 ? '' : 's' }} com saída maior que a origem
         </h3>
         <p class="admin-muted queue-oversized-hint">
-          A saída ficou maior que o original. Lista em
-          <code class="admin-code">data\shrink-oversized.log</code>.
+          Listas para rever depois em
+          <code class="admin-code">data\shrink-oversized-paths.txt</code> (caminhos),
+          <code class="admin-code">data\shrink-oversized-rels.txt</code> (nomes para fila) e
+          <code class="admin-code">data\shrink-oversized-todo.txt</code> (detalhe).
+          Log completo: <code class="admin-code">data\shrink-oversized.log</code>.
         </p>
         <ul class="queue-oversized-list">
           <li v-for="f in oversizedItems" :key="f.rel" class="queue-oversized-item">
@@ -154,6 +194,17 @@
       <h2 class="admin-h2">Opções do vídeo final</h2>
       <div class="admin-row shrink-options">
         <label class="shrink-field">
+          <span class="shrink-label">Ignorar &lt; (MB)</span>
+          <input
+            v-model.number="minSizeMb"
+            type="number"
+            min="0"
+            step="1"
+            class="admin-input shrink-num"
+            title="0 = processar todos os ficheiros da fila"
+          />
+        </label>
+        <label class="shrink-field">
           <span class="shrink-label">Altura máx. (px)</span>
           <input v-model.number="height" type="number" min="144" max="4320" step="1" class="admin-input shrink-num" />
         </label>
@@ -168,16 +219,16 @@
         <label class="shrink-field shrink-field--codec">
           <span class="shrink-label">Codec de vídeo</span>
           <select v-model="codec" class="admin-input">
-            <option value="auto">Automático (mesma família do original)</option>
-            <option value="h264_nvenc">H.264 NVENC (GPU, rápido)</option>
-            <option value="libx264">H.264 libx264 (CPU)</option>
-            <option value="hevc_nvenc">HEVC NVENC (GPU, menor)</option>
-            <option value="libx265">HEVC libx265 (CPU, lento)</option>
+            <option value="h264_nvenc">H.264 NVENC (GPU, predefinido)</option>
+            <option value="hevc_nvenc">HEVC NVENC (GPU, ficheiros menores)</option>
+            <option value="auto">Automático (GPU — mesma família do original)</option>
+            <option value="libx264">H.264 libx264 (CPU, lento)</option>
+            <option value="libx265">HEVC libx265 (CPU, muito lento)</option>
           </select>
         </label>
         <label class="admin-check-label shrink-prioritize">
           <input v-model="prioritizeSize" type="checkbox" />
-          Priorizar tamanho (retry com bitrate menor em 720p+ se a saída ficar maior)
+          Priorizar tamanho (2.ª passagem se &lt;30% redução; 3.ª se ainda &gt; origem)
         </label>
         <label class="admin-check-label shrink-force">
           <input v-model="force" type="checkbox" />
@@ -185,11 +236,20 @@
         </label>
       </div>
       <p class="admin-muted shrink-codec-hint">
-        Todos os codecs usam <strong>bitrate alvo ≈ origem ÷ velocidade</strong> (lido do ficheiro ou estimado pela
-        duração) — 1,5× costuma dar ~67% do tamanho sem perder muita qualidade. Mínimo <strong>720p</strong>.
-        <strong>Automático</strong> mantém a família (H.264→H.264, HEVC→HEVC); HEVC em origem H.264 usa ~85% do
-        bitrate alvo. <strong>Priorizar tamanho</strong>: retry com bitrate mais baixo se ainda ficar maior que o
-        original.
+        <strong>Ignorar &lt; (MB)</strong>: ficheiros menores que este valor são ignorados na validação e no
+        processamento. Use <strong>0</strong> para incluir todos. Ao escolher pasta/ficheiros, os pequenos nem
+        entram na fila (quando o browser envia o tamanho).
+        <strong>1.ª passagem</strong>: NVENC na GPU (preset p2) + decode CUDA quando disponível.
+        <strong>Validar no servidor</strong> também verifica o codec (H.264/HEVC OK; VP9/AV1/ProRes etc. são ignorados).
+        Scale/áudio ainda usam CPU — no Task Manager o ffmpeg pode parecer “CPU alto” mesmo com GPU activa.
+        Se a saída ficar <strong>&gt;70% do original</strong>, o shrinked é apagado (vê
+        <code class="admin-code">[INFO] Encoder</code> e
+        <code class="admin-code">[META] cap bitrate</code> no log).
+        <strong>Priorizar tamanho</strong>: aí corre <strong>2.ª passagem</strong> (bitrate ~origem) e, se ainda
+        &gt; origem, <strong>3.ª passagem</strong> agressiva.
+        Durante o job, quem entra na 2.ª/3.ª fase vai para
+        <code class="admin-code">data\shrink-phase2-run-rels.txt</code> e
+        <code class="admin-code">data\shrink-phase3-run-rels.txt</code>.
       </p>
       <div class="admin-row shrink-actions">
         <button
@@ -243,7 +303,7 @@
         <span class="job-counter" :class="{ 'job-counter--err': job.totals.err > 0 }">
           <strong>{{ job.totals.err }}</strong> erro{{ job.totals.err === 1 ? '' : 's' }}
         </span>
-        <span v-if="job.totalFiles > 1" class="job-counter">
+        <span v-if="jobActive || job.totalFiles > 0" class="job-counter">
           ficheiro <strong>{{ Math.max(0, job.currentFileIndex) + 1 }}</strong>/{{ job.totalFiles }}
         </span>
       </div>
@@ -266,6 +326,12 @@
 </template>
 
 <script setup lang="ts">
+import {
+  formatShrinkListFile,
+  parseShrinkListFile,
+  SHRINK_LIST_FILE_DEFAULT_NAME,
+  SHRINK_LIST_FILE_PICKER_TYPES,
+} from '#shared/shrinkListFile'
 import {
   isVideoFileName,
   VIDEO_EXT_LABEL,
@@ -297,6 +363,7 @@ interface OversizedOutputEntry {
 
 interface JobFileResult {
   rel: string
+  path?: string
   exitCode: number | null
   okCount: number
   errCount: number
@@ -317,6 +384,18 @@ interface JobLine {
 
 type ShrinkCodec = 'auto' | 'h264_nvenc' | 'libx264' | 'hevc_nvenc' | 'libx265'
 
+interface ShrinkReprocessListResponse {
+  sourceRoot: string
+  files: string[]
+  count: number
+  empty?: boolean
+  message?: string
+  phase2Count?: number
+  phase3Count?: number
+  needsPrioritizeSize?: boolean
+  listPath?: string
+}
+
 interface JobSnapshot {
   id: string
   status: JobStatus
@@ -326,6 +405,7 @@ interface JobSnapshot {
   codec: ShrinkCodec
   force: boolean
   prioritizeSize?: boolean
+  minSizeMb?: number
   totalFiles: number
   currentFileIndex: number
   totals: { ok: number; err: number; skip: number }
@@ -350,13 +430,11 @@ const queue = ref<QueueItem[]>([])
 const dropActive = ref(false)
 const height = ref(1080)
 const speed = ref<1.25 | 1.5 | 2>(1.5)
-const codec = ref<ShrinkCodec>('auto')
+const codec = ref<ShrinkCodec>('h264_nvenc')
 const prioritizeSize = ref(false)
 const force = ref(false)
+const minSizeMb = ref(0)
 
-watch(codec, () => {
-  /* priorizar tamanho disponível para todos os codecs */
-})
 const validating = ref(false)
 const validateMsg = ref('')
 const validateOk = ref(false)
@@ -365,9 +443,16 @@ const queueStatus = ref<Record<string, QueueFileMeta>>({})
 const importMsg = ref('')
 const importSkippedExt = ref<string[]>([])
 const importSkippedDup = ref<string[]>([])
+const importSkippedSmall = ref<string[]>([])
+
+const listLoading = ref(false)
+const saveQueueLoading = ref(false)
+const listMsg = ref('')
+const listMsgOk = ref(false)
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const folderInputRef = ref<HTMLInputElement | null>(null)
+const queueListFileInputRef = ref<HTMLInputElement | null>(null)
 
 const serverPlatform = ref('')
 const isWinServer = computed(() => serverPlatform.value === 'win32')
@@ -386,6 +471,10 @@ const canProcess = computed(
     !!token.value.trim() &&
     !!sourceRoot.value.trim() &&
     queue.value.length > 0,
+)
+
+const canSaveQueue = computed(
+  () => !!token.value.trim() && !!sourceRoot.value.trim() && queue.value.length > 0,
 )
 
 const failedItems = computed(() => {
@@ -434,6 +523,37 @@ function queueStatusKey(rel: string): string {
   return rel.toLowerCase()
 }
 
+function pathMatchesQueueRel(filePath: string, rel: string): boolean {
+  const normPath = filePath.toLowerCase().replace(/\\/g, '/')
+  const normRel = rel.toLowerCase().replace(/\\/g, '/')
+  if (!normRel) return false
+  return normPath === normRel || normPath.endsWith(`/${normRel}`)
+}
+
+function queueItemsForJobFile(rel: string, path?: string): QueueItem[] {
+  const relL = rel.toLowerCase()
+  const matches = queue.value.filter((q) => {
+    const qL = q.rel.toLowerCase()
+    if (qL === relL) return true
+    if (path && pathMatchesQueueRel(path, q.rel)) return true
+    return false
+  })
+  if (matches.length <= 1) return matches
+  const exact = matches.find((q) => q.rel.toLowerCase() === relL)
+  return exact ? [exact] : [matches[0]!]
+}
+
+function setQueueStatusForJobFile(rel: string, path: string | undefined, meta: QueueFileMeta | null) {
+  const items = queueItemsForJobFile(rel, path)
+  if (!items.length) {
+    setQueueStatus(rel, meta)
+    return
+  }
+  for (const item of items) {
+    setQueueStatus(item.rel, meta)
+  }
+}
+
 function queueItemStatus(rel: string): QueueFileMeta | null {
   return queueStatus.value[queueStatusKey(rel)] ?? null
 }
@@ -451,18 +571,21 @@ function setQueueStatus(rel: string, meta: QueueFileMeta | null) {
 
 function applyResultStatus(result: JobFileResult) {
   if (result.exitCode === null) {
-    setQueueStatus(result.rel, { status: 'running' })
+    setQueueStatusForJobFile(result.rel, result.path, { status: 'running' })
     return
   }
   if (result.oversizedOutput) {
-    setQueueStatus(result.rel, {
+    setQueueStatusForJobFile(result.rel, result.path, {
       status: 'oversized',
       message: oversizedMessage(result.oversizedOutput),
     })
     return
   }
   if (result.skipCount > 0) {
-    setQueueStatus(result.rel, { status: 'skip', message: 'Ignorado (já existe ou skip)' })
+    setQueueStatusForJobFile(result.rel, result.path, {
+      status: 'skip',
+      message: 'Ignorado (já existe ou skip)',
+    })
     return
   }
   if (result.errCount > 0 || (result.exitCode !== 0 && result.okCount === 0)) {
@@ -470,10 +593,10 @@ function applyResultStatus(result: JobFileResult) {
       result.failedItems?.[0]?.message ??
       result.error ??
       (result.exitCode != null ? `Falhou (exit ${result.exitCode})` : 'Erro')
-    setQueueStatus(result.rel, { status: 'err', message: msg })
+    setQueueStatusForJobFile(result.rel, result.path, { status: 'err', message: msg })
     return
   }
-  setQueueStatus(result.rel, { status: 'ok' })
+  setQueueStatusForJobFile(result.rel, result.path, { status: 'ok' })
 }
 
 function syncQueueStatusFromJob(snap: JobSnapshot) {
@@ -521,6 +644,12 @@ function normalizeRel(raw: string): string {
   return rel
 }
 
+function minSizeBytes(): number {
+  const m = Number(minSizeMb.value)
+  if (!Number.isFinite(m) || m <= 0) return 0
+  return Math.floor(m * 1024 * 1024)
+}
+
 function addToQueue(relRaw: string): 'added' | 'ext' | 'dup' {
   const rel = normalizeRel(relRaw)
   if (!rel || !isVideoName(rel)) return 'ext'
@@ -536,6 +665,7 @@ interface QueueImportSummary {
   added: number
   skippedExt: string[]
   skippedDup: string[]
+  skippedSmall: string[]
 }
 
 function importRels(rels: string[]): QueueImportSummary {
@@ -544,6 +674,7 @@ function importRels(rels: string[]): QueueImportSummary {
     added: 0,
     skippedExt: [],
     skippedDup: [],
+    skippedSmall: [],
   }
   for (const relRaw of rels) {
     const display = relRaw.trim() || relRaw
@@ -560,10 +691,33 @@ function importRels(rels: string[]): QueueImportSummary {
   return summary
 }
 
+interface RelSize {
+  rel: string
+  size: number
+}
+
+function importRelSizes(items: RelSize[]): QueueImportSummary {
+  const minB = minSizeBytes()
+  const rels: string[] = []
+  const skippedSmall: string[] = []
+  for (const { rel, size } of items) {
+    if (minB > 0 && size < minB) {
+      skippedSmall.push(rel)
+      continue
+    }
+    rels.push(rel)
+  }
+  const summary = importRels(rels)
+  summary.skippedSmall = skippedSmall
+  summary.received = items.length
+  return summary
+}
+
 function showImportSummary(summary: QueueImportSummary) {
   importSkippedExt.value = summary.skippedExt
   importSkippedDup.value = summary.skippedDup
-  if (!summary.skippedExt.length && !summary.skippedDup.length) {
+  importSkippedSmall.value = summary.skippedSmall
+  if (!summary.skippedExt.length && !summary.skippedDup.length && !summary.skippedSmall.length) {
     importMsg.value =
       summary.received > 0
         ? `${summary.added} ficheiro(s) na fila.`
@@ -579,6 +733,9 @@ function showImportSummary(summary: QueueImportSummary) {
       `${summary.skippedDup.length} duplicado(s) — já na fila ou mesmo nome (arrastar só envia o nome, não a subpasta)`,
     )
   }
+  if (summary.skippedSmall.length) {
+    parts.push(`${summary.skippedSmall.length} abaixo de ${minSizeMb.value} MB`)
+  }
   importMsg.value = `De ${summary.received} recebidos → ${summary.added} na fila. Ignorados: ${parts.join('; ')}.`
 }
 
@@ -587,22 +744,22 @@ function relFromFile(f: File): string {
 }
 
 function addFilesFromList(list: FileList | File[]) {
-  const rels: string[] = []
-  for (const f of list) rels.push(relFromFile(f))
-  showImportSummary(importRels(rels))
+  const items: RelSize[] = []
+  for (const f of list) items.push({ rel: relFromFile(f), size: f.size })
+  showImportSummary(importRelSizes(items))
 }
 
 async function readEntryFiles(
   entry: FileSystemEntry,
   prefix: string,
-  out: string[],
+  out: RelSize[],
 ): Promise<void> {
   if (entry.isFile) {
     const file = await new Promise<File>((resolve, reject) => {
       ;(entry as FileSystemFileEntry).file(resolve, reject)
     })
     const rel = prefix ? `${prefix}/${file.name}` : file.name
-    out.push(normalizeRel(rel))
+    out.push({ rel: normalizeRel(rel), size: file.size })
     return
   }
   if (!entry.isDirectory) return
@@ -620,11 +777,11 @@ async function readEntryFiles(
   } while (batch.length > 0)
 }
 
-async function collectDropRels(e: DragEvent): Promise<string[]> {
+async function collectDropRelSizes(e: DragEvent): Promise<RelSize[]> {
   const dt = e.dataTransfer
   if (!dt) return []
 
-  const rels: string[] = []
+  const out: RelSize[] = []
   const items = dt.items ? [...dt.items] : []
   const fileItems = items.filter((item) => item.kind === 'file')
   const hasDirectory = fileItems.some((item) => item.webkitGetAsEntry?.()?.isDirectory)
@@ -632,21 +789,21 @@ async function collectDropRels(e: DragEvent): Promise<string[]> {
   if (fileItems.length && (hasDirectory || fileItems.length === 1)) {
     for (const item of fileItems) {
       const entry = item.webkitGetAsEntry?.()
-      if (entry) await readEntryFiles(entry, '', rels)
+      if (entry) await readEntryFiles(entry, '', out)
     }
   }
 
-  if (!rels.length && dt.files?.length) {
-    for (const f of dt.files) rels.push(relFromFile(f))
+  if (!out.length && dt.files?.length) {
+    for (const f of dt.files) out.push({ rel: relFromFile(f), size: f.size })
   }
-  return rels
+  return out
 }
 
 async function onDrop(e: DragEvent) {
   dropActive.value = false
-  const rels = await collectDropRels(e)
-  if (!rels.length) return
-  showImportSummary(importRels(rels))
+  const items = await collectDropRelSizes(e)
+  if (!items.length) return
+  showImportSummary(importRelSizes(items))
 }
 
 function pickFiles() {
@@ -682,12 +839,151 @@ function clearQueue() {
   importMsg.value = ''
   importSkippedExt.value = []
   importSkippedDup.value = []
+  importSkippedSmall.value = []
 }
 
 function onSourceSessionChange() {
   const i = Number(sourceSession.value)
   if (!Number.isFinite(i) || i < 0 || i >= menuRows.value.length) return
   sourceRoot.value = menuRows.value[i]!.path.trim()
+}
+
+function syncSourceSessionFromRoot(root: string) {
+  const norm = root.trim().toLowerCase().replace(/[/\\]+$/, '')
+  if (!norm) return
+  const idx = menuRows.value.findIndex(
+    (row) => row.path.trim().toLowerCase().replace(/[/\\]+$/, '') === norm,
+  )
+  sourceSession.value = idx >= 0 ? String(idx) : ''
+}
+
+function applyReprocessList(data: ShrinkReprocessListResponse) {
+  if (data.sourceRoot?.trim()) {
+    sourceRoot.value = data.sourceRoot.trim()
+    syncSourceSessionFromRoot(data.sourceRoot)
+  }
+  if (data.needsPrioritizeSize) {
+    prioritizeSize.value = true
+  }
+  queue.value = []
+  queueStatus.value = {}
+  validateMsg.value = ''
+  const summary = importRels(data.files ?? [])
+  showImportSummary(summary)
+  if (data.empty) {
+    listMsgOk.value = false
+    listMsg.value = data.message ?? 'Lista vazia.'
+    return
+  }
+  listMsgOk.value = true
+  const parts: string[] = [`${data.count} ficheiro(s) carregado(s).`]
+  if (data.phase2Count) parts.push(`${data.phase2Count} com 2.ª passagem (2|).`)
+  if (data.phase3Count) {
+    parts.push(`${data.phase3Count} com 3.ª passagem (3|) — Priorizar tamanho activado.`)
+  }
+  listMsg.value = parts.join(' ')
+}
+
+async function loadReprocessList() {
+  listMsg.value = ''
+  listMsgOk.value = false
+  listLoading.value = true
+  try {
+    if ('showOpenFilePicker' in window) {
+      const handles = await window.showOpenFilePicker!({
+        types: [...SHRINK_LIST_FILE_PICKER_TYPES],
+        multiple: false,
+      })
+      const file = await handles[0]!.getFile()
+      const content = await file.text()
+      applyQueueListFromText(content, file.name)
+    } else {
+      queueListFileInputRef.value?.click()
+    }
+  } catch (e: unknown) {
+    if (e instanceof DOMException && e.name === 'AbortError') return
+    const ex = e as { message?: string }
+    listMsgOk.value = false
+    listMsg.value = ex?.message || 'Falha ao carregar lista.'
+  } finally {
+    listLoading.value = false
+  }
+}
+
+function applyQueueListFromText(content: string, filename?: string) {
+  const data = parseShrinkListFile(content)
+  applyReprocessList({
+    sourceRoot: data.sourceRoot,
+    files: data.files,
+    count: data.count,
+    phase2Count: data.phase2Count,
+    phase3Count: data.phase3Count,
+    needsPrioritizeSize: data.needsPrioritizeSize,
+    empty: data.count === 0 && !data.sourceRoot.trim(),
+    message: data.count === 0 ? 'Lista vazia ou sem entradas válidas.' : undefined,
+  })
+  if (filename && data.count > 0) {
+    listMsg.value = `${listMsg.value} (${filename})`
+  }
+}
+
+async function saveQueueList() {
+  if (!canSaveQueue.value) return
+  listMsg.value = ''
+  listMsgOk.value = false
+  saveQueueLoading.value = true
+  try {
+    const content = formatShrinkListFile(
+      sourceRoot.value,
+      queue.value.map((q) => q.rel),
+    )
+
+    if ('showSaveFilePicker' in window) {
+      const handle = await window.showSaveFilePicker!({
+        suggestedName: SHRINK_LIST_FILE_DEFAULT_NAME,
+        types: [...SHRINK_LIST_FILE_PICKER_TYPES],
+      })
+      const writable = await handle.createWritable()
+      await writable.write(content)
+      await writable.close()
+      listMsgOk.value = true
+      listMsg.value = `${queue.value.length} ficheiro(s) guardado(s) em ${handle.name}.`
+    } else {
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = SHRINK_LIST_FILE_DEFAULT_NAME
+      a.click()
+      URL.revokeObjectURL(url)
+      listMsgOk.value = true
+      listMsg.value = `${queue.value.length} ficheiro(s) — download iniciado (${SHRINK_LIST_FILE_DEFAULT_NAME}).`
+    }
+  } catch (e: unknown) {
+    if (e instanceof DOMException && e.name === 'AbortError') return
+    const ex = e as { message?: string }
+    listMsgOk.value = false
+    listMsg.value = ex?.message || 'Falha ao guardar fila.'
+  } finally {
+    saveQueueLoading.value = false
+  }
+}
+
+async function onQueueListFileInput(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  listLoading.value = true
+  try {
+    const content = await file.text()
+    applyQueueListFromText(content, file.name)
+  } catch {
+    listMsgOk.value = false
+    listMsg.value = 'Falha ao ler ficheiro.'
+  } finally {
+    listLoading.value = false
+  }
 }
 
 async function adminHeaders(): Promise<Record<string, string>> {
@@ -732,25 +1028,50 @@ async function validateQueue() {
     const data = await $fetch<{
       count: number
       failedCount: number
+      skippedCount?: number
       failed: { rel: string; message: string }[]
+      skipped?: { rel: string; message: string }[]
+      items?: { rel: string; path: string }[]
     }>('/api/admin/shrink-validate', {
       method: 'POST',
       headers: { ...h, 'Content-Type': 'application/json' },
       body: {
         sourceRoot: sourceRoot.value.trim(),
         files: queue.value.map((q) => q.rel),
+        minSizeMb: minSizeMb.value,
       },
     })
     queueStatus.value = {}
+    for (const f of data.skipped ?? []) {
+      setQueueStatus(f.rel, { status: 'skip', message: f.message })
+    }
     for (const f of data.failed ?? []) {
       setQueueStatus(f.rel, { status: 'err', message: f.message })
     }
+    const pathToRel = new Map<string, string>()
+    for (const item of data.items ?? []) {
+      const pathKey = item.path.toLowerCase()
+      const prev = pathToRel.get(pathKey)
+      if (prev && prev !== item.rel) {
+        setQueueStatus(item.rel, {
+          status: 'err',
+          message: `Duplicado — mesmo ficheiro que «${prev}»`,
+        })
+      } else {
+        pathToRel.set(pathKey, item.rel)
+      }
+    }
+    const skippedCount = data.skippedCount ?? data.skipped?.length ?? 0
     if ((data.failedCount ?? 0) === 0) {
       validateOk.value = true
-      validateMsg.value = `${data.count} ficheiro(s) encontrado(s) no servidor.`
+      validateMsg.value =
+        skippedCount > 0
+          ? `${data.count} ficheiro(s) OK · ${skippedCount} ignorado(s) (< ${minSizeMb.value} MB)`
+          : `${data.count} ficheiro(s) encontrado(s) no servidor.`
     } else {
       validateOk.value = false
-      validateMsg.value = `${data.failedCount} com erro · ${data.count} OK no servidor.`
+      const skipPart = skippedCount > 0 ? ` · ${skippedCount} ignorado(s) (< ${minSizeMb.value} MB)` : ''
+      validateMsg.value = `${data.failedCount} com erro · ${data.count} OK no servidor${skipPart}.`
     }
   } catch (e: unknown) {
     const ex = e as { data?: { statusMessage?: string }; message?: string }
@@ -856,8 +1177,8 @@ function openStreamForJob(jobId: string) {
   es.addEventListener('file-start', (ev) => {
     if (!job.value) return
     try {
-      const data = JSON.parse((ev as MessageEvent).data) as { rel: string }
-      setQueueStatus(data.rel, { status: 'running' })
+      const data = JSON.parse((ev as MessageEvent).data) as { rel: string; path?: string }
+      setQueueStatusForJobFile(data.rel, data.path, { status: 'running' })
     } catch {
       /* */
     }
@@ -938,6 +1259,7 @@ async function startShrinkJob() {
   if (!canProcess.value) return
   startErr.value = ''
   jobErr.value = ''
+  job.value = null
   for (const q of queue.value) {
     setQueueStatus(q.rel, null)
   }
@@ -954,6 +1276,7 @@ async function startShrinkJob() {
         codec: codec.value,
         force: force.value,
         prioritizeSize: prioritizeSize.value,
+        minSizeMb: minSizeMb.value,
       },
     })
     rememberJobId(data.jobId)
@@ -1182,6 +1505,16 @@ onUnmounted(() => {
 .shrink-source-path {
   font-family: ui-monospace, Consolas, monospace;
   font-size: 0.82rem;
+}
+
+.shrink-list-actions {
+  margin-top: 0.65rem;
+}
+
+.shrink-list-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .drop-zone {

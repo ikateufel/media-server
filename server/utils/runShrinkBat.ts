@@ -67,6 +67,8 @@ export async function runShrinkBatForFile(opts: {
         VP_SHRINK_CODEC: opts.codec,
         VP_SHRINK_FORCE: opts.force ? '1' : '0',
         VP_SHRINK_PRIORITIZE_SIZE: opts.prioritizeSize ? '1' : '0',
+        USE_NVENC: '1',
+        VP_SHRINK_FROM_SERVER: '1',
         SystemRoot: process.env.SystemRoot ?? process.env.windir ?? 'C:\\Windows',
         windir: process.env.windir ?? process.env.SystemRoot ?? 'C:\\Windows',
       },

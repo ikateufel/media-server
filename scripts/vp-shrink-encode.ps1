@@ -30,9 +30,17 @@ function Expand-FlagTokens([string]$raw) {
 $metaParts = Expand-FlagTokens $env:VP_META_ARGS
 $vencParts = Expand-FlagTokens $env:VP_VENC_ARGS
 
-$args = @(
-    '-y', '-hide_banner', '-loglevel', 'error', '-i', $in
-)
+$vencJoined = ($vencParts -join ' ')
+$useNvenc = $vencJoined -match 'nvenc'
+$useGpuDecode = $env:VP_GPU_DECODE -eq '1' -and $useNvenc
+
+$args = @('-y', '-hide_banner', '-loglevel', 'error')
+if ($useGpuDecode) {
+    $args += @('-hwaccel', 'cuda')
+}
+$args += @('-i', $in)
+
+$threadArg = if ($useNvenc) { '2' } else { '0' }
 
 if ($mode -eq 'av') {
     $args += @(
@@ -48,12 +56,12 @@ if ($mode -eq 'av') {
     }
     $args += @('-c:a', 'aac', '-b:a', $ab)
     $args += $metaParts
-    $args += @('-movflags', '+faststart', '-threads', '0', $out)
+    $args += @('-movflags', '+faststart', '-threads', $threadArg, $out)
 } else {
     $args += @('-vf', $vf, '-an')
     $args += $vencParts
     $args += $metaParts
-    $args += @('-movflags', '+faststart', '-threads', '0', $out)
+    $args += @('-movflags', '+faststart', '-threads', $threadArg, $out)
 }
 
 $outLines = & $ffmpeg @args 2>&1

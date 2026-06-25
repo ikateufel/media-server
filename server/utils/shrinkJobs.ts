@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import { resolve, sep } from 'node:path'
+import { stat } from 'node:fs/promises'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createError } from 'h3'
 import { runShrinkBatForFile, type ShrinkCodec, type ShrinkSpeed } from './runShrinkBat'
-import { logIfOutputLargerThanSource, oversizedOutputMessage, type OversizedOutputEntry } from './oversizedOutputLog'
+import { logIfOutputLargerThanSource, logShrinkBitrateRetry, oversizedOutputMessage, type OversizedOutputEntry } from './oversizedOutputLog'
+import { logShrinkPhaseRun } from './shrinkPhaseRunLog'
+import { logShrinkMultipassEntry } from './shrinkMultipassLog'
+import { assessShrinkSourceFile } from './shrinkSourceProbe'
 import { tailText } from './runLibraryBat'
 import { hasPathTraversal, resolveMediaFileUnderRoot } from './videoPaths'
 import { isVideoFileName } from '#shared/videoExtensions'
@@ -31,6 +35,10 @@ export interface ShrinkJobFileResult {
   endedAt?: number
   failedItems?: { file: string; message: string }[]
   oversizedOutput?: OversizedOutputEntry
+  bitrateRetry?: boolean
+  phase2Run?: boolean
+  phase3Run?: boolean
+  insufficientListed?: boolean
 }
 
 export interface ShrinkJobSnapshot {
@@ -42,6 +50,7 @@ export interface ShrinkJobSnapshot {
   codec: ShrinkCodec
   force: boolean
   prioritizeSize: boolean
+  minSizeMb?: number
   startedAt: number
   endedAt: number | null
   totalFiles: number
@@ -119,12 +128,48 @@ function setStatus(job: InternalJob, status: ShrinkJobStatus) {
   emit(job, { type: 'status', status })
 }
 
-function classifyShrinkLine(text: string): 'ok' | 'err' | 'skip' | null {
+function classifyShrinkLine(text: string): 'ok' | 'err' | 'skip' | 'oversized' | null {
   const t = text.trimStart()
-  if (t.startsWith('[OK]')) return 'ok'
+  if (/^\[OK\](\s|$)/.test(t)) return 'ok'
   if (t.startsWith('[ERRO]')) return 'err'
   if (t.startsWith('[SKIP]')) return 'skip'
+  if (t.startsWith('[OVERSIZED]')) return 'oversized'
   return null
+}
+
+function recomputeShrinkTotals(results: ShrinkJobFileResult[]): ShrinkJobSnapshot['totals'] {
+  let ok = 0
+  let err = 0
+  let skip = 0
+  for (const r of results) {
+    if (r.okCount > 0) ok++
+    else if (r.errCount > 0) err++
+    else if (r.skipCount > 0) skip++
+  }
+  return { ok, err, skip }
+}
+
+function applyShrinkLineClass(
+  slot: ShrinkJobFileResult,
+  cls: 'ok' | 'err' | 'skip' | 'oversized',
+): boolean {
+  if (cls === 'oversized') {
+    if (slot.oversizedOutput) return false
+    return true
+  }
+  if (cls === 'ok') {
+    if (slot.okCount > 0 || slot.oversizedOutput) return false
+    slot.okCount = 1
+    return true
+  }
+  if (cls === 'err') {
+    if (slot.errCount > 0) return false
+    slot.errCount = 1
+    return true
+  }
+  if (slot.skipCount > 0) return false
+  slot.skipCount = 1
+  return true
 }
 
 function extractShrinkErrorHint(stdout: string, stderr: string): string | null {
@@ -157,8 +202,61 @@ function pushFailedItem(slot: ShrinkJobFileResult, file: string, message: string
   slot.failedItems.push({ file: file.trim() || '(sem ficheiro)', message: message.trim() })
 }
 
-function parseStdoutHints(text: string, slot: ShrinkJobFileResult, hintRef: { current: string }) {
+function parseStdoutHints(
+  text: string,
+  slot: ShrinkJobFileResult,
+  hintRef: { current: string },
+  ctx?: { projectRoot: string; sourceRoot: string },
+) {
   const t = text.trimStart()
+  const insList = /^\[INSUFFICIENT-LIST\]\s+([23])\|([^|]+)(?:\|(\d+)\|(\d+)\|(\d+))?\s*$/.exec(t)
+  if (insList && ctx && !slot.insufficientListed) {
+    slot.insufficientListed = true
+    const phase = Number(insList[1]) as 2 | 3
+    const fileRel = insList[2]!.trim()
+    const sourceBytes = insList[3] ? Number(insList[3]) : undefined
+    const outputBytes = insList[4] ? Number(insList[4]) : undefined
+    const pctOfOrig = insList[5] ? Number(insList[5]) : undefined
+    void logShrinkMultipassEntry({
+      projectRoot: ctx.projectRoot,
+      sourceRoot: ctx.sourceRoot,
+      fileRel,
+      phase,
+      sourceBytes,
+      outputBytes,
+      pctOfOrig,
+    }).catch(() => {})
+    return
+  }
+  if (t.startsWith('[PHASE2]') || t.startsWith('[RETRY] reducao insuficiente')) {
+    if (!slot.phase2Run && ctx) {
+      void logShrinkPhaseRun({
+        projectRoot: ctx.projectRoot,
+        phase: 2,
+        sourcePath: slot.path,
+        fileRel: slot.rel,
+        sourceRoot: ctx.sourceRoot,
+        note: t.slice(0, 200),
+      }).catch(() => {})
+    }
+    slot.phase2Run = true
+    return
+  }
+  if (t.startsWith('[PHASE3]') || t.startsWith('[RETRY] saida maior que origem')) {
+    if (!slot.phase3Run && ctx) {
+      void logShrinkPhaseRun({
+        projectRoot: ctx.projectRoot,
+        phase: 3,
+        sourcePath: slot.path,
+        fileRel: slot.rel,
+        sourceRoot: ctx.sourceRoot,
+        note: t.slice(0, 200),
+      }).catch(() => {})
+    }
+    slot.phase3Run = true
+    slot.bitrateRetry = true
+    return
+  }
   const proc = /^\[PROCESSANDO\]\s+(.+)$/.exec(t)
   if (proc?.[1]) {
     hintRef.current = proc[1].trim()
@@ -180,16 +278,50 @@ export function normalizeShrinkSpeed(raw: unknown): ShrinkSpeed | null {
   return null
 }
 
-export function assertAllowedSourceRoot(sourceRoot: string, allowedRoots: string[]): string {
-  const resolved = resolve(sourceRoot.trim())
-  for (const root of allowedRoots) {
-    const r = resolve(root.trim())
-    if (resolved === r || resolved.startsWith(r + sep)) return resolved
+export function normalizeMinSizeMb(raw: unknown): number {
+  const n = Number(raw ?? 0)
+  if (!Number.isFinite(n) || n < 0) return 0
+  return Math.floor(n)
+}
+
+export function minSizeMbToBytes(mb: number): number {
+  const m = normalizeMinSizeMb(mb)
+  if (m <= 0) return 0
+  return m * 1024 * 1024
+}
+
+export function formatShrinkBytes(bytes: number): string {
+  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${bytes} B`
+}
+
+export function minSizeSkipMessage(sizeBytes: number, minSizeBytes: number): string {
+  return `Abaixo do mínimo (${formatShrinkBytes(sizeBytes)} < ${formatShrinkBytes(minSizeBytes)})`
+}
+
+export async function assertAllowedSourceRoot(sourceRoot: string): Promise<string> {
+  const raw = sourceRoot.trim()
+  if (!raw) {
+    throw createError({ statusCode: 400, statusMessage: 'Campo "sourceRoot" obrigatório.' })
   }
-  throw createError({
-    statusCode: 403,
-    statusMessage: 'Pasta de origem fora das bibliotecas configuradas.',
-  })
+  const resolved = resolve(raw)
+  let st
+  try {
+    st = await stat(resolved)
+  } catch {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Pasta de origem inexistente: ${resolved}`,
+    })
+  }
+  if (!st.isDirectory()) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Pasta de origem não é um diretório: ${resolved}`,
+    })
+  }
+  return resolved
 }
 
 export async function resolveShrinkFiles(
@@ -197,7 +329,8 @@ export async function resolveShrinkFiles(
   files: string[],
 ): Promise<{ rel: string; path: string }[]> {
   const out: { rel: string; path: string }[] = []
-  const seen = new Set<string>()
+  const seenRel = new Set<string>()
+  const seenPath = new Set<string>()
   for (const raw of files) {
     const rel = String(raw ?? '')
       .trim()
@@ -209,10 +342,13 @@ export async function resolveShrinkFiles(
     if (!isVideoFileName(rel)) {
       throw createError({ statusCode: 400, statusMessage: `Extensão não suportada: ${rel}` })
     }
-    const key = rel.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
+    const relKey = rel.toLowerCase()
+    if (seenRel.has(relKey)) continue
+    seenRel.add(relKey)
     const resolved = await resolveMediaFileUnderRoot(sourceRoot, rel)
+    const pathKey = resolved.path.toLowerCase()
+    if (seenPath.has(pathKey)) continue
+    seenPath.add(pathKey)
     out.push({ rel: resolved.rel, path: resolved.path })
   }
   if (!out.length) {
@@ -224,13 +360,17 @@ export async function resolveShrinkFiles(
 export async function validateShrinkFilesReport(
   sourceRoot: string,
   files: string[],
+  minSizeBytes = 0,
 ): Promise<{
   ok: { rel: string; path: string }[]
   failed: { rel: string; message: string }[]
+  skipped: { rel: string; message: string }[]
 }> {
   const ok: { rel: string; path: string }[] = []
   const failed: { rel: string; message: string }[] = []
-  const seen = new Set<string>()
+  const skipped: { rel: string; message: string }[] = []
+  const seenRel = new Set<string>()
+  const seenPath = new Set<string>()
 
   for (const raw of files) {
     const rel = String(raw ?? '')
@@ -238,9 +378,9 @@ export async function validateShrinkFilesReport(
       .replace(/\\/g, '/')
       .replace(/^\/+/, '')
     if (!rel) continue
-    const key = rel.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
+    const relKey = rel.toLowerCase()
+    if (seenRel.has(relKey)) continue
+    seenRel.add(relKey)
 
     if (hasPathTraversal(rel)) {
       failed.push({ rel, message: 'Caminho inválido.' })
@@ -253,6 +393,27 @@ export async function validateShrinkFilesReport(
 
     try {
       const resolved = await resolveMediaFileUnderRoot(sourceRoot, rel)
+      const pathKey = resolved.path.toLowerCase()
+      if (seenPath.has(pathKey)) {
+        failed.push({ rel, message: 'Duplicado — mesmo ficheiro que outra entrada na fila.' })
+        continue
+      }
+      seenPath.add(pathKey)
+      if (minSizeBytes > 0) {
+        const st = await stat(resolved.path)
+        if (st.size < minSizeBytes) {
+          skipped.push({
+            rel: resolved.rel,
+            message: minSizeSkipMessage(st.size, minSizeBytes),
+          })
+          continue
+        }
+      }
+      const codecCheck = await assessShrinkSourceFile(resolved.path)
+      if (!codecCheck.ok) {
+        failed.push({ rel: resolved.rel, message: codecCheck.message })
+        continue
+      }
       ok.push({ rel: resolved.rel, path: resolved.path })
     } catch (e: unknown) {
       const ex = e as { statusMessage?: string; message?: string }
@@ -263,7 +424,7 @@ export async function validateShrinkFilesReport(
     }
   }
 
-  return { ok, failed }
+  return { ok, failed, skipped }
 }
 
 async function runJob(job: InternalJob, projectRoot: string) {
@@ -304,6 +465,56 @@ async function runJob(job: InternalJob, projectRoot: string) {
 
       const hintRef = { current: '' }
       try {
+        const minBytes = minSizeMbToBytes(job.snapshot.minSizeMb ?? 0)
+        if (minBytes > 0) {
+          const st = await stat(slot.path)
+          if (st.size < minBytes) {
+            slot.exitCode = 0
+            slot.skipCount = 1
+            const skipMsg = minSizeSkipMessage(st.size, minBytes)
+            pushLine(job, i, 'stdout', `[SKIP] ${skipMsg}`)
+            pushLine(job, i, 'meta', `[SKIP-MINSIZE] ${slot.rel}`)
+            slot.endedAt = Date.now()
+            job.snapshot.totals = recomputeShrinkTotals(job.snapshot.results)
+            emit(job, {
+              type: 'progress',
+              totals: { ...job.snapshot.totals },
+              currentFileIndex: i,
+            })
+            emit(job, { type: 'file-end', fileIndex: i, result: { ...slot } })
+            pushLine(
+              job,
+              -1,
+              'meta',
+              `[FICHEIRO ${i + 1}/${steps.length}] terminou exitCode=0 (ok=${slot.okCount}, skip=${slot.skipCount}, err=${slot.errCount})`,
+            )
+            continue
+          }
+        }
+
+        const codecCheck = await assessShrinkSourceFile(slot.path)
+        if (!codecCheck.ok) {
+          slot.exitCode = 0
+          slot.skipCount = 1
+          pushLine(job, i, 'stdout', `[SKIP] ${codecCheck.message}`)
+          pushLine(job, i, 'meta', `[SKIP-CODEC] ${slot.rel} — ${codecCheck.codec || '?'}`)
+          slot.endedAt = Date.now()
+          job.snapshot.totals = recomputeShrinkTotals(job.snapshot.results)
+          emit(job, {
+            type: 'progress',
+            totals: { ...job.snapshot.totals },
+            currentFileIndex: i,
+          })
+          emit(job, { type: 'file-end', fileIndex: i, result: { ...slot } })
+          pushLine(
+            job,
+            -1,
+            'meta',
+            `[FICHEIRO ${i + 1}/${steps.length}] terminou exitCode=0 (ok=${slot.okCount}, skip=${slot.skipCount}, err=${slot.errCount})`,
+          )
+          continue
+        }
+
         const r = await runShrinkBatForFile({
           projectRoot,
           videoAbsolutePath: slot.path,
@@ -324,19 +535,10 @@ async function runJob(job: InternalJob, projectRoot: string) {
           },
           onLine: (stream, text) => {
             pushLine(job, i, stream, text)
-            parseStdoutHints(text, slot, hintRef)
+            parseStdoutHints(text, slot, hintRef, { projectRoot, sourceRoot: job.snapshot.sourceRoot })
             const cls = classifyShrinkLine(text)
-            if (cls === 'ok') {
-              slot.okCount = 1
-              job.snapshot.totals.ok++
-            } else if (cls === 'err') {
-              slot.errCount = 1
-              job.snapshot.totals.err++
-            } else if (cls === 'skip') {
-              slot.skipCount = 1
-              job.snapshot.totals.skip++
-            }
-            if (cls) {
+            if (cls && applyShrinkLineClass(slot, cls)) {
+              job.snapshot.totals = recomputeShrinkTotals(job.snapshot.results)
               emit(job, {
                 type: 'progress',
                 totals: { ...job.snapshot.totals },
@@ -348,7 +550,27 @@ async function runJob(job: InternalJob, projectRoot: string) {
         slot.exitCode = r.exitCode
         slot.stdoutTail = tailText(r.stdout, STDOUT_TAIL_CAP)
         slot.stderrTail = tailText(r.stderr, STDOUT_TAIL_CAP)
-        if (r.exitCode === 0 && slot.skipCount === 0) {
+        if (slot.phase3Run && r.exitCode === 0) {
+          try {
+            const [srcSt, outSt] = await Promise.all([
+              stat(slot.path),
+              stat(join(dirname(slot.path), 'shrinked', `${basename(slot.path, extname(slot.path))}.mp4`)),
+            ])
+            await logShrinkBitrateRetry({
+              projectRoot,
+              sourcePath: slot.path,
+              fileRel: slot.rel,
+              sourceBytes: srcSt.size,
+              outputBytes: outSt.size,
+            })
+            pushLine(job, i, 'meta', `[PHASE3-LIST] ${slot.rel} — data/shrink-phase3-run-*.txt`)
+          } catch {
+            /* */
+          }
+        } else if (slot.phase2Run && r.exitCode === 0) {
+          pushLine(job, i, 'meta', `[PHASE2-LIST] ${slot.rel} — data/shrink-phase2-run-*.txt`)
+        }
+        if (r.exitCode === 0 && slot.skipCount === 0 && job.snapshot.prioritizeSize) {
           const logged = await logIfOutputLargerThanSource({
             projectRoot,
             sourcePath: slot.path,
@@ -358,19 +580,19 @@ async function runJob(job: InternalJob, projectRoot: string) {
           })
           if (logged) {
             slot.oversizedOutput = logged
+            slot.okCount = 0
             job.snapshot.oversizedOutputs.push(logged)
             const msg = oversizedOutputMessage(logged)
             pushLine(job, i, 'meta', `[OVERSIZED] ${slot.rel} — ${msg}`)
-            pushLine(job, i, 'stderr', `[AVISO] ${msg}`)
+            pushLine(job, i, 'stderr', `[AVISO] ${msg} — registado; a seguir para o próximo.`)
+            job.snapshot.totals = recomputeShrinkTotals(job.snapshot.results)
           }
         }
-        if (slot.okCount === 0 && slot.errCount === 0 && slot.skipCount === 0) {
+        if (slot.okCount === 0 && slot.errCount === 0 && slot.skipCount === 0 && !slot.oversizedOutput) {
           if (r.exitCode === 0) {
             slot.okCount = 1
-            job.snapshot.totals.ok++
           } else {
             slot.errCount = 1
-            job.snapshot.totals.err++
             const errHint = extractShrinkErrorHint(r.stdout, r.stderr)
             pushFailedItem(slot, slot.rel, errHint || `[exit ${r.exitCode}]`)
           }
@@ -379,13 +601,18 @@ async function runJob(job: InternalJob, projectRoot: string) {
         const msg = e instanceof Error ? e.message : String(e)
         slot.exitCode = -1
         slot.error = msg
-        slot.errCount = 1
-        job.snapshot.totals.err++
+        if (slot.errCount === 0) slot.errCount = 1
         pushFailedItem(slot, slot.rel, `[FATAL] ${msg}`)
         pushLine(job, i, 'stderr', `[FATAL] ${msg}`)
       } finally {
         slot.endedAt = Date.now()
         job.currentPid = null
+        job.snapshot.totals = recomputeShrinkTotals(job.snapshot.results)
+        emit(job, {
+          type: 'progress',
+          totals: { ...job.snapshot.totals },
+          currentFileIndex: i,
+        })
         emit(job, { type: 'file-end', fileIndex: i, result: { ...slot } })
         pushLine(
           job,
@@ -418,6 +645,7 @@ export interface CreateShrinkJobOpts {
   codec: ShrinkCodec
   force: boolean
   prioritizeSize: boolean
+  minSizeMb?: number
 }
 
 export function createShrinkJob(opts: CreateShrinkJobOpts): ShrinkJobSnapshot {
@@ -440,6 +668,7 @@ export function createShrinkJob(opts: CreateShrinkJobOpts): ShrinkJobSnapshot {
     codec: opts.codec,
     force: opts.force,
     prioritizeSize: opts.prioritizeSize,
+    minSizeMb: normalizeMinSizeMb(opts.minSizeMb ?? 0),
     startedAt: Date.now(),
     endedAt: null,
     totalFiles: results.length,
@@ -462,7 +691,7 @@ export function createShrinkJob(opts: CreateShrinkJobOpts): ShrinkJobSnapshot {
     internal,
     -1,
     'meta',
-    `[INICIO] shrink ${results.length} ficheiro(s) · ${opts.speed}x · altura ${opts.height}px · codec ${opts.codec}${opts.prioritizeSize ? ' · priorizar tamanho' : ''} · origem ${opts.sourceRoot}`,
+    `[INICIO] shrink ${results.length} ficheiro(s) · ${opts.speed}x · altura ${opts.height}px · codec ${opts.codec}${opts.prioritizeSize ? ' · priorizar tamanho' : ''}${snapshot.minSizeMb > 0 ? ` · ignorar < ${snapshot.minSizeMb} MB` : ''} · origem ${opts.sourceRoot}`,
   )
   void runJob(internal, opts.projectRoot)
   return snapshot
