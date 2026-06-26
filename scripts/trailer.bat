@@ -1,13 +1,13 @@
 @echo off
 
 setlocal DisableDelayedExpansion
-:: CONFIG (ASCII)
-set "vel=2.0"
-set "pts=0.5"
-set "H_TRAILER=540"
+:: CONFIG (ASCII) — valores por defeito; sobrescreve via ambiente (.env ou UI reprocessar).
+if not defined vel set "vel=2.0"
+if not defined pts set "pts=0.5"
+if not defined H_TRAILER set "H_TRAILER=720"
 set "SKIP_PAUSE=1"
 :: Encoder de video: 0=libx264 (CPU), 1=h264_nvenc (NVIDIA), auto=tenta NVENC e cai para libx264.
-set "USE_NVENC=auto"
+if not defined USE_NVENC set "USE_NVENC=auto"
 :: Preset NVENC (so se NVENC ficar escolhido). p4=equilibrado; p7=mais rapido (qualidade/tamanho um pouco piores).
 if not defined TRAILER_NVENC_PRESET set "TRAILER_NVENC_PRESET=p4"
 :: Pasta temporaria (segmentos + lista concat).
@@ -38,7 +38,7 @@ if not defined TRAILER_LONG_STEP_SEC set "TRAILER_LONG_STEP_SEC=300"
 if not defined TRAILER_TAIL_SEC set "TRAILER_TAIL_SEC=40"
 :: Modos legado: so com argumento explicito na linha de comando (nao via .env).
 if not defined TRAILER_MAX_OUT_SEC set "TRAILER_MAX_OUT_SEC=120"
-set "TRAILER_COLLECT=padrao"
+if not defined TRAILER_COLLECT set "TRAILER_COLLECT=padrao"
 if /I "%~1"=="minuto10" set "TRAILER_COLLECT=minuto10"
 if /I "%~1"=="--minuto10" set "TRAILER_COLLECT=minuto10"
 if /I "%~1"=="minuto15" set "TRAILER_COLLECT=minuto15"
@@ -82,14 +82,26 @@ set "VENC_ARGS=-c:v h264_nvenc -preset %TRAILER_NVENC_PRESET% -rc vbr -cq 26 -b:
 echo [INFO] Encoder de video: h264_nvenc preset %TRAILER_NVENC_PRESET%.
 :encoder_done
 
-for %%f in (*.mp4 *.mkv *.m4v *.avi *.mov *.webm *.wmv) do (
-    set "orig=%%f"
-    set "nome=%%~nf"
+if defined VP_TRAILER_INPUT (
+  for %%F in ("%VP_TRAILER_INPUT%") do call :process_trailer_file "%%~nxF"
+) else (
+  for %%f in (*.mp4 *.mkv *.m4v *.avi *.mov *.webm *.wmv) do call :process_trailer_file "%%f"
+)
+goto :after_trailer_files
 
-    setlocal EnableDelayedExpansion
-    echo "!orig!" | findstr /I "zz_" >nul
+:process_trailer_file
+set "orig=%~1"
+for %%N in ("%~1") do set "nome=%%~nN"
 
-    if !errorlevel! NEQ 0 if not exist "trailers\!nome!.mp4" (
+setlocal EnableDelayedExpansion
+echo "!orig!" | findstr /I "zz_" >nul
+set "SKIP_ZZ=0"
+if !errorlevel! EQU 0 set "SKIP_ZZ=1"
+
+if /I "!VP_TRAILER_FORCE!"=="1" if exist "trailers\!nome!.mp4" del "trailers\!nome!.mp4" >nul 2>&1
+
+rem SKIP_ZZ guarda o findstr acima: del/forcam errorlevel e quebrava VP_TRAILER_FORCE (apagava trailer e saltava encode).
+if "!SKIP_ZZ!"=="0" if not exist "trailers\!nome!.mp4" (
         echo.
         for %%F in ("!orig!") do echo [PROCESSANDO] %%~fF
         for %%F in ("!orig!") do >>"%VP_REPO_ROOT%\data\sync-bat-processing.log" echo %%~fF
@@ -421,8 +433,10 @@ for %%f in (*.mp4 *.mkv *.m4v *.avi *.mov *.webm *.wmv) do (
             del /q "!LISTA!" >nul 2>&1
         )
     )
-    endlocal
-)
+endlocal
+exit /b 0
+
+:after_trailer_files
 
 if not "%SKIP_PAUSE%"=="1" pause
 

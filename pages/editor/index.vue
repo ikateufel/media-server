@@ -477,6 +477,7 @@ const EDITOR_JOB_STORAGE_KEY = 'video_admin_editor_job_id'
 const VISIBLE_LINES_CAP = 400
 
 const token = ref('')
+const route = useRoute()
 const menuRows = ref<MenuRow[]>([])
 const sourceSession = ref('')
 const sourceRoot = ref('')
@@ -653,6 +654,32 @@ function onSourceSessionChange() {
   const i = Number(sourceSession.value)
   if (!Number.isFinite(i) || i < 0 || i >= menuRows.value.length) return
   sourceRoot.value = menuRows.value[i]!.path.trim()
+}
+
+function readRouteVideoQuery(): boolean {
+  const fileRaw = route.query.file
+  const sessionRaw = route.query.session
+  const file =
+    typeof fileRaw === 'string' ? fileRaw : Array.isArray(fileRaw) ? (fileRaw[0] ?? '') : ''
+  if (!file.trim()) return false
+  fileRel.value = normalizeRel(file)
+  const sn = Number(
+    typeof sessionRaw === 'string' ? sessionRaw : Array.isArray(sessionRaw) ? (sessionRaw[0] ?? NaN) : NaN,
+  )
+  if (Number.isFinite(sn) && sn >= 0) {
+    sourceSession.value = String(Math.floor(sn))
+    if (sn < menuRows.value.length) {
+      sourceRoot.value = menuRows.value[sn]!.path.trim()
+    }
+  }
+  return true
+}
+
+async function applyRoutePrefill() {
+  if (!readRouteVideoQuery()) return
+  if (sourceRoot.value.trim() && token.value.trim() && canLoadVideo.value) {
+    await loadVideo()
+  }
 }
 
 function pickFile() {
@@ -876,6 +903,7 @@ function persistToken() {
   if (!import.meta.client) return
   sessionStorage.setItem('video_admin_token', token.value.trim())
   loadError.value = ''
+  void loadMenu().then(() => applyRoutePrefill())
 }
 
 async function loadMenu() {
@@ -888,10 +916,11 @@ async function loadMenu() {
     }>('/api/admin/menu', { headers: h })
     serverPlatform.value = data.serverPlatform ?? ''
     menuRows.value = Array.isArray(data.items) ? data.items : []
-    if (!sourceRoot.value.trim() && menuRows.value[0]) {
+    if (!sourceRoot.value.trim() && menuRows.value[0] && !route.query.session) {
       sourceSession.value = '0'
       sourceRoot.value = menuRows.value[0]!.path.trim()
     }
+    await applyRoutePrefill()
   } catch (e: unknown) {
     const ex = e as { data?: { statusMessage?: string }; message?: string }
     loadError.value = ex?.data?.statusMessage || ex?.message || 'Falha ao carregar menu.'
@@ -1216,11 +1245,22 @@ function onKeyDown(ev: KeyboardEvent) {
 onMounted(() => {
   if (!import.meta.client) return
   token.value = sessionStorage.getItem('video_admin_token') ?? ''
+  readRouteVideoQuery()
   window.addEventListener('keydown', onKeyDown)
   if (token.value.trim()) {
     void loadMenu().then(() => bootstrapJob())
   }
 })
+
+watch(
+  () => [route.query.session, route.query.file],
+  () => {
+    readRouteVideoQuery()
+    if (token.value.trim() && menuRows.value.length) {
+      void applyRoutePrefill()
+    }
+  },
+)
 
 onUnmounted(() => {
   closeStream()

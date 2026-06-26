@@ -627,6 +627,36 @@
                 <path d="M12 11v6M9 14h6" />
               </svg>
             </button>
+            <button
+              v-if="editorOpenEntry"
+              type="button"
+              class="icon-tool icon-tool--editor"
+              title="Editar vídeo completo (abre o editor com este ficheiro)"
+              aria-label="Abrir no editor de vídeo"
+              @click="openCurrentVideoInEditor"
+            >
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
+            <button
+              v-if="trailerReprocessEligible && editorOpenEntry"
+              type="button"
+              class="icon-tool icon-tool--trailer-redo"
+              :class="{ 'icon-tool--busy': trailerReprocessBusy }"
+              :disabled="trailerReprocessBusy"
+              title="Reprocessar trailer deste vídeo (abre opções do trailer.bat)"
+              aria-label="Reprocessar trailer"
+              @click="openTrailerReprocessDialog"
+            >
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                <path d="M16 16h5v5" />
+              </svg>
+            </button>
             <button type="button" class="icon-tool" title="Trailer anterior" @click="goToPrevTrailer">
               <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
                 <g transform="scale(-1 1) translate(-24 0)">
@@ -928,6 +958,36 @@
               <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                 <path d="M12 11v6M9 14h6" />
+              </svg>
+            </button>
+            <button
+              v-if="editorOpenEntry"
+              type="button"
+              class="icon-tool icon-tool--editor"
+              title="Editar vídeo completo (abre o editor com este ficheiro)"
+              aria-label="Abrir no editor de vídeo"
+              @click="openCurrentVideoInEditor"
+            >
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
+            <button
+              v-if="trailerReprocessEligible && editorOpenEntry"
+              type="button"
+              class="icon-tool icon-tool--trailer-redo"
+              :class="{ 'icon-tool--busy': trailerReprocessBusy }"
+              :disabled="trailerReprocessBusy"
+              title="Reprocessar trailer deste vídeo (abre opções do trailer.bat)"
+              aria-label="Reprocessar trailer"
+              @click="openTrailerReprocessDialog"
+            >
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                <path d="M16 16h5v5" />
               </svg>
             </button>
             <button
@@ -1845,6 +1905,210 @@
         </div>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-show="trailerReprocessDialogOpen"
+        class="move-title-backdrop"
+        @click="!trailerReprocessBusy && (trailerReprocessDialogOpen = false)"
+      />
+      <div
+        v-show="trailerReprocessDialogOpen"
+        class="trailer-reprocess-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="trailer-reprocess-dialog-title"
+      >
+        <div class="trailer-reprocess-dialog-card">
+          <div class="session-menu-head">
+            <span id="trailer-reprocess-dialog-title" class="session-menu-title">Reprocessar trailer</span>
+            <button
+              type="button"
+              class="session-menu-close"
+              aria-label="Fechar"
+              :disabled="trailerReprocessBusy"
+              @click="trailerReprocessDialogOpen = false"
+            >
+              ×
+            </button>
+          </div>
+          <div class="trailer-reprocess-dialog-body">
+            <p class="trailer-reprocess-dialog-hint">
+              Parâmetros do <code class="admin-code">trailer.bat</code> para este vídeo. Substituem o trailer existente em
+              <code class="admin-code">trailers\</code>. Os valores ficam guardados no browser para a próxima vez.
+            </p>
+            <p v-if="editorOpenEntry" class="trailer-reprocess-dialog-file">
+              {{ editorOpenEntry.mainFilename }}
+            </p>
+
+            <label class="trailer-reprocess-field trailer-reprocess-field--full">
+              <span class="trailer-reprocess-label">Modo de coleta</span>
+              <select v-model="trailerParamsForm.collect" class="admin-input" :disabled="trailerReprocessBusy">
+                <option v-for="(label, mode) in TRAILER_COLLECT_LABELS" :key="mode" :value="mode">
+                  {{ label }}
+                </option>
+              </select>
+            </label>
+
+            <div v-if="trailerParamsIsPadrao" class="trailer-reprocess-grid">
+              <label class="trailer-reprocess-field">
+                <span class="trailer-reprocess-label">Corte (s)</span>
+                <input
+                  v-model.number="trailerParamsForm.pctSeg"
+                  type="number"
+                  min="1"
+                  max="120"
+                  step="1"
+                  class="admin-input"
+                  :disabled="trailerReprocessBusy"
+                />
+              </label>
+              <label class="trailer-reprocess-field">
+                <span class="trailer-reprocess-label">Intervalo (%)</span>
+                <input
+                  v-model.number="trailerParamsForm.pctStep"
+                  type="number"
+                  min="1"
+                  max="50"
+                  step="1"
+                  class="admin-input"
+                  :disabled="trailerReprocessBusy"
+                />
+              </label>
+              <label class="trailer-reprocess-field">
+                <span class="trailer-reprocess-label">Filme longo após (s)</span>
+                <input
+                  v-model.number="trailerParamsForm.longMinSec"
+                  type="number"
+                  min="60"
+                  max="86400"
+                  step="60"
+                  class="admin-input"
+                  :disabled="trailerReprocessBusy"
+                />
+              </label>
+              <label class="trailer-reprocess-field">
+                <span class="trailer-reprocess-label">Passo longo (s)</span>
+                <input
+                  v-model.number="trailerParamsForm.longStepSec"
+                  type="number"
+                  min="30"
+                  max="3600"
+                  step="30"
+                  class="admin-input"
+                  :disabled="trailerReprocessBusy"
+                />
+              </label>
+              <label class="trailer-reprocess-field">
+                <span class="trailer-reprocess-label">Bloco final (s)</span>
+                <input
+                  v-model.number="trailerParamsForm.tailSec"
+                  type="number"
+                  min="1"
+                  max="600"
+                  step="1"
+                  class="admin-input"
+                  :disabled="trailerReprocessBusy"
+                />
+              </label>
+            </div>
+
+            <label v-else class="trailer-reprocess-field trailer-reprocess-field--full">
+              <span class="trailer-reprocess-label">Duração máx. saída legado (s)</span>
+              <input
+                v-model.number="trailerParamsForm.maxOutSec"
+                type="number"
+                min="30"
+                max="900"
+                step="5"
+                class="admin-input"
+                :disabled="trailerReprocessBusy"
+              />
+            </label>
+
+            <div class="trailer-reprocess-grid">
+              <label class="trailer-reprocess-field">
+                <span class="trailer-reprocess-label">Velocidade do trailer (×)</span>
+                <input
+                  v-model.number="trailerParamsForm.speed"
+                  type="number"
+                  min="0.5"
+                  max="4"
+                  step="0.5"
+                  class="admin-input"
+                  :disabled="trailerReprocessBusy"
+                />
+              </label>
+              <p class="trailer-reprocess-speed-hint">
+                <template v-if="trailerParamsForm.speed === 1">
+                  1× = mesma velocidade do original.
+                </template>
+                <template v-else>
+                  Áudio e vídeo a {{ trailerParamsForm.speed }}× — duração de cada frame:
+                  <strong>{{ formatTrailerFrameFactor(trailerParamsForm.speed) }}</strong>
+                  (ajustado automaticamente).
+                </template>
+              </p>
+              <label class="trailer-reprocess-field">
+                <span class="trailer-reprocess-label">Altura máx. (px)</span>
+                <input
+                  v-model.number="trailerParamsForm.heightPx"
+                  type="number"
+                  min="144"
+                  max="2160"
+                  step="1"
+                  class="admin-input"
+                  :disabled="trailerReprocessBusy"
+                />
+              </label>
+              <label class="trailer-reprocess-field">
+                <span class="trailer-reprocess-label">Encoder</span>
+                <select v-model="trailerParamsForm.useNvenc" class="admin-input" :disabled="trailerReprocessBusy">
+                  <option value="auto">Auto (NVENC se disponível)</option>
+                  <option value="cpu">CPU (libx264)</option>
+                  <option value="nvenc">NVENC (NVIDIA)</option>
+                </select>
+              </label>
+              <label
+                v-if="trailerParamsForm.useNvenc !== 'cpu'"
+                class="trailer-reprocess-field"
+              >
+                <span class="trailer-reprocess-label">Preset NVENC</span>
+                <select v-model="trailerParamsForm.nvencPreset" class="admin-input" :disabled="trailerReprocessBusy">
+                  <option v-for="p in TRAILER_NVENC_PRESET_OPTIONS" :key="p" :value="p">{{ p }}</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="trailer-reprocess-dialog-actions">
+            <button
+              type="button"
+              class="admin-btn admin-btn--ghost"
+              :disabled="trailerReprocessBusy"
+              @click="resetTrailerParamsForm"
+            >
+              Restaurar padrões
+            </button>
+            <button
+              type="button"
+              class="admin-btn admin-btn--ghost"
+              :disabled="trailerReprocessBusy"
+              @click="trailerReprocessDialogOpen = false"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              class="admin-btn admin-btn--primary"
+              :disabled="trailerReprocessBusy || !editorOpenEntry"
+              @click="confirmTrailerReprocess"
+            >
+              {{ trailerReprocessBusy ? 'A processar…' : 'Reprocessar' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1871,6 +2135,13 @@ import { useSilkTvLayout } from '~/composables/useSilkTvLayout'
 import { useRecentsCatalogWindow } from '~/composables/useRecentsCatalogWindow'
 import { useTvCatalogVirtualGrid } from '~/composables/useTvCatalogVirtualGrid'
 import { useTvStageVideo } from '~/composables/useTvStageVideo'
+import {
+  TRAILER_BAT_PARAMS_DEFAULT,
+  TRAILER_COLLECT_LABELS,
+  formatTrailerFrameFactor,
+  normalizeTrailerBatParams,
+  type TrailerBatParams,
+} from '#shared/trailerParams'
 
 const { manualTvAssist, isTvLayout } = useSilkTvLayout()
 
@@ -1930,6 +2201,44 @@ const realLibrarySessionCount = computed(() => sessions.value.filter((s) => s.id
 const moveTitleDesktopEligible = computed(
   () => !isTvLayout.value && realLibrarySessionCount.value > 1 && isWideDesktopUi.value,
 )
+/** Desktop largo: atalho para o editor com o vídeo completo actual. */
+const editorDesktopEligible = computed(() => !isTvLayout.value && isWideDesktopUi.value)
+const editorOpenEntry = computed((): TrailerListEntry | null => {
+  if (!editorDesktopEligible.value) return null
+  if (playerUrl.value && mainVideoEntry.value?.hasMain) return mainVideoEntry.value
+  if (selectedEntry.value?.hasMain) return selectedEntry.value
+  return null
+})
+const trailerReprocessEligible = computed(
+  () => editorDesktopEligible.value && serverPlatform.value.toLowerCase() === 'win32',
+)
+const trailerReprocessBusy = ref(false)
+const TRAILER_PARAMS_STORAGE_KEY = 'video_player_trailer_reprocess_params'
+const TRAILER_NVENC_PRESET_OPTIONS = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'] as const
+
+function loadTrailerParamsFromStorage(): TrailerBatParams {
+  if (typeof localStorage === 'undefined') return { ...TRAILER_BAT_PARAMS_DEFAULT }
+  try {
+    const raw = localStorage.getItem(TRAILER_PARAMS_STORAGE_KEY)
+    if (!raw) return { ...TRAILER_BAT_PARAMS_DEFAULT }
+    return normalizeTrailerBatParams(JSON.parse(raw) as Record<string, unknown>)
+  } catch {
+    return { ...TRAILER_BAT_PARAMS_DEFAULT }
+  }
+}
+
+function saveTrailerParamsToStorage(p: TrailerBatParams) {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(TRAILER_PARAMS_STORAGE_KEY, JSON.stringify(p))
+  } catch {
+    /* */
+  }
+}
+
+const trailerReprocessDialogOpen = ref(false)
+const trailerParamsForm = ref<TrailerBatParams>(loadTrailerParamsFromStorage())
+const trailerParamsIsPadrao = computed(() => trailerParamsForm.value.collect === 'padrao')
 const moveTitleDialogOpen = ref(false)
 const moveTitleBusy = ref(false)
 const moveTitleError = ref('')
@@ -4535,6 +4844,102 @@ async function deleteTitleAtIndex(i: number) {
     errorMsg.value =
       ex?.data?.statusMessage || ex?.message || 'Não foi possível mover os ficheiros para a Lixeira.'
   }
+}
+
+function openCurrentVideoInEditor() {
+  const entry = editorOpenEntry.value
+  if (!entry?.hasMain) return
+  void router.push({
+    path: '/editor',
+    query: {
+      session: String(libSession(entry)),
+      file: entry.mainRel,
+    },
+  })
+}
+
+function waitTrailerReprocessJob(jobId: string): Promise<'done' | 'failed'> {
+  return new Promise((resolve, reject) => {
+    const url = `/api/admin/trailer-reprocess-stream?jobId=${encodeURIComponent(jobId)}`
+    const es = new EventSource(url)
+    es.addEventListener('status', (ev) => {
+      try {
+        const data = JSON.parse((ev as MessageEvent).data) as { status?: string }
+        if (data.status === 'done') {
+          es.close()
+          resolve('done')
+        } else if (data.status === 'failed') {
+          es.close()
+          resolve('failed')
+        }
+      } catch {
+        /* */
+      }
+    })
+    es.onerror = () => {
+      es.close()
+      reject(new Error('Ligação ao job de trailer perdida.'))
+    }
+  })
+}
+
+async function reprocessCurrentTrailer(params?: TrailerBatParams) {
+  const entry = editorOpenEntry.value
+  if (!entry?.hasMain || trailerReprocessBusy.value) return
+  if (serverPlatform.value.toLowerCase() !== 'win32') {
+    errorMsg.value = 'Reprocessar trailer só funciona com o servidor em Windows.'
+    return
+  }
+  const trailerParams = normalizeTrailerBatParams(params ?? trailerParamsForm.value)
+  trailerParamsForm.value = trailerParams
+  saveTrailerParamsToStorage(trailerParams)
+  trailerReprocessBusy.value = true
+  try {
+    const { jobId } = await $fetch<{ jobId: string }>('/api/admin/trailer-reprocess-start', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: {
+        session: libSession(entry),
+        mainRel: entry.mainRel,
+        params: trailerParams,
+      },
+    })
+    errorMsg.value = 'A reprocessar trailer… (pode demorar alguns minutos)'
+    const result = await waitTrailerReprocessJob(jobId)
+    if (result === 'done') {
+      await loadTrailers({ preserveFocusTrailerRel: entry.trailerRel })
+      errorMsg.value = 'Trailer reprocessado com sucesso.'
+    } else {
+      errorMsg.value =
+        'Falha ao reprocessar o trailer — o ficheiro em trailers\\ pode ter sido apagado; verifica a consola do servidor e tenta de novo.'
+    }
+  } catch (err: unknown) {
+    const ex = err as { data?: { statusMessage?: string }; message?: string }
+    errorMsg.value =
+      ex?.data?.statusMessage || ex?.message || 'Não foi possível reprocessar o trailer.'
+  } finally {
+    trailerReprocessBusy.value = false
+  }
+}
+
+function openTrailerReprocessDialog() {
+  if (!editorOpenEntry.value?.hasMain) return
+  trailerParamsForm.value = loadTrailerParamsFromStorage()
+  trailerReprocessDialogOpen.value = true
+}
+
+function resetTrailerParamsForm() {
+  trailerParamsForm.value = { ...TRAILER_BAT_PARAMS_DEFAULT }
+}
+
+async function confirmTrailerReprocess() {
+  const normalized = normalizeTrailerBatParams(trailerParamsForm.value)
+  trailerParamsForm.value = normalized
+  saveTrailerParamsToStorage(normalized)
+  trailerReprocessDialogOpen.value = false
+  await reprocessCurrentTrailer(normalized)
 }
 
 function openMoveTitleDialog() {
@@ -7181,6 +7586,147 @@ onUnmounted(() => {
   overflow-y: auto;
   flex: 1;
   min-height: 0;
+}
+
+.trailer-reprocess-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 244;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  pointer-events: none;
+}
+
+.trailer-reprocess-dialog-card {
+  pointer-events: auto;
+  width: min(540px, 96vw);
+  max-height: min(88vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: #1a1d22;
+  border: 1px solid #2d333b;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.trailer-reprocess-dialog-body {
+  flex: 1;
+  overflow: auto;
+  padding: 0 0.75rem 0.75rem;
+}
+
+.trailer-reprocess-dialog-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #9aa0a6;
+}
+
+.trailer-reprocess-dialog-file {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: #e8eaed;
+  word-break: break-all;
+}
+
+.trailer-reprocess-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 0.65rem;
+  margin-bottom: 0.65rem;
+}
+
+.trailer-reprocess-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.trailer-reprocess-field--full {
+  margin-bottom: 0.65rem;
+}
+
+.trailer-reprocess-label {
+  font-size: 0.75rem;
+  color: #9aa0a6;
+}
+
+.trailer-reprocess-speed-hint {
+  grid-column: 1 / -1;
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #7a8088;
+}
+
+.trailer-reprocess-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  padding: 0.65rem 0.75rem 0.75rem;
+  border-top: 1px solid #2d333b;
+}
+
+.trailer-reprocess-dialog-card .admin-code {
+  font-size: 0.8em;
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: #0c0d10;
+  color: #c4c7cc;
+}
+
+.trailer-reprocess-dialog-card .admin-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid #454a53;
+  background: #0c0d10;
+  color: #e8eaed;
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.trailer-reprocess-dialog-card .admin-btn {
+  padding: 0.45rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #454a53;
+  background: #252a32;
+  color: #e8eaed;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.trailer-reprocess-dialog-card .admin-btn:hover:not(:disabled) {
+  background: #2d333b;
+}
+
+.trailer-reprocess-dialog-card .admin-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.trailer-reprocess-dialog-card .admin-btn--ghost {
+  background: transparent;
+}
+
+.trailer-reprocess-dialog-card .admin-btn--primary {
+  background: #1a73e8;
+  border-color: #1a73e8;
+  color: #fff;
+}
+
+@media (max-width: 480px) {
+  .trailer-reprocess-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .move-title-dialog-busy {
