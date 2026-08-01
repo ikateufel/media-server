@@ -1,5 +1,4 @@
 import { createError, readBody } from 'h3'
-import { requireAdminToken } from '../../utils/requireAdmin'
 import {
   createEditorJob,
   normalizeEditMode,
@@ -15,8 +14,6 @@ import { assertAllowedSourceRoot } from '../../utils/shrinkJobs'
  * Body: { sourceRoot, file, editMode?, splitPoints?, excludeSegments?, keepMarkedSegments?, duration?, height?, speed?, force? }
  */
 export default defineEventHandler(async (event) => {
-  requireAdminToken(event)
-
   if (process.platform !== 'win32') {
     throw createError({
       statusCode: 400,
@@ -37,6 +34,8 @@ export default defineEventHandler(async (event) => {
     height?: unknown
     speed?: unknown
     force?: unknown
+    useVideo?: unknown
+    session?: unknown
   } | null
 
   const sourceRootRaw = String(body?.sourceRoot ?? '').trim()
@@ -86,11 +85,19 @@ export default defineEventHandler(async (event) => {
   }
 
   const force = body?.force === true || body?.force === 'true' || body?.force === 1
+  const useVideo = body?.useVideo === true || body?.useVideo === 'true' || body?.useVideo === 1
+  const sessionRaw = Number(body?.session)
+  const session =
+    Number.isFinite(sessionRaw) && sessionRaw >= 0 && Number.isInteger(sessionRaw)
+      ? Math.floor(sessionRaw)
+      : null
 
   const snap = createEditorJob({
     projectRoot: process.cwd(),
     sourceRoot,
     file,
+    session,
+    useVideo,
     height,
     speed,
     force,
@@ -105,6 +112,9 @@ export default defineEventHandler(async (event) => {
     height: snap.height,
     speed: snap.speed,
     force: snap.force,
+    useVideo: snap.useVideo,
+    session: snap.session,
+    newFileRel: snap.newFileRel,
     editMode: snap.editMode,
     splitExport: validation.splitExport,
     partCount: snap.chunkPlans.length,

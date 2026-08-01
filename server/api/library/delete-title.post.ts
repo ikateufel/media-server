@@ -1,3 +1,4 @@
+import { requireCatalogUnlock } from '../../utils/catalogAccess'
 import { basename } from 'node:path'
 import { createError, readBody } from 'h3'
 import { purgeTitleFromLibraryState } from '../../utils/libraryState'
@@ -10,6 +11,7 @@ import { purgeVideoTags } from '../../utils/videoTagsDb'
 import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
 
 export default defineEventHandler(async (event) => {
+  requireCatalogUnlock(event)
   const config = useRuntimeConfig(event)
   const roots = getVideoRootsFromRuntime(config)
   if (!roots.length) {

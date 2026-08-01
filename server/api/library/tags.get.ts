@@ -1,9 +1,11 @@
+import { requireCatalogUnlock } from '../../utils/catalogAccess'
 import { createError, getQuery } from 'h3'
 import { getTagsForVideo, listTagNamesForSession } from '../../utils/videoTagsDb'
 import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
 import { parseSessionQuery } from '../../utils/videoSession'
 
 export default defineEventHandler((event) => {
+  requireCatalogUnlock(event)
   const config = useRuntimeConfig(event)
   const roots = getVideoRootsFromRuntime(config)
   if (!roots.length) {

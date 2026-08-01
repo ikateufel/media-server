@@ -348,20 +348,8 @@ def _lowercase_pair_runs(scan: str) -> set[str]:
 
 
 def _dedupe_singles_absorvidos_em_compostos(tags: set[str]) -> set[str]:
-    """Remove palavras soltas que já aparecem dentro de uma tag composta (ex.: julia, ann → julia ann)."""
-    words_in_multi = set()
-    for t in tags:
-        if " " in t:
-            for w in t.split():
-                if len(w) >= 2:
-                    words_in_multi.add(w.lower())
-    out: set[str] = set()
-    for t in tags:
-        if " " in t:
-            out.add(t)
-        elif t.lower() not in words_in_multi:
-            out.add(t)
-    return out
+    """Se há palavra solta e composto com essa palavra, fica a solta (ex.: juke + juke box → juke, box)."""
+    return filtrar_tags_redundantes(tags)
 
 
 def extrair_nomes_titlecase_do_titulo(stem: str) -> set[str]:
@@ -439,12 +427,159 @@ def _is_year_token(s: str) -> bool:
     return bool(re.match(r"^(19|20)\d{2}$", t))
 
 
+# Resolução / codec / contentor / release scene — nunca viram tag.
+_TECH_NOISE = frozenset(
+    {
+        "1080p",
+        "2160p",
+        "1440p",
+        "720p",
+        "480p",
+        "360p",
+        "240p",
+        "4k",
+        "8k",
+        "uhd",
+        "fhd",
+        "qhd",
+        "hd",
+        "sd",
+        "hdr",
+        "hevc",
+        "h264",
+        "h265",
+        "x264",
+        "x265",
+        "avc",
+        "aac",
+        "ac3",
+        "dts",
+        "mp4",
+        "mkv",
+        "avi",
+        "mov",
+        "wmv",
+        "webm",
+        "m4v",
+        "xxx",
+        "p2p",
+        "webrip",
+        "webdl",
+        "bluray",
+        "bdrip",
+        "brrip",
+        "hdtv",
+        "dvdrip",
+        "dvd",
+        "proper",
+        "repack",
+        "internal",
+        "remux",
+        "encode",
+        "encoded",
+        "nf",
+        "amzn",
+        "dsnp",
+        "hulu",
+        "dl",
+        "web",
+        "xc",
+        "rarbg",
+        "yify",
+        "yts",
+        "sparks",
+        "ntb",
+        "flux",
+        "vostfr",
+        "multi",
+        "subbed",
+        "softsub",
+        "hardsub",
+        "media",
+        "scene",
+        "scenes",
+        "split",
+        "vol",
+        "episode",
+        "part",
+    }
+)
+
+# Plataformas / tube / cam — ruído de site, não estúdio útil.
+_SITE_NOISE = frozenset(
+    {
+        "onlyfans",
+        "fansly",
+        "manyvids",
+        "pornhub",
+        "xvideos",
+        "xnxx",
+        "xhamster",
+        "redtube",
+        "youporn",
+        "spankbang",
+        "chaturbate",
+        "stripchat",
+        "cam4",
+        "bongacams",
+        "livejasmin",
+        "myfreecams",
+        "clips4sale",
+        "iwantclips",
+        "patreon",
+        "twitter",
+        "instagram",
+        "reddit",
+        "tiktok",
+        "youtube",
+        "vimeo",
+        "telegram",
+        "discord",
+    }
+)
+
+# Artigos / preposições curtas sem valor de pesquisa.
+_STOP_NOISE = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "of",
+        "to",
+        "for",
+        "in",
+        "on",
+        "at",
+        "by",
+        "with",
+        "from",
+        "is",
+        "it",
+        "as",
+        "be",
+        "vs",
+        "via",
+    }
+)
+
+_RES_TOKEN_RE = re.compile(
+    r"^(?:\d{3,4}p|p\d{3,4}|\d+k)$",
+    re.I,
+)
+_WEB_DL_RE = re.compile(r"^web[\-_]?dl$", re.I)
+
+
 def _is_technical_paren(inner: str) -> bool:
     """True se o conteúdo entre parênteses for só ano / codec / resolução."""
     low = inner.lower()
     if _is_year_token(inner):
         return True
-    if re.search(r"\b(1080p|720p|480p|2160p|4k|uhd|hevc|h\.?264|h\.?265|x264|x265|webrip|bluray)\b", low):
+    if re.search(
+        r"\b(1080p|720p|480p|2160p|4k|uhd|hevc|h\.?264|h\.?265|x264|x265|webrip|bluray|p2p|xxx)\b",
+        low,
+    ):
         return True
     if re.fullmatch(r"[\d\s.pkxhvecu\-]+", low) and len(low) <= 32:
         return True
@@ -452,30 +587,269 @@ def _is_technical_paren(inner: str) -> bool:
 
 
 def _is_garbage_tag(t: str) -> bool:
-    tl = t.strip().lower()
+    """Ruído técnico / site / número — não entra nas auto-tags."""
+    tl = t.strip().lower().strip(".-_/")
     if len(tl) < 2:
+        return True
+    parts = [p for p in re.split(r"\s+", tl) if p]
+    if len(parts) > 1:
+        glued = "".join(parts)
+        if glued in _SITE_NOISE or glued in _TECH_NOISE:
+            return True
+        useful = 0
+        for p in parts:
+            if p in _STOP_NOISE:
+                continue
+            if (
+                p.isdigit()
+                or _is_year_token(p)
+                or _RES_TOKEN_RE.match(p)
+                or _WEB_DL_RE.match(p)
+                or p in _TECH_NOISE
+                or p in _SITE_NOISE
+                or re.fullmatch(r"\d+p?", p)
+            ):
+                return True
+            useful += 1
+        return useful < 2
+    if tl.isdigit():
         return True
     if _is_year_token(tl):
         return True
-    if re.search(r"\b(1080p|720p|480p|2160p|4k|uhd|hevc|h264|h265|x264|x265)\b", tl):
+    if _RES_TOKEN_RE.match(tl):
         return True
-    if tl in {"xxx", "hd", "sd", "fhd"}:
+    if _WEB_DL_RE.match(tl):
+        return True
+    if tl in _TECH_NOISE or tl in _SITE_NOISE or tl in _STOP_NOISE:
+        return True
+    if re.fullmatch(r"\d+p?", tl):
+        return True
+    if re.fullmatch(r"[a-f0-9]{6,}", tl):
         return True
     return False
 
 
+# Palavras de título que cortam sequências de nomes (não são performers).
+_NAME_BREAK = frozenset(
+    {
+        "horny",
+        "cant",
+        "can't",
+        "stop",
+        "squirting",
+        "squirt",
+        "big",
+        "cock",
+        "dick",
+        "fuck",
+        "fucked",
+        "fucking",
+        "fucks",
+        "love",
+        "loves",
+        "loving",
+        "gets",
+        "get",
+        "takes",
+        "take",
+        "gives",
+        "giving",
+        "what",
+        "she",
+        "he",
+        "her",
+        "his",
+        "him",
+        "my",
+        "your",
+        "hard",
+        "deep",
+        "rough",
+        "sexy",
+        "hot",
+        "wet",
+        "tight",
+        "first",
+        "time",
+        "scene",
+        "trailer",
+        "official",
+        "new",
+        "best",
+        "compilation",
+        "highlights",
+    }
+)
+
+
+def _stem_raw_chunks(stem: str) -> list[str]:
+    """Tokens crus do stem (minúsculas), sem filtrar — para montar nomes compostos."""
+    s = stem
+    s = re.sub(r"(?i)\bweb[\-_]?dl\b", " ", s)
+    s = re.sub(r"(?i)\bweb[\-_]?rip\b", " ", s)
+    s = re.sub(r"(?i)\bblu[\-_]?ray\b", " ", s)
+    s = re.sub(r"[\[\]\(\)]+", " ", s)
+    s = re.sub(r"[\\/]+", " ", s)
+    out: list[str] = []
+    for chunk in re.split(r"[\s._\-+]+", s):
+        raw = chunk.strip()
+        if not raw:
+            continue
+        low = raw.lower().strip(".-_/")
+        if (
+            not low
+            or low in _SITE_NOISE
+            or low in _TECH_NOISE
+            or low.isdigit()
+            or _is_year_token(low)
+            or _RES_TOKEN_RE.match(low)
+        ):
+            continue
+        if re.search(r"[a-z0-9][A-Z]", raw) or re.search(r"[A-Z]{2,}[a-z]", raw):
+            # OnlyFans → only+fans: se a forma colada é site, ignora o chunk inteiro
+            if low in _SITE_NOISE:
+                continue
+            parts = _split_stuck_titlecase_words(_split_camel_case_gap(raw))
+            for p in re.split(r"\s+", parts):
+                wl = p.strip().lower().strip(".-_/")
+                if wl and wl not in _SITE_NOISE and wl not in _TECH_NOISE:
+                    out.append(wl)
+        else:
+            out.append(low)
+    return out
+
+
+def _is_performer_token(w: str) -> bool:
+    wl = w.strip().lower()
+    if len(wl) < 2:
+        return False
+    if wl in _STOP_NOISE or wl == "and":
+        return False
+    if wl in _NAME_BREAK or wl in NAME_DUD_ANY or wl in NAME_DUD_MIDDLE:
+        return False
+    if wl in _TECH_NOISE or wl in _SITE_NOISE or wl in _CFG.garbage:
+        return False
+    if wl.isdigit() or _is_year_token(wl) or _RES_TOKEN_RE.match(wl):
+        return False
+    if not _has_vowel(wl):
+        return False
+    if any(c.isdigit() for c in wl):
+        return False
+    return True
+
+
+def _extract_name_phrases(stem: str) -> set[str]:
+    """
+    Nomes compostos: «riley rae», «jack and jill».
+    Usa «and» como cola; corta em ruído / palavras de título.
+    """
+    words = _stem_raw_chunks(stem)
+    out: set[str] = set()
+    i = 0
+    while i < len(words):
+        w = words[i]
+        if not _is_performer_token(w):
+            i += 1
+            continue
+
+        # jack and jill  /  a and b and c
+        if (
+            i + 2 < len(words)
+            and words[i + 1] == "and"
+            and _is_performer_token(words[i + 2])
+        ):
+            parts = [w]
+            j = i
+            while (
+                j + 2 < len(words)
+                and words[j + 1] == "and"
+                and _is_performer_token(words[j + 2])
+            ):
+                parts.append(words[j + 2])
+                j += 2
+            if len(parts) >= 2:
+                out.add(" and ".join(parts))
+                i = j + 1
+                continue
+
+        # riley rae (dois nomes seguidos)
+        if i + 1 < len(words) and _is_performer_token(words[i + 1]):
+            out.add(f"{w} {words[i + 1]}")
+            # trigram se o 3.º também for nome e não houver «and»
+            if i + 2 < len(words) and _is_performer_token(words[i + 2]):
+                out.add(f"{w} {words[i + 1]} {words[i + 2]}")
+                i += 3
+            else:
+                i += 2
+            continue
+
+        i += 1
+    return out
+
+
+def _stem_word_tokens(stem: str) -> list[str]:
+    """Parte o nome do ficheiro em palavras úteis (sem ruído de site/release)."""
+    s = stem
+    s = re.sub(r"(?i)\bweb[\-_]?dl\b", " ", s)
+    s = re.sub(r"(?i)\bweb[\-_]?rip\b", " ", s)
+    s = re.sub(r"(?i)\bblu[\-_]?ray\b", " ", s)
+    s = re.sub(r"[\[\]\(\)]+", " ", s)
+    s = re.sub(r"[\\/]+", " ", s)
+    chunks = re.split(r"[\s._\-+]+", s)
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(w: str) -> None:
+        wl = w.strip().lower().strip(".-_/")
+        if not wl or wl in seen:
+            return
+        if _is_garbage_tag(wl) or wl in _CFG.garbage:
+            return
+        seen.add(wl)
+        out.append(wl)
+
+    for chunk in chunks:
+        if not chunk:
+            continue
+        raw = chunk.strip()
+        low = raw.lower().strip(".-_/")
+        if _is_garbage_tag(low) or low in _CFG.garbage:
+            continue
+        if re.search(r"[a-z0-9][A-Z]", raw) or re.search(r"[A-Z]{2,}[a-z]", raw):
+            add(low)
+            parts = _split_stuck_titlecase_words(_split_camel_case_gap(raw))
+            for p in re.split(r"\s+", parts):
+                add(p)
+        else:
+            add(raw)
+    return out
+
+
 def filtrar_tags_redundantes(tags: set[str]) -> set[str]:
+    """
+    Evita a mesma palavra em tags diferentes no mesmo vídeo.
+    Ex.: juke + juke box → juke, box (remove o composto).
+    """
     s = {t.strip().lower() for t in tags if t and str(t).strip()}
+    singles = {t for t in s if " " not in t}
+    rm: set[str] = set()
+    for t in s:
+        if " " not in t:
+            continue
+        parts = [p for p in t.replace(" and ", " ").split() if p and p != "and"]
+        if any(p in singles for p in parts):
+            rm.add(t)
+    s -= rm
     for stem in _CFG.needles:
         if stem not in s:
             continue
-        rm: set[str] = set()
+        rm = set()
         for x in s:
             if x == stem:
                 continue
             if x.startswith(stem + " "):
                 rm.add(x)
-            elif x.startswith(stem) and len(x) > len(stem):
+            elif " " not in x and x.startswith(stem) and len(x) > len(stem):
                 rm.add(x)
         s -= rm
     return s
@@ -509,64 +883,48 @@ def _hits_needle_substrings(nome_base_lower: str) -> set[str]:
 
 def extrair_tags_genericas(nome_arquivo: str) -> str:
     """
-    Prioridade: (1) tags em [colchetes]; (2) nomes em (parênteses) que não sejam ano/codec;
-    (3) palavras curtas antes do primeiro [ (ex.: buc cor); (4) heurística Title Case + PREFIXOS_NO_NOME;
-    (5) agulhas do JSON needles no nome (+ dedupe por prefixo) — não removidas por «garbage».
+    Auto-tags = todas as palavras úteis do nome do ficheiro.
+    Exclui: números, anos, resoluções/codecs, xxx, P2P, sites (OnlyFans, …),
+    stopwords curtas, e a lista garbage.json. Mantém agulhas do tags.json.
     """
     stem = os.path.splitext(nome_arquivo)[0]
     stem_lower = stem.lower()
     tags: set[str] = set()
     forced_hits = _hits_needle_substrings(stem_lower)
 
-    # 1) [Brazzers]  [GhostFreakXX]  — vírgula ou ponto e vírgula separam várias tags no mesmo bloco
-    for m in re.finditer(r"\[([^\]]+)\]", stem):
-        inner = m.group(1)
-        for part in re.split(r"[,;]+", inner):
-            t = part.strip().lower()
-            t = re.sub(r"\s+", " ", t)
-            if len(t) >= 2 and (t not in _CFG.garbage or t in forced_hits) and not _is_garbage_tag(t):
-                tags.add(t)
+    for w in _stem_word_tokens(stem):
+        if w in forced_hits or (w not in _CFG.garbage and not _is_garbage_tag(w)):
+            tags.add(w)
 
-    # 2) (Sophie Dee)  — ignora (2009), (1080p HEVC), etc.
+    for m in re.finditer(r"\[([^\]]+)\]", stem):
+        for part in re.split(r"[,;]+", m.group(1)):
+            for w in _stem_word_tokens(part):
+                if w in forced_hits or (w not in _CFG.garbage and not _is_garbage_tag(w)):
+                    tags.add(w)
+
     for m in re.finditer(r"\(([^)]+)\)", stem):
         inner = m.group(1).strip()
         if not inner or _is_technical_paren(inner):
             continue
-        t = re.sub(r"\s+", " ", inner.lower())
-        if len(t) >= 2 and (t not in _CFG.garbage or t in forced_hits) and not _is_garbage_tag(t):
-            tags.add(t)
-
-    # 3) Prefixo antes do primeiro '[' — ex.: "buc cor [Brazzers]..."
-    # Só se o segmento for claramente «tags curtas em minúsculas»; títulos Title Case
-    # passam só pelo extrair_nomes_titlecase_do_titulo (evita julia/ann soltas no stem).
-    first_br = stem.find("[")
-    head = stem[:first_br] if first_br >= 0 else stem
-    head = re.sub(r"\([^)]*\)", " ", head)
-    head = re.sub(r"\[[^\]]*\]", " ", head)
-    head_for_case = re.sub(r"[^A-Za-z]", "", head)
-    if head_for_case and head_for_case.islower():
-        for raw in head.replace(".", " ").replace("_", " ").split():
-            wl = raw.strip("._-").lower()
-            if len(wl) < 2 or (wl in _CFG.garbage and wl not in forced_hits) or _is_year_token(wl) or wl.isdigit():
-                continue
-            tags.add(wl)
+        for w in _stem_word_tokens(inner):
+            if w in forced_hits or (w not in _CFG.garbage and not _is_garbage_tag(w)):
+                tags.add(w)
 
     for p in PREFIXOS_NO_NOME:
-        if p in stem_lower:
+        if p in stem_lower and (p in forced_hits or p not in _CFG.garbage):
             tags.add(p)
 
-    tags |= extrair_nomes_titlecase_do_titulo(stem)
+    for phrase in _extract_name_phrases(stem):
+        if phrase in forced_hits or (phrase not in _CFG.garbage and not _is_garbage_tag(phrase)):
+            tags.add(phrase)
 
     tags |= forced_hits
-
-    tags = _dedupe_singles_absorvidos_em_compostos(tags)
     tags = filtrar_tags_redundantes(tags)
     tags = {
         t
         for t in tags
         if t in forced_hits or (t not in _CFG.garbage and not _is_garbage_tag(t))
     }
-
     return ";".join(sorted(tags))
 
 
@@ -576,6 +934,83 @@ def folder_pair_tag_from_dirname(dir_name: str) -> str:
     if not parts:
         return ""
     return " ".join(parts[:2])
+
+
+def _merge_tag_blobs(*blobs: str) -> str:
+    seen: set[str] = set()
+    for blob in blobs:
+        for t in str(blob or "").split(";"):
+            w = t.strip().lower()
+            if w:
+                seen.add(w)
+    return ";".join(sorted(filtrar_tags_redundantes(seen)))
+
+
+def _tags_for_trailer_file(file_name: str, parent_folder: str | None = None) -> str:
+    """Tags do ficheiro + do nome da pasta (pontos = espaços), se houver subpasta."""
+    parts: list[str] = [extrair_tags_genericas(file_name)]
+    if parent_folder and parent_folder.strip():
+        # Pasta tipo OnlyFans.2026.Riley.Rae… — trata como nome de ficheiro
+        parts.append(extrair_tags_genericas(f"{parent_folder.strip()}.mp4"))
+        fp = folder_pair_tag_from_dirname(parent_folder)
+        if fp:
+            parts.append(fp)
+    return _merge_tag_blobs(*parts)
+
+
+def _append_trailer_rows(
+    dados: list[dict[str, str]],
+    trailers_dir: str,
+    *,
+    rel_prefix: str | None = None,
+) -> None:
+    """Varre uma pasta trailers/ (ficheiros + 1 nível de subpasta)."""
+    video_ext = (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v")
+    try:
+        names = os.listdir(trailers_dir)
+    except OSError:
+        return
+    for name in names:
+        path = os.path.join(trailers_dir, name)
+        if os.path.isfile(path) and name.lower().endswith(video_ext):
+            rel = name if not rel_prefix else f"{rel_prefix}/{name}".replace("\\", "/")
+            # Legado: rel_prefix é o nome da pasta-cena → também gera tags desse nome
+            parent = rel_prefix if rel_prefix and "/" not in rel_prefix.replace("\\", "/") else None
+            tags = _tags_for_trailer_file(name, parent)
+            dados.append({"Arquivo": rel.replace("\\", "/"), "Tags": tags})
+        elif os.path.isdir(path) and not name.startswith("."):
+            try:
+                subnames = os.listdir(path)
+            except OSError:
+                continue
+            for fn in subnames:
+                fp = os.path.join(path, fn)
+                if not os.path.isfile(fp) or not fn.lower().endswith(video_ext):
+                    continue
+                rel_arq = f"{name}/{fn}".replace("\\", "/")
+                if rel_prefix:
+                    rel_arq = f"{rel_prefix}/{rel_arq}".replace("\\", "/")
+                tags = _tags_for_trailer_file(fn, name)
+                dados.append({"Arquivo": rel_arq, "Tags": tags})
+
+
+def _append_legacy_scene_trailers(dados: list[dict[str, str]], library_root: str) -> None:
+    """Compat catálogo: <cena>/trailers/ficheiro.mp4 → Arquivo «cena/ficheiro.mp4»."""
+    skip = {"trailers", "preview", "shrinked", "edited", "bat-work", ".thumb_cache"}
+    try:
+        entries = os.listdir(library_root)
+    except OSError:
+        return
+    for name in entries:
+        if name.startswith(".") or name.lower() in skip:
+            continue
+        scene_dir = os.path.join(library_root, name)
+        if not os.path.isdir(scene_dir):
+            continue
+        nested = os.path.join(scene_dir, "trailers")
+        if not os.path.isdir(nested):
+            continue
+        _append_trailer_rows(dados, nested, rel_prefix=name)
 
 
 def _safe_label_for_filename(label: str) -> str:
@@ -624,38 +1059,36 @@ def executar(
         print(f"Pasta inexistente: {diretorio}")
         return
 
-    video_ext = (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v")
     dados: list[dict[str, str]] = []
+    _append_trailer_rows(dados, diretorio)
 
-    for name in os.listdir(diretorio):
-        path = os.path.join(diretorio, name)
-        if os.path.isfile(path) and name.lower().endswith(video_ext):
-            tags = extrair_tags_genericas(name)
-            dados.append({"Arquivo": name, "Tags": tags})
-        elif os.path.isdir(path) and not name.startswith("."):
-            try:
-                subnames = os.listdir(path)
-            except OSError:
-                continue
-            for fn in subnames:
-                fp = os.path.join(path, fn)
-                if not os.path.isfile(fp) or not fn.lower().endswith(video_ext):
-                    continue
-                rel_arq = f"{name}/{fn}".replace("\\", "/")
-                gen = extrair_tags_genericas(fn)
-                fp_tag = folder_pair_tag_from_dirname(name)
-                if fp_tag:
-                    tags = f"{fp_tag};{gen}" if gen else fp_tag
-                else:
-                    tags = gen
-                dados.append({"Arquivo": rel_arq, "Tags": tags})
+    # Se --dir é …/trailers, inclui também …/<cena>/trailers (mesmo esquema do catálogo).
+    base = os.path.basename(os.path.normpath(diretorio)).lower()
+    if base == "trailers":
+        library_root = os.path.dirname(diretorio)
+        if library_root and os.path.isdir(library_root):
+            before = len(dados)
+            _append_legacy_scene_trailers(dados, library_root)
+            added = len(dados) - before
+            if added:
+                print(f"[legado] +{added} trailer(s) em pastas <cena>/trailers/")
+
+    # Dedup por Arquivo (preferir a 1.ª ocorrência)
+    seen_files: set[str] = set()
+    uniq: list[dict[str, str]] = []
+    for row in dados:
+        key = row["Arquivo"].replace("\\", "/").lower()
+        if key in seen_files:
+            continue
+        seen_files.add(key)
+        uniq.append(row)
+    dados = uniq
 
     if not dados:
         print("Nenhum vídeo encontrado.")
         return
 
     df = pd.DataFrame(dados)
-    # Nome alinhado com tag-import-file-lists.ts (tags_<rotulo_sessao>.csv)
     out_file = os.path.join(out_dir, f"tags_{pasta_nome}.csv")
     df.to_csv(out_file, sep="|", index=False, encoding="utf-8-sig")
     print(f"Feito! CSV com tags limpas:\n  {out_file}")

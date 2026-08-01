@@ -1,7 +1,9 @@
+import { requireCatalogUnlock } from '../../utils/catalogAccess'
 import { createError, getQuery } from 'h3'
 import { getFullProgress } from '../../utils/libraryState'
 
 export default defineEventHandler(async (event) => {
+  requireCatalogUnlock(event)
   const q = getQuery(event) as Record<string, unknown>
   const session = Number(q.session)
   const mainRel = typeof q.mainRel === 'string' ? q.mainRel : ''

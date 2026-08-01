@@ -14,7 +14,8 @@ export async function resolveTrailerRelForTagMutation(
   const config = useRuntimeConfig(event)
   const roots = getVideoRootsFromRuntime(config)
   const root = roots[Math.max(0, Math.floor(session))]?.trim() ?? ''
-  if (!root) return trailerRel.replace(/\\/g, '/').trim()
+  const rel = trailerRel.replace(/\\/g, '/').trim()
+  if (!root) return rel
   await ensureSessionCatalogTagRepair(session, root)
-  return resolveCanonicalTrailerRelFromDisk(session, root, trailerRel)
+  return resolveCanonicalTrailerRelFromDisk(session, root, rel)
 }

@@ -1,10 +1,7 @@
 import { createError, getQuery } from 'h3'
-import { requireAdminToken } from '../../utils/requireAdmin'
 import { getEditorJobSnapshot, getRunningEditorJobSnapshot } from '../../utils/editorJobs'
 
 export default defineEventHandler((event) => {
-  requireAdminToken(event)
-
   const q = getQuery(event) as Record<string, unknown>
   const jobId = typeof q.jobId === 'string' ? q.jobId.trim() : ''
   if (!jobId) {

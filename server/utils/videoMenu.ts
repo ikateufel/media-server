@@ -87,17 +87,32 @@ function parseMenuItemsFromUnknown(parsed: unknown): VideoMenuItem[] | null {
   return out.length ? out : null
 }
 
-function parseMenuDocumentFromDisk(): { items: VideoMenuItem[] | null; fastPlay: FastPlaySettings } {
+function parseMenuDocumentFromDisk(): {
+  items: VideoMenuItem[] | null
+  fastPlay: FastPlaySettings
+  catalogPassword: string
+} {
   const file = menuFilePath()
   if (!existsSync(file)) {
-    return { items: null, fastPlay: { ...DEFAULT_FAST_PLAY_SETTINGS } }
+    return {
+      items: null,
+      fastPlay: { ...DEFAULT_FAST_PLAY_SETTINGS },
+      catalogPassword: '',
+    }
   }
   try {
     const raw = readFileSync(file, 'utf8').trim()
-    if (!raw) return { items: null, fastPlay: { ...DEFAULT_FAST_PLAY_SETTINGS } }
+    if (!raw) {
+      return {
+        items: null,
+        fastPlay: { ...DEFAULT_FAST_PLAY_SETTINGS },
+        catalogPassword: '',
+      }
+    }
     const parsed = JSON.parse(raw) as unknown
     const items = parseMenuItemsFromUnknown(parsed)
     let fastPlayRaw: unknown = null
+    let catalogPassword = ''
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       const obj = parsed as Record<string, unknown>
       fastPlayRaw =
@@ -105,13 +120,21 @@ function parseMenuDocumentFromDisk(): { items: VideoMenuItem[] | null; fastPlay:
         (obj.settings && typeof obj.settings === 'object'
           ? (obj.settings as Record<string, unknown>).fastPlay
           : null)
+      if (typeof obj.catalogPassword === 'string') {
+        catalogPassword = obj.catalogPassword.trim()
+      }
     }
     return {
       items,
       fastPlay: normalizeFastPlaySettings(fastPlayRaw),
+      catalogPassword,
     }
   } catch {
-    return { items: null, fastPlay: { ...DEFAULT_FAST_PLAY_SETTINGS } }
+    return {
+      items: null,
+      fastPlay: { ...DEFAULT_FAST_PLAY_SETTINGS },
+      catalogPassword: '',
+    }
   }
 }
 
@@ -126,6 +149,16 @@ export function tryLoadVideoMenuFromDisk(): VideoMenuItem[] | null {
 
 export function getFastPlaySettingsFromDisk(): FastPlaySettings {
   return parseMenuDocumentFromDisk().fastPlay
+}
+
+/** Senha do catálogo (vazia = desligada). */
+export function getCatalogPasswordFromDisk(): string {
+  return parseMenuDocumentFromDisk().catalogPassword
+}
+
+export function normalizeCatalogPassword(raw: unknown): string {
+  if (typeof raw !== 'string') return ''
+  return raw.trim().slice(0, 200)
 }
 
 /** Ordem e rótulos do menu; se não houver JSON válido, usa `runtimeConfig` + rótulos por pasta. */
@@ -160,6 +193,7 @@ export function getVideoRootsForCli(): string[] {
 export async function writeVideoMenuToDisk(
   items: VideoMenuItem[],
   fastPlayRaw?: unknown,
+  catalogPasswordRaw?: unknown,
 ): Promise<void> {
   if (!Array.isArray(items) || !items.length) {
     throw new Error('Lista de pastas vazia.')
@@ -190,7 +224,11 @@ export async function writeVideoMenuToDisk(
   const fastPlay = normalizeFastPlaySettings(
     fastPlayRaw === undefined ? getFastPlaySettingsFromDisk() : fastPlayRaw,
   )
-  const payload = `${JSON.stringify({ items: normalized, fastPlay }, null, 2)}\n`
+  const catalogPassword =
+    catalogPasswordRaw === undefined
+      ? getCatalogPasswordFromDisk()
+      : normalizeCatalogPassword(catalogPasswordRaw)
+  const payload = `${JSON.stringify({ items: normalized, fastPlay, catalogPassword }, null, 2)}\n`
   await writeFile(file, payload, 'utf8')
 }
 

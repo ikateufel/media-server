@@ -8,7 +8,6 @@ import {
 } from '../../utils/trailerCatalogScan'
 import { isCatalogTrailerRelSuffix } from '../../utils/trailerNames'
 import { readRecentPlaybackList } from '../../utils/recentPlaybackDb'
-import { getResolvedAdminToken } from '../../utils/requireAdmin'
 import {
   getFastPlaySettingsFromDisk,
   getVideoMenuItems,
@@ -16,6 +15,7 @@ import {
   type VideoMenuItem,
 } from '../../utils/videoMenu'
 import type { RecentPlaybackRow } from '../../utils/recentPlaybackDb'
+import { requireCatalogUnlock } from '../../utils/catalogAccess'
 
 function buildRecentsOriginCounts(
   rows: RecentPlaybackRow[],
@@ -48,6 +48,7 @@ function buildRecentsOriginCounts(
 }
 
 export default defineEventHandler(async (event) => {
+  requireCatalogUnlock(event)
   const config = useRuntimeConfig(event)
   const roots = getVideoRootsFromRuntime(config)
   if (!roots.length) {
@@ -113,8 +114,6 @@ export default defineEventHandler(async (event) => {
     for (const t of pair.entry.tags ?? []) tagSuggestions.add(t)
   }
 
-  const adminToken = getResolvedAdminToken(event) ?? ''
-
   const pageEnd = offset + page.length
 
   return {
@@ -129,7 +128,6 @@ export default defineEventHandler(async (event) => {
       a.localeCompare(b, undefined, { sensitivity: 'base' }),
     ),
     serverPlatform: process.platform,
-    adminRevealExplorer: adminToken.length > 0,
     fastPlay: getFastPlaySettingsFromDisk(),
   }
 })

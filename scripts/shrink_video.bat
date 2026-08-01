@@ -200,7 +200,7 @@ call :path_has_shrinked "%ORIG%" _VP_IN_SHRINKED
 if "%_VP_IN_SHRINKED%"=="1" goto :skip_in_shrinked
 goto :after_shrinked_check
 :skip_in_shrinked
-echo [SKIP] origem em pasta shrinked: "%ORIG%"
+echo [SKIP] origem em pasta shrinked ou shrinked_backup: "%ORIG%"
 exit /b 0
 :after_shrinked_check
 
@@ -345,39 +345,8 @@ if "%PRIORITIZE_SIZE%"=="1" (
     if %OUT_BYTES% GTR %ORIG_BYTES% goto :give_up_oversized
     call :quality_retry_if_needed
     if %OUT_BYTES% GTR %ORIG_BYTES% goto :give_up_oversized
-    goto :output_ok_finish
 )
-set "VP_ORIG_BYTES=%ORIG_BYTES%"
-set "VP_OUT_BYTES=%OUT_BYTES%"
-"%VP_POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%VP_SCRIPTS_DIR%vp-shrink-size-check.ps1"
-set "SIZE_CHECK=%ERRORLEVEL%"
-if %SIZE_CHECK% EQU 0 goto :output_ok_finish
-if %SIZE_CHECK% EQU 2 (
-    echo [ERRO] saida invalida ou esmagada demais — shrinked apagado
-    call :literal_del "%outFile%"
-    exit /b 1
-)
-set "_pf=%TEMP%\vp-sh_%RANDOM%_%RANDOM%.txt"
-"%VP_POWERSHELL%" -NoProfile -Command "$o=[int64]$env:VP_ORIG_BYTES;$n=[int64]$env:VP_OUT_BYTES;if($o -gt 0){[int][math]::Round($n*100.0/$o)}else{0}" > "%_pf%" 2>nul
-set "OUT_PCT=?"
-if exist "%_pf%" for /f "usebackq delims=" %%P in ("%_pf%") do set "OUT_PCT=%%P"
-if exist "%_pf%" del "%_pf%" >nul 2>&1
-set "VP_MP_PHASE=2"
-if %OUT_BYTES% GTR %ORIG_BYTES% set "VP_MP_PHASE=3"
-for %%F in ("%ORIG%") do set "VP_LIST_REL=%%~nxF"
-for %%F in ("%ORIG%") do set "VP_SOURCE_ROOT=%%~dpF"
-if "%VP_SOURCE_ROOT:~-1%"=="\" set "VP_SOURCE_ROOT=%VP_SOURCE_ROOT:~0,-1%"
-echo [SKIP] reducao insuficiente — saida %OUT_PCT%%% do original ^(precisa ^<=70%%^) — shrinked apagado — lista data\shrink-multipass.txt
-if defined VP_SHRINK_FROM_SERVER (
-    echo [INSUFFICIENT-LIST] %VP_MP_PHASE%^|%VP_LIST_REL%^|%ORIG_BYTES%^|%OUT_BYTES%^|%OUT_PCT%
-) else (
-    set "VP_SHRINK_PHASE=%VP_MP_PHASE%"
-    set "VP_OUT_PCT=%OUT_PCT%"
-    set "VP_REL_NAME=%VP_LIST_REL%"
-    "%VP_POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%VP_SCRIPTS_DIR%vp-shrink-log-multipass.ps1"
-)
-call :literal_del "%outFile%"
-exit /b 0
+goto :output_ok_finish
 
 :give_up_oversized
 echo [OVERSIZED] saida maior que origem ^(%OUT_BYTES% ^> %ORIG_BYTES%^) — shrinked apagado ^(sem 3a passagem^) — registo em shrink-skipped.txt
@@ -435,7 +404,31 @@ if defined OUT_PROBE (
 ) else (
     echo [OK] "%outFile%"
 )
+if not defined VP_SHRINK_FROM_SERVER call :backup_original_direct
 if not "%SKIP_PAUSE%"=="1" pause
+exit /b 0
+
+:backup_original_direct
+set "BACKUP_DIR=shrinked_backup"
+if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%" 2>nul
+for %%F in ("%ORIG%") do set "BACKUP_FILE=%BACKUP_DIR%\%%~nxF"
+for %%F in ("%BACKUP_FILE%") do set "BACKUP_FILE=%%~fF"
+call :literal_exists "%BACKUP_FILE%" _VP_EXISTS
+if "%_VP_EXISTS%"=="1" (
+    echo [BACKUP] ja existe — nao sobrescreve: "%BACKUP_FILE%"
+    exit /b 0
+)
+echo [BACKUP] origem → "%BACKUP_FILE%"
+set "VP_LITERAL_SRC=%ORIG%"
+set "VP_LITERAL_DST=%BACKUP_FILE%"
+"%VP_POWERSHELL%" -NoProfile -Command "Copy-Item -LiteralPath $env:VP_LITERAL_SRC -Destination $env:VP_LITERAL_DST -Force" >nul 2>&1
+if errorlevel 1 (
+    echo [AVISO] falha ao copiar backup para shrinked_backup\
+) else (
+    echo [BACKUP] ok
+)
+set "VP_LITERAL_SRC="
+set "VP_LITERAL_DST="
 exit /b 0
 
 :skip_unsupported_source_codec
@@ -628,7 +621,7 @@ exit /b 0
 set "%~2=0"
 if "%~1"=="" exit /b 0
 set "VP_LITERAL_PATH=%~1"
-"%VP_POWERSHELL%" -NoProfile -Command "if ($env:VP_LITERAL_PATH -match '(?i)[\\/]shrinked[\\/]') { exit 0 } else { exit 1 }" >nul 2>&1
+"%VP_POWERSHELL%" -NoProfile -Command "if ($env:VP_LITERAL_PATH -match '(?i)[\\/]shrinked(?:_backup)?[\\/]') { exit 0 } else { exit 1 }" >nul 2>&1
 if not errorlevel 1 set "%~2=1"
 set "VP_LITERAL_PATH="
 exit /b 0
@@ -1103,12 +1096,13 @@ echo   shrink_video.bat --force "filme.mkv"
 echo.
 echo Velocidade: 1.25, 1.5 ou 2 ^(predefinido 1.5^). Ficheiros ^< 400 MB: maximo 1.5x ^(2x e reduzido^); regista em shrink-skipped.txt.
 echo Codec: auto ^(predef.^) usa a familia do original ^(H.264/HEVC^); ou h264_nvenc, libx264, hevc_nvenc, libx265.
-echo   --prioritize-size: 2a passagem qualidade se reducao ^< 30%%; se saida ^> origem desiste ^(sem 3a passagem^).
+echo   --prioritize-size: 2a passagem qualidade se saida ^>70%% do original; se saida ^> origem desiste ^(sem 3a passagem^).
 echo 1a passagem: NVENC CQ rapido ^(preset %SHRINK_FAST_NVENC_PRESET%^).
-echo   Sem priorizar: se reducao ^< 30%% ^(saida ^>70%% origem^), apaga shrinked, regista em data\shrink-multipass.txt e segue.
+echo   Sem priorizar: mantem sempre a saida em shrinked\ ^(nao apaga por reducao insuficiente^).
 echo   Priorizar tamanho: 2a passagem qualidade se ^>70%%; se saida ^> origem apaga e desiste ^(shrink-skipped.txt^).
 echo Reencode + AAC 128k — HEVC costuma gerar ficheiros menores; H.264 e mais compativel.
 echo Saida: shrinked\^<nome^>.mp4
+echo Modo direto ^(sem servidor^): copia a origem para shrinked_backup\^<nome^> ^(nao sobrescreve se ja existir^).
 echo Marca vp_shrink_speed no ficheiro; origem ja marcada ou em shrinked\ e ignorada ^(--force repete^).
 echo Se o destino ja existir, nao sobrescreve ^(use --force^).
 echo.

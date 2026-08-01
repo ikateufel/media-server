@@ -4,6 +4,7 @@
       <h1 class="admin-title">Administração</h1>
       <div class="admin-head-links">
         <NuxtLink to="/" class="admin-back">← Reprodutor</NuxtLink>
+        <NuxtLink to="/historico" class="admin-back">Histórico</NuxtLink>
         <NuxtLink to="/shrink" class="admin-back">Shrink</NuxtLink>
         <NuxtLink to="/editor" class="admin-back">Editor</NuxtLink>
       </div>
@@ -25,6 +26,7 @@
       <div class="admin-row admin-tools-links">
         <NuxtLink to="/shrink" class="admin-tool-link">Shrink</NuxtLink>
         <NuxtLink to="/editor" class="admin-tool-link">Editor</NuxtLink>
+        <NuxtLink to="/historico" class="admin-tool-link">Histórico</NuxtLink>
       </div>
     </section>
 
@@ -245,6 +247,39 @@
         </button>
         <p v-if="fastPlaySaveMsg" class="admin-ok admin-inline-msg">{{ fastPlaySaveMsg }}</p>
         <p v-if="fastPlaySaveErr" class="admin-err admin-inline-msg">{{ fastPlaySaveErr }}</p>
+      </div>
+
+      <h3 class="admin-h3">Senha do catálogo</h3>
+      <p class="admin-muted">
+        Se definida, o reprodutor pede a senha ao abrir a aba; F5 na mesma aba não pede de novo.
+        Fechar e voltar a abrir a aba pede outra vez. Com <code class="admin-code">?tv=1</code> não pede.
+        Deixe vazio e grave para desligar. Independente do token de admin.
+      </p>
+      <div class="admin-row">
+        <label class="admin-check-label admin-input--wide">
+          Senha
+          <input
+            v-model="catalogPassword"
+            type="password"
+            class="admin-input admin-input--full"
+            autocomplete="new-password"
+            placeholder="Vazio = sem senha"
+          />
+        </label>
+      </div>
+      <div class="admin-row">
+        <button
+          type="button"
+          class="admin-btn admin-btn--primary"
+          :disabled="catalogPasswordSaveBusy"
+          @click="saveCatalogPasswordOnly"
+        >
+          Gravar senha do catálogo
+        </button>
+        <p v-if="catalogPasswordEnabled" class="admin-ok admin-inline-msg">Senha activa</p>
+        <p v-else class="admin-muted admin-inline-msg">Senha desligada</p>
+        <p v-if="catalogPasswordSaveMsg" class="admin-ok admin-inline-msg">{{ catalogPasswordSaveMsg }}</p>
+        <p v-if="catalogPasswordSaveErr" class="admin-err admin-inline-msg">{{ catalogPasswordSaveErr }}</p>
       </div>
 
       <h3 class="admin-h3">Tags automáticas</h3>
@@ -549,6 +584,11 @@ const saveBusy = ref(false)
 const fastPlaySaveMsg = ref('')
 const fastPlaySaveErr = ref('')
 const fastPlaySaveBusy = ref(false)
+const catalogPassword = ref('')
+const catalogPasswordEnabled = ref(false)
+const catalogPasswordSaveMsg = ref('')
+const catalogPasswordSaveErr = ref('')
+const catalogPasswordSaveBusy = ref(false)
 
 /** Linha de texto: contagens (R/T/P); segunda linha: cruzamento preview. */
 interface LibraryFolderStatsApiResult {
@@ -834,10 +874,14 @@ async function loadMenu() {
       serverPlatform: string
       items: MenuRow[]
       fastPlay?: Partial<FastPlaySettings>
+      catalogPassword?: string
+      catalogPasswordEnabled?: boolean
     }>('/api/admin/menu', { headers: h })
     source.value = data.source
     serverPlatform.value = data.serverPlatform || ''
     rows.value = data.items.map((e) => ({ path: e.path, title: e.title }))
+    catalogPassword.value = typeof data.catalogPassword === 'string' ? data.catalogPassword : ''
+    catalogPasswordEnabled.value = Boolean(data.catalogPasswordEnabled ?? catalogPassword.value)
     const fp = data.fastPlay ?? {}
     const nRate = Number(fp.rate)
     const nStep = Number(fp.stepSeconds)
@@ -912,6 +956,29 @@ async function saveFastPlayOnly() {
     fastPlaySaveErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao gravar.'
   } finally {
     fastPlaySaveBusy.value = false
+  }
+}
+
+async function saveCatalogPasswordOnly() {
+  catalogPasswordSaveErr.value = ''
+  catalogPasswordSaveMsg.value = ''
+  catalogPasswordSaveBusy.value = true
+  try {
+    const h = await adminHeaders()
+    await $fetch('/api/admin/menu', {
+      method: 'PUT',
+      headers: { ...h, 'Content-Type': 'application/json' },
+      body: { catalogPassword: catalogPassword.value },
+    })
+    catalogPasswordSaveMsg.value = catalogPassword.value.trim()
+      ? 'Senha do catálogo gravada. Novas sessões do reprodutor pedirão a senha.'
+      : 'Senha do catálogo desligada.'
+    await loadMenu()
+  } catch (e: unknown) {
+    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    catalogPasswordSaveErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao gravar.'
+  } finally {
+    catalogPasswordSaveBusy.value = false
   }
 }
 

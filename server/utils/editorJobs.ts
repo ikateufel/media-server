@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { resolve } from 'node:path'
+import { copyFile, mkdir, rename, rm, stat, unlink } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 import { createError } from 'h3'
+import { readLibraryState, writeLibraryState, fullProgressKey } from './libraryState'
 import {
   computeKeepSegments,
   mergeSegments,
@@ -39,6 +42,9 @@ export interface EditorJobSnapshot {
   sourceRoot: string
   fileRel: string
   filePath: string
+  newFileRel: string | null
+  session: number | null
+  useVideo: boolean
   height: number
   speed: EditorSpeed
   force: boolean
@@ -257,6 +263,160 @@ export function validateEditorExport(opts: {
   }
 }
 
+function expectedEditedOutputPath(videoAbsolutePath: string, outputSuffix = ''): string {
+  const stem = basename(videoAbsolutePath, extname(videoAbsolutePath))
+  return join(dirname(videoAbsolutePath), 'edited', `${stem}${outputSuffix}.mp4`)
+}
+
+function finalMainPath(videoAbsolutePath: string): string {
+  const stem = basename(videoAbsolutePath, extname(videoAbsolutePath))
+  return join(dirname(videoAbsolutePath), `${stem}.mp4`)
+}
+
+function toPosixRel(absUnderRoot: string, root: string): string {
+  const r = resolve(root).replace(/\\/g, '/').replace(/\/+$/, '')
+  const a = resolve(absUnderRoot).replace(/\\/g, '/')
+  const prefix = r.endsWith('/') ? r : `${r}/`
+  if (a.toLowerCase().startsWith(prefix.toLowerCase())) {
+    return a.slice(prefix.length)
+  }
+  return basename(a)
+}
+
+async function moveReplace(src: string, dest: string) {
+  try {
+    await rename(src, dest)
+  } catch {
+    await copyFile(src, dest)
+    await unlink(src)
+  }
+}
+
+function expectedEditedBackupPath(originalPath: string): string {
+  const dir = dirname(originalPath)
+  const ext = extname(originalPath)
+  const stem = basename(originalPath, ext)
+  const backupDir = join(dir, 'edited_backup')
+  let dest = join(backupDir, `${stem}_bak${ext}`)
+  if (!existsSync(dest)) return dest
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  return join(backupDir, `${stem}_bak_${stamp}${ext}`)
+}
+
+async function backupOriginalBeforeReplace(originalPath: string): Promise<string> {
+  const dest = expectedEditedBackupPath(originalPath)
+  await mkdir(dirname(dest), { recursive: true })
+  await copyFile(originalPath, dest)
+  return dest
+}
+
+async function replaceOriginalWithEdited(opts: {
+  originalPath: string
+  editedPath: string
+}): Promise<{ finalPath: string; backupPath: string }> {
+  const backupPath = await backupOriginalBeforeReplace(opts.originalPath)
+  const dest = finalMainPath(opts.originalPath)
+  const destSameAsOrig =
+    resolve(opts.originalPath).toLowerCase() === resolve(dest).toLowerCase()
+
+  if (destSameAsOrig) {
+    const tmp = `${dest}.vp-edit-tmp`
+    try {
+      await unlink(tmp)
+    } catch {
+      /* */
+    }
+    await moveReplace(opts.originalPath, tmp)
+    try {
+      await moveReplace(opts.editedPath, dest)
+    } catch (e) {
+      try {
+        await moveReplace(tmp, opts.originalPath)
+      } catch {
+        /* */
+      }
+      throw e
+    }
+    try {
+      await unlink(tmp)
+    } catch {
+      /* */
+    }
+  } else {
+    try {
+      await unlink(dest)
+    } catch {
+      /* */
+    }
+    await moveReplace(opts.editedPath, dest)
+    try {
+      await unlink(opts.originalPath)
+    } catch {
+      /* */
+    }
+  }
+
+  try {
+    await rm(dirname(opts.editedPath), { recursive: false })
+  } catch {
+    /* pasta edited pode ter outros ficheiros */
+  }
+
+  return { finalPath: dest, backupPath }
+}
+
+async function remapProgressMainRel(session: number, fromRel: string, toRel: string) {
+  if (fromRel === toRel) return
+  const state = await readLibraryState()
+  const oldPk = fullProgressKey(session, fromRel)
+  const newPk = fullProgressKey(session, toRel)
+  const prog = state.fullProgress[oldPk]
+  if (!prog) return
+  delete state.fullProgress[oldPk]
+  state.fullProgress[newPk] = prog
+  await writeLibraryState(state)
+}
+
+async function applyUseVideoReplace(job: InternalJob, snap: EditorJobSnapshot): Promise<boolean> {
+  const editedPath = expectedEditedOutputPath(snap.filePath, '')
+  if (!existsSync(editedPath)) {
+    pushLine(job, 'meta', '[ERRO] edited\\ não existe — nada substituído.')
+    return false
+  }
+  let outStat
+  try {
+    outStat = await stat(editedPath)
+  } catch {
+    outStat = null
+  }
+  if (!outStat?.isFile() || outStat.size < 1024) {
+    pushLine(job, 'meta', '[ERRO] saída edited inválida — nada substituído.')
+    return false
+  }
+
+  pushLine(job, 'meta', `[REPLACE] a substituir o original por ${basename(editedPath)}…`)
+  try {
+    const { finalPath, backupPath } = await replaceOriginalWithEdited({
+      originalPath: snap.filePath,
+      editedPath,
+    })
+    const newFileRel = toPosixRel(finalPath, snap.sourceRoot)
+    if (snap.session != null) {
+      await remapProgressMainRel(snap.session, snap.fileRel, newFileRel)
+    }
+    snap.newFileRel = newFileRel
+    snap.filePath = finalPath
+    pushLine(job, 'meta', `[BACKUP] original em ${backupPath}`)
+    pushLine(job, 'meta', `[OK] vídeo substituído → ${newFileRel}`)
+    return true
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    pushLine(job, 'stderr', `[FATAL] Falha ao substituir o original: ${msg}`)
+    pushLine(job, 'meta', `[ERRO] edited pode ter ficado em: ${editedPath}`)
+    return false
+  }
+}
+
 async function runEditorExport(
   job: InternalJob,
   projectRoot: string,
@@ -319,7 +479,9 @@ async function runJob(job: InternalJob, projectRoot: string) {
       'meta',
       splitExport
         ? `[INICIO] ${snap.fileRel} · split ${snap.chunkPlans.length} parte(s) · ${snap.speed}x · ${snap.height}px`
-        : `[INICIO] ${snap.fileRel} · modo ${snap.editMode === 'keep' ? 'recortar' : 'excluir'} · ${snap.keepSegments.length} trecho(s) · ${snap.speed}x · ${snap.height}px`,
+        : snap.useVideo
+          ? `[INICIO] ${snap.fileRel} · modo ${snap.editMode === 'keep' ? 'recortar' : 'excluir'} · ${snap.keepSegments.length} trecho(s) · ${snap.speed}x · ${snap.height}px · usar vídeo`
+          : `[INICIO] ${snap.fileRel} · modo ${snap.editMode === 'keep' ? 'recortar' : 'excluir'} · ${snap.keepSegments.length} trecho(s) · ${snap.speed}x · ${snap.height}px`,
     )
 
     let lastExit = 0
@@ -368,7 +530,12 @@ async function runJob(job: InternalJob, projectRoot: string) {
     }
 
     if (lastExit === 0) {
-      setStatus(job, 'done')
+      if (snap.useVideo) {
+        const replaced = await applyUseVideoReplace(job, snap)
+        setStatus(job, replaced ? 'done' : 'failed')
+      } else {
+        setStatus(job, 'done')
+      }
     } else {
       pushLine(job, 'stderr', `[ERRO] exit code ${lastExit}`)
       setStatus(job, 'failed')
@@ -390,6 +557,8 @@ export interface CreateEditorJobOpts {
   projectRoot: string
   sourceRoot: string
   file: { rel: string; path: string }
+  session: number | null
+  useVideo: boolean
   height: number
   speed: EditorSpeed
   force: boolean
@@ -401,15 +570,20 @@ export function createEditorJob(opts: CreateEditorJobOpts): EditorJobSnapshot {
   pruneOldJobs()
   const id = randomUUID()
   const v = opts.validation
+  const splitExport = v.splitExport
+  const useVideo = opts.useVideo && !splitExport
   const snapshot: EditorJobSnapshot = {
     id,
     status: 'running',
     sourceRoot: opts.sourceRoot,
     fileRel: opts.file.rel,
     filePath: opts.file.path,
+    newFileRel: null,
+    session: opts.session,
+    useVideo,
     height: opts.height,
     speed: opts.speed,
-    force: opts.force,
+    force: opts.force || useVideo,
     editMode: v.editMode,
     splitPoints: v.splitPoints,
     excludeSegments: v.excludeSegments,

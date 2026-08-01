@@ -1,9 +1,8 @@
-import { stat } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import { exec, spawn } from 'node:child_process'
 import { dirname, join, normalize } from 'node:path'
 import { promisify } from 'node:util'
 import { createError, readBody } from 'h3'
-import { requireAdminToken } from '../../utils/requireAdmin'
 import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
 import { parseSessionQuery } from '../../utils/videoSession'
 import { resolveSafeUnderRoot } from '../../utils/videoPaths'
@@ -59,28 +58,29 @@ function spawnDetachedOnce(command: string, args: string[], hide = true): Promis
   })
 }
 
-/**
- * Windows: usa exatamente `explorer.exe /select, "<caminho>"`.
- */
-async function spawnExplorerSelect(absPath: string): Promise<void> {
-  const winPath = toWin32ExplorerPath(absPath)
-  const command = `explorer.exe /select, "${winPath}"`
+async function spawnExplorerCommand(command: string): Promise<void> {
   debugLog(LOG, 'windows: exec', { command })
   try {
     await execAsync(command, { windowsHide: true })
   } catch (e: unknown) {
     const ex = e as { code?: unknown; message?: unknown }
     const msg = String(ex?.message ?? '')
-    /**
-     * `explorer.exe` frequentemente devolve exit code != 0 mesmo abrindo corretamente.
-     * Se o padrão for "Command failed", tratamos como sucesso para não mostrar erro falso na UI.
-     */
     if (msg.includes('Command failed')) {
       console.error(LOG, 'windows: explorer retornou "Command failed", mas foi ignorado')
       return
     }
     throw e
   }
+}
+
+async function spawnExplorerSelect(absPath: string): Promise<void> {
+  const winPath = toWin32ExplorerPath(absPath)
+  await spawnExplorerCommand(`explorer.exe /select, "${winPath}"`)
+}
+
+async function spawnExplorerOpenFolder(absDir: string): Promise<void> {
+  const winPath = toWin32ExplorerPath(absDir)
+  await spawnExplorerCommand(`explorer.exe "${winPath}"`)
 }
 
 /** macOS: abre a pasta do vídeo no Finder. */
@@ -121,18 +121,27 @@ async function revealOnLinux(absolutePath: string): Promise<void> {
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
 }
 
-async function revealInOsFileManager(absolutePath: string): Promise<void> {
+async function revealInOsFileManager(absolutePath: string, openAsFolder = false): Promise<void> {
   const p = process.platform
-  debugLog(LOG, 'revealInOsFileManager', { platform: p })
+  debugLog(LOG, 'revealInOsFileManager', { platform: p, openAsFolder })
   if (p === 'win32') {
-    await spawnExplorerSelect(absolutePath)
+    if (openAsFolder) await spawnExplorerOpenFolder(absolutePath)
+    else await spawnExplorerSelect(absolutePath)
     return
   }
   if (p === 'darwin') {
+    if (openAsFolder) {
+      await spawnDetachedOnce('open', [normalize(absolutePath)], false)
+      return
+    }
     await revealInMacosFinder(absolutePath)
     return
   }
   if (p === 'linux') {
+    if (openAsFolder) {
+      await spawnDetachedOnce('xdg-open', [normalize(absolutePath)], false)
+      return
+    }
     await revealOnLinux(absolutePath)
     return
   }
@@ -141,12 +150,7 @@ async function revealInOsFileManager(absolutePath: string): Promise<void> {
 
 export default defineEventHandler(async (event) => {
   const platform = process.platform
-  debugLog(LOG, 'POST recebido', {
-    platform,
-    url: event.path,
-    temVideoAdminToken: Boolean((process.env.VIDEO_ADMIN_TOKEN ?? '').trim()),
-    temNuxtAdminToken: Boolean((process.env.NUXT_ADMIN_TOKEN ?? '').trim()),
-  })
+  debugLog(LOG, 'POST recebido', { platform, url: event.path })
 
   try {
     if (platform !== 'win32' && platform !== 'darwin' && platform !== 'linux') {
@@ -159,9 +163,6 @@ export default defineEventHandler(async (event) => {
     }
 
     const config = useRuntimeConfig(event)
-    requireAdminToken(event)
-    debugLog(LOG, 'token admin verificado OK')
-
     const roots = getVideoRootsFromRuntime(config)
     if (!roots.length) {
       console.error(LOG, 'FALHA: sem roots (video-menu / VIDEO_ROOT)')
@@ -187,11 +188,16 @@ export default defineEventHandler(async (event) => {
     const target = String(raw?.target ?? '')
       .trim()
       .toLowerCase()
-    if (target !== 'main' && target !== 'trailer' && target !== 'preview') {
+    if (
+      target !== 'main' &&
+      target !== 'trailer' &&
+      target !== 'preview' &&
+      target !== 'edited'
+    ) {
       console.error(LOG, 'FALHA: target inválido', { target: raw?.target })
       throw createError({
         statusCode: 400,
-        statusMessage: 'Campo "target" inválido: use "main", "trailer" ou "preview".',
+        statusMessage: 'Campo "target" inválido: use "main", "trailer", "preview" ou "edited".',
       })
     }
 
@@ -220,28 +226,48 @@ export default defineEventHandler(async (event) => {
 
     const root = roots[session]!.trim()
     let absPath: string
+    let openAsFolder = false
     try {
-      absPath = resolveSafeUnderRoot(root, rel)
+      if (target === 'edited') {
+        const slash = rel.lastIndexOf('/')
+        const parentRel = slash >= 0 ? rel.slice(0, slash) : ''
+        const editedRel = parentRel ? `${parentRel}/edited` : 'edited'
+        absPath = resolveSafeUnderRoot(root, editedRel)
+        openAsFolder = true
+        await mkdir(absPath, { recursive: true })
+      } else {
+        absPath = resolveSafeUnderRoot(root, rel)
+      }
     } catch (e) {
-      console.error(LOG, 'FALHA: resolveSafeUnderRoot', { root, rel, erro: errMsg(e) })
+      if (e && typeof e === 'object' && 'statusCode' in e) throw e
+      console.error(LOG, 'FALHA: resolveSafeUnderRoot', { root, rel, target, erro: errMsg(e) })
       throw createError({ statusCode: 400, statusMessage: 'Caminho não autorizado para esta biblioteca.' })
     }
 
-    debugLog(LOG, 'caminho resolvido', { session, target, root, rel, absPath })
+    debugLog(LOG, 'caminho resolvido', { session, target, root, rel, absPath, openAsFolder })
 
     try {
       const st = await stat(absPath)
-      debugLog(LOG, 'stat OK', { size: st.size, isFile: st.isFile() })
+      debugLog(LOG, 'stat OK', { size: st.size, isFile: st.isFile(), isDirectory: st.isDirectory() })
+      if (openAsFolder && !st.isDirectory()) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'O caminho edited existe mas não é uma pasta.',
+        })
+      }
     } catch (e) {
-      console.error(LOG, 'FALHA: ficheiro não existe no disco', { absPath, erro: errMsg(e) })
+      if (e && typeof e === 'object' && 'statusCode' in e) throw e
+      console.error(LOG, 'FALHA: caminho não existe no disco', { absPath, erro: errMsg(e) })
       throw createError({
         statusCode: 404,
-        statusMessage: 'Ficheiro não encontrado na pasta da biblioteca.',
+        statusMessage: openAsFolder
+          ? 'Pasta edited não encontrada na biblioteca.'
+          : 'Ficheiro não encontrado na pasta da biblioteca.',
       })
     }
 
     try {
-      await revealInOsFileManager(absPath)
+      await revealInOsFileManager(absPath, openAsFolder)
     } catch (e) {
       console.error(LOG, 'FALHA: spawn gestor de ficheiros', { absPath, erro: errMsg(e) })
       const msg = e instanceof Error ? e.message : String(e)

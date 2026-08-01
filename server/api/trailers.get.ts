@@ -9,9 +9,10 @@ import {
   scanTrailersCatalogInRoot,
   tagSuggestionsForSession,
 } from '../utils/trailerCatalogScan'
-import { getFastPlaySettingsFromDisk, getVideoRootsFromRuntime } from '../utils/videoMenu'
-import { getResolvedAdminToken } from '../utils/requireAdmin'
+import { getFastPlaySettingsFromDisk, getVideoMenuItems, getVideoRootsFromRuntime } from '../utils/videoMenu'
 import { parseSessionQuery } from '../utils/videoSession'
+import { isTrashLibrarySession } from '../utils/trashLibrary'
+import { requireCatalogUnlock } from '../utils/catalogAccess'
 
 const VIDEO_EXT = new Set(['.mp4', '.mkv', '.avi', '.mov', '.webm', '.m4v', '.wmv'])
 
@@ -79,6 +80,7 @@ async function collectMainOnlyEntries(root: string): Promise<TrailerListEntry[]>
 }
 
 export default defineEventHandler(async (event) => {
+  requireCatalogUnlock(event)
   const config = useRuntimeConfig(event)
   const roots = getVideoRootsFromRuntime(config)
   if (!roots.length) {
@@ -123,7 +125,10 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const adminToken = getResolvedAdminToken(event) ?? ''
+  const menu = getVideoMenuItems(config)
+  if (isTrashLibrarySession(session, menu)) {
+    items = items.filter((e) => e.isFavorite !== true)
+  }
 
   return {
     session,
@@ -133,8 +138,6 @@ export default defineEventHandler(async (event) => {
     catalogMode,
     /** Cliente: só para decidir UI (ex. botão Explorador em Windows). */
     serverPlatform: process.platform,
-    /** `true` quando VIDEO_ADMIN_TOKEN está definido — necessário para `/api/admin/reveal-in-explorer`. */
-    adminRevealExplorer: adminToken.length > 0,
     fastPlay: getFastPlaySettingsFromDisk(),
   }
 })

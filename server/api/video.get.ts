@@ -1,11 +1,13 @@
 import { stat } from 'node:fs/promises'
 import { createError, getQuery } from 'h3'
+import { requireCatalogUnlock } from '../utils/catalogAccess'
 import { streamVideoFile, resolveSafeUnderRoot } from '../utils/videoPaths'
 import { resolveCatalogRelAbsoluteCandidates } from '../utils/trailerNames'
 import { getVideoRootsFromRuntime } from '../utils/videoMenu'
 import { parseSessionQuery } from '../utils/videoSession'
 
 export default defineEventHandler(async (event) => {
+  requireCatalogUnlock(event)
   const config = useRuntimeConfig(event)
   const roots = getVideoRootsFromRuntime(config)
   if (!roots.length) {

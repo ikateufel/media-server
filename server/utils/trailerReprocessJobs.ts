@@ -24,6 +24,7 @@ export interface TrailerReprocessSnapshot {
   status: TrailerReprocessStatus
   session: number
   mainRel: string
+  trailerRel?: string
   title: string
   exitCode: number | null
   startedAt: number
@@ -85,6 +86,26 @@ function setStatus(job: InternalJob, status: TrailerReprocessStatus, exitCode?: 
   if (status !== 'running') job.snapshot.endedAt = Date.now()
   if (exitCode !== undefined) job.snapshot.exitCode = exitCode
   emit(job, { type: 'status', status, exitCode })
+  if (status === 'done' || status === 'failed') {
+    void import('./processJobHistory')
+      .then(({ appendProcessJobHistory, truncateProcessJobLog }) => {
+        const log = truncateProcessJobLog(job.snapshot.lines.map((l) => l.text))
+        return appendProcessJobHistory({
+          kind: 'trailer',
+          status,
+          session: job.snapshot.session,
+          mainRel: job.snapshot.mainRel,
+          ...(job.snapshot.trailerRel ? { trailerRel: job.snapshot.trailerRel } : {}),
+          label: job.snapshot.title || job.snapshot.mainRel,
+          startedAt: job.snapshot.startedAt,
+          endedAt: job.snapshot.endedAt ?? Date.now(),
+          jobId: job.snapshot.id,
+          ...(job.snapshot.error ? { error: job.snapshot.error } : {}),
+          ...(log ? { log } : {}),
+        })
+      })
+      .catch(() => {})
+  }
 }
 
 export function resolveTrailerReprocessVideo(
@@ -162,6 +183,7 @@ export function createTrailerReprocessJob(opts: {
   projectRoot: string
   session: number
   mainRel: string
+  trailerRel?: string
   path: string
   title: string
   trailerParams: TrailerBatParams
@@ -173,6 +195,7 @@ export function createTrailerReprocessJob(opts: {
     status: 'running',
     session: opts.session,
     mainRel: opts.mainRel,
+    ...(opts.trailerRel ? { trailerRel: opts.trailerRel } : {}),
     title: opts.title,
     exitCode: null,
     startedAt: Date.now(),
@@ -202,7 +225,13 @@ export function subscribeTrailerReprocessJob(id: string, listener: Listener): ((
 
 export function startTrailerReprocessFromConfig(
   config: Parameters<typeof getVideoMenuItems>[0],
-  opts: { session: number; mainRel: string; projectRoot: string; trailerParams?: Partial<TrailerBatParams> },
+  opts: {
+    session: number
+    mainRel: string
+    trailerRel?: string
+    projectRoot: string
+    trailerParams?: Partial<TrailerBatParams>
+  },
 ): TrailerReprocessSnapshot {
   const menu = getVideoMenuItems(config)
   const resolved = resolveTrailerReprocessVideo(menu, opts.session, opts.mainRel)
@@ -210,6 +239,7 @@ export function startTrailerReprocessFromConfig(
   return createTrailerReprocessJob({
     projectRoot: opts.projectRoot,
     ...resolved,
+    ...(opts.trailerRel ? { trailerRel: opts.trailerRel } : {}),
     trailerParams,
   })
 }

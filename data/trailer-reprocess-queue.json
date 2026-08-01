@@ -1,0 +1,80 @@
+{
+  "items": [
+    {
+      "id": "0e6e36e2-5c2a-463a-a713-d9f986f50d19",
+      "session": 9,
+      "mainRel": "Of5HlVpciopTlZC3QJuu4SBF.mp4",
+      "trailerRel": "trailers/Of5HlVpciopTlZC3QJuu4SBF.mp4",
+      "label": "Of5HlVpciopTlZC3QJuu4SBF.mp4",
+      "params": {
+        "collect": "minuto15",
+        "pctSeg": 15,
+        "pctStep": 5,
+        "longMinSec": 3600,
+        "longStepSec": 300,
+        "tailSec": 40,
+        "maxOutSec": 120,
+        "speed": 1.5,
+        "heightPx": 720,
+        "useNvenc": "auto",
+        "nvencPreset": "p4"
+      },
+      "status": "done",
+      "jobId": "37635c0a-7087-4e2b-a6b9-602f9597e137",
+      "createdAt": 1785087790788,
+      "startedAt": 1785087790789,
+      "endedAt": 1785087796281
+    },
+    {
+      "id": "9c39fb1c-1407-42c5-87d3-634dcd7016e8",
+      "session": 9,
+      "mainRel": "Of5HlVpciopTlZC3QJuu4SBF.mp4",
+      "trailerRel": "trailers/Of5HlVpciopTlZC3QJuu4SBF.mp4",
+      "label": "Of5HlVpciopTlZC3QJuu4SBF.mp4",
+      "params": {
+        "collect": "minuto20",
+        "pctSeg": 15,
+        "pctStep": 5,
+        "longMinSec": 3600,
+        "longStepSec": 300,
+        "tailSec": 40,
+        "maxOutSec": 120,
+        "speed": 1.5,
+        "heightPx": 720,
+        "useNvenc": "auto",
+        "nvencPreset": "p4"
+      },
+      "status": "done",
+      "jobId": "75c87251-f6e3-4344-8264-c54f95113621",
+      "createdAt": 1785087836547,
+      "startedAt": 1785087836548,
+      "endedAt": 1785087841365
+    },
+    {
+      "id": "92ec06fa-fedd-497b-9ccf-e1cf3a901223",
+      "session": 9,
+      "mainRel": "British.Sluts.with.Glasses.2023.720p.mp4",
+      "trailerRel": "trailers/British.Sluts.with.Glasses.2023.720p.mp4",
+      "label": "British.Sluts.with.Glasses.2023.720p.mp4",
+      "params": {
+        "collect": "minuto20",
+        "pctSeg": 15,
+        "pctStep": 5,
+        "longMinSec": 3600,
+        "longStepSec": 300,
+        "tailSec": 40,
+        "maxOutSec": 120,
+        "speed": 1.5,
+        "heightPx": 720,
+        "useNvenc": "auto",
+        "nvencPreset": "p4"
+      },
+      "status": "done",
+      "jobId": "7f7f8d47-2249-4733-8e02-4400c5731101",
+      "createdAt": 1785091185744,
+      "startedAt": 1785091185745,
+      "endedAt": 1785091190786
+    }
+  ],
+  "updatedAt": 1785091190786
+}

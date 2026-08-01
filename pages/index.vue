@@ -7,6 +7,27 @@
       'layout--theater': theaterMode && !isTvLayout,
     }"
   >
+    <div v-if="catalogGateVisible" class="catalog-gate" role="dialog" aria-modal="true" aria-labelledby="catalog-gate-title">
+      <form v-if="!catalogGateChecking" class="catalog-gate-card" @submit.prevent="submitCatalogUnlock">
+        <h1 id="catalog-gate-title" class="catalog-gate-title">Catálogo bloqueado</h1>
+        <p class="catalog-gate-hint">Introduza a senha para aceder aos vídeos neste browser.</p>
+        <input
+          ref="catalogGateInputRef"
+          v-model="catalogGatePassword"
+          type="password"
+          class="catalog-gate-input"
+          autocomplete="current-password"
+          placeholder="Senha"
+          :disabled="catalogGateBusy"
+        />
+        <p v-if="catalogGateError" class="catalog-gate-error" role="alert">{{ catalogGateError }}</p>
+        <button type="submit" class="catalog-gate-btn" :disabled="catalogGateBusy || !catalogGatePassword.trim()">
+          {{ catalogGateBusy ? 'A verificar…' : 'Desbloquear' }}
+        </button>
+      </form>
+      <p v-else class="catalog-gate-hint">A verificar acesso…</p>
+    </div>
+
     <div v-if="errorMsg" class="error" role="alert">{{ errorMsg }}</div>
 
     <!-- Modo TV: vídeo + tags de pasta (centro) + rail lateral só miniaturas. -->
@@ -25,7 +46,7 @@
           @loadedmetadata="onTvMinimalLoadedMetadata"
           @timeupdate="onTvMinimalTimeUpdate"
           @seeked="onTvMinimalSeeked"
-          @play="syncMainVideoPausedForUi"
+          @play="onTvMinimalPlay"
           @pause="syncMainVideoPausedForUi"
           @ended="onTvMinimalEnded"
           @ratechange="syncRateFromVideo"
@@ -96,6 +117,17 @@
                 @click="tvMinimalNext"
               >
                 ▶
+              </button>
+              <button
+                v-if="sessionIndex === RECENTS_SESSION_ID && focusedIndex !== null"
+                type="button"
+                class="tv-minimal-btn tv-minimal-btn--remove-destaques"
+                :disabled="recentsMutationBusy"
+                title="Remover da lista Destaques (não apaga ficheiros)"
+                aria-label="Tirar dos Destaques"
+                @click="removeFocusedFromRecents"
+              >
+                Tirar
               </button>
             </div>
             <div
@@ -271,7 +303,7 @@
                 @loadedmetadata="onTvStageLoadedMetadata"
                 @timeupdate="onTvStageTimeUpdate"
                 @seeked="onTvStageSeeked"
-                @play="syncMainVideoPausedForUi"
+                @play="onTvStagePlay"
                 @pause="syncMainVideoPausedForUi"
                 @ended="onTvStageEnded"
                 @ratechange="syncRateFromVideo"
@@ -344,6 +376,8 @@
                   controls
                   :preload="videoPreloadAttr"
                   @loadeddata="onPreviewLoaded"
+                  @play="onPreviewPlay"
+                  @timeupdate="onPreviewTimeUpdate"
                   @ended="onPreviewEnded"
                   @ratechange="syncRateFromVideo"
                   @volumechange="onPreviewTrailerVolumeChange"
@@ -438,6 +472,8 @@
               controls
               :preload="videoPreloadAttr"
               @loadeddata="onPreviewLoaded"
+              @play="onPreviewPlay"
+              @timeupdate="onPreviewTimeUpdate"
               @ended="onPreviewEnded"
               @ratechange="syncRateFromVideo"
               @volumechange="onPreviewTrailerVolumeChange"
@@ -515,6 +551,92 @@
           <div v-else class="preview-placeholder">Escolha um título na lista.</div>
         </div>
 
+        <div
+          v-if="shrinkInPlacePanelVisible"
+          class="job-progress-panel"
+          :class="{ 'job-progress-panel--failed': shrinkInPlaceFailed }"
+          role="status"
+          aria-live="polite"
+          :aria-busy="shrinkInPlaceBusy"
+        >
+          <div class="job-progress-head">
+            <span class="job-progress-title">
+              {{
+                shrinkInPlaceBusy
+                  ? shrinkQueue.length > 1
+                    ? `Shrink fila ${shrinkQueueDoneCount + 1}/${shrinkQueue.length}`
+                    : 'Shrink em curso'
+                  : shrinkInPlaceLastStatus || (shrinkInPlaceFailed ? 'Shrink falhou' : 'Shrink')
+              }}
+            </span>
+            <span v-if="shrinkInPlaceFileLabel" class="job-progress-file" :title="shrinkInPlaceFileLabel">
+              {{ shrinkInPlaceFileLabel }}
+            </span>
+            <button
+              v-if="shrinkInPlaceLogLines.length"
+              type="button"
+              class="job-progress-copy"
+              title="Copiar log completo"
+              @click="copyShrinkInPlaceLog"
+            >
+              Copiar log
+            </button>
+            <button
+              v-if="shrinkInPlaceLogLines.length"
+              type="button"
+              class="job-progress-copy"
+              :title="shrinkInPlaceLogCollapsed ? 'Mostrar log' : 'Recolher log'"
+              :aria-expanded="!shrinkInPlaceLogCollapsed"
+              @click="shrinkInPlaceLogCollapsed = !shrinkInPlaceLogCollapsed"
+            >
+              {{ shrinkInPlaceLogCollapsed ? 'Mostrar log' : 'Recolher log' }}
+            </button>
+            <button
+              v-if="!shrinkInPlaceBusy"
+              type="button"
+              class="job-progress-dismiss"
+              title="Fechar painel"
+              aria-label="Fechar painel de progresso"
+              @click="resetShrinkInPlaceProgressUi()"
+            >
+              ×
+            </button>
+          </div>
+          <div
+            class="job-progress-track"
+            :class="{
+              'job-progress-track--indeterminate':
+                shrinkInPlaceBusy && (shrinkInPlacePct === null || shrinkInPlacePct < 90),
+            }"
+          >
+            <div
+              class="job-progress-fill"
+              :style="
+                shrinkInPlacePct !== null && !(shrinkInPlaceBusy && shrinkInPlacePct < 90)
+                  ? { width: `${shrinkInPlacePct}%` }
+                  : undefined
+              "
+            />
+          </div>
+          <p v-if="shrinkInPlaceErrorSummary" class="job-progress-error">{{ shrinkInPlaceErrorSummary }}</p>
+          <p class="job-progress-line">{{ shrinkInPlaceLatestLine || 'A iniciar…' }}</p>
+          <div
+            v-if="shrinkInPlaceLogLines.length && !shrinkInPlaceLogCollapsed"
+            ref="shrinkInPlaceLogEl"
+            class="job-progress-log"
+            aria-label="Log do shrink"
+          >
+            <div
+              v-for="(row, i) in shrinkInPlaceLogLines"
+              :key="`${i}-${row.text.slice(0, 40)}`"
+              class="job-progress-log-line"
+              :class="`job-progress-log-line--${row.kind}`"
+            >
+              {{ row.text }}
+            </div>
+          </div>
+        </div>
+
         <div v-if="!playerUrl && previewUrl" class="toolbar toolbar--trailer toolbar--trailer-compact">
           <div class="toolbar-trailer-icons">
             <button
@@ -531,6 +653,30 @@
                 <path d="m6.2 5.3 3.1 3.9" />
                 <path d="m12.4 3.4 3.1 4" />
                 <path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+              </svg>
+            </button>
+            <button
+              v-if="selectedEntry && !isTvLayout"
+              type="button"
+              class="icon-tool icon-tool--tag"
+              :class="{ 'icon-tool--on': trailerTagPanelOpen && !trailerTagsHidden }"
+              :aria-expanded="trailerTagPanelOpen && !trailerTagsHidden"
+              :title="trailerTagsHidden ? 'Mostrar tags' : 'Adicionar tag'"
+              :aria-label="trailerTagsHidden ? 'Mostrar tags' : 'Adicionar tag'"
+              @click="showTrailerTagsAndToggleInput"
+            >
+              <svg
+                class="icon-svg"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83Z" />
+                <circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none" />
               </svg>
             </button>
             <button
@@ -565,26 +711,24 @@
               </svg>
             </button>
             <button
-              v-if="selectedEntry"
+              v-if="destaqueToolbarEntry"
               type="button"
               class="icon-tool icon-tool--recents"
-              :class="{ 'icon-tool--recents-on': isPlaybackTitleInRecentList(selectedEntry) }"
+              :class="{ 'icon-tool--recents-on': destaqueToolbarActive }"
               :disabled="recentsMutationBusy"
               :title="
-                isPlaybackTitleInRecentList(selectedEntry)
+                destaqueToolbarActive
                   ? 'Remover da lista «Destaques»'
                   : 'Adicionar a «Destaques» (lista no topo do menu)'
               "
               :aria-label="
-                isPlaybackTitleInRecentList(selectedEntry)
-                  ? 'Remover de Destaques'
-                  : 'Adicionar a Destaques'
+                destaqueToolbarActive ? 'Remover de Destaques' : 'Adicionar a Destaques'
               "
-              :aria-pressed="isPlaybackTitleInRecentList(selectedEntry)"
+              :aria-pressed="destaqueToolbarActive"
               @click="toggleCurrentTitleRecents"
             >
               <svg
-                v-if="!isPlaybackTitleInRecentList(selectedEntry)"
+                v-if="!destaqueToolbarActive"
                 class="icon-svg"
                 viewBox="0 0 24 24"
                 aria-hidden="true"
@@ -628,10 +772,10 @@
               </svg>
             </button>
             <button
-              v-if="editorOpenEntry"
+              v-if="editorDesktopEligible && editorOpenEntry"
               type="button"
               class="icon-tool icon-tool--editor"
-              title="Editar vídeo completo (abre o editor com este ficheiro)"
+              title="Editar vídeo completo (abre o editor — backup e substitui o original)"
               aria-label="Abrir no editor de vídeo"
               @click="openCurrentVideoInEditor"
             >
@@ -645,8 +789,8 @@
               type="button"
               class="icon-tool icon-tool--trailer-redo"
               :class="{ 'icon-tool--busy': trailerReprocessBusy }"
-              :disabled="trailerReprocessBusy"
-              title="Reprocessar trailer deste vídeo (abre opções do trailer.bat)"
+              :disabled="shrinkInPlaceBusy"
+              title="Reprocessar trailer deste vídeo (fila — opções do trailer.bat)"
               aria-label="Reprocessar trailer"
               @click="openTrailerReprocessDialog"
             >
@@ -655,6 +799,25 @@
                 <path d="M3 3v5h5" />
                 <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
                 <path d="M16 16h5v5" />
+              </svg>
+            </button>
+            <button
+              v-if="shrinkInPlaceEligible && editorOpenEntry"
+              type="button"
+              class="icon-tool icon-tool--shrink"
+              :class="{ 'icon-tool--busy': shrinkInPlaceBusy }"
+              :disabled="trailerReprocessBusy"
+              title="Shrink do vídeo completo (fila — substitui o original)"
+              aria-label="Shrink do vídeo completo"
+              @click="openShrinkInPlaceDialog"
+            >
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 22h2a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v3" />
+                <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+                <path d="M10 20v-1a2 2 0 1 1 4 0v1a2 2 0 1 1-4 0Z" />
+                <path d="M12 7v1" />
+                <path d="M12 11v1" />
+                <path d="M12 15v1" />
               </svg>
             </button>
             <button type="button" class="icon-tool" title="Trailer anterior" @click="goToPrevTrailer">
@@ -734,30 +897,6 @@
                 <path d="M3 6h18M8 6V4h8v2m2 0v14a2 2 0 01-2 2H8a2 2 0 01-2-2V6h12M10 11v6M14 11v6" stroke-linecap="round" />
               </svg>
             </button>
-            <button
-              v-if="focusedIndex !== null && selectedEntry && !isTvLayout"
-              type="button"
-              class="icon-tool"
-              :class="{ 'icon-tool--on': trailerTagPanelOpen }"
-              :aria-expanded="trailerTagPanelOpen"
-              title="Adicionar tag"
-              aria-label="Adicionar tag"
-              @click="trailerTagPanelOpen = !trailerTagPanelOpen"
-            >
-              <svg
-                class="icon-svg"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83Z" />
-                <circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none" />
-              </svg>
-            </button>
             <div class="rate-block rate-block--inline">
               <label for="rate-select-trailer" class="rate-label rate-label--compact">Velocidade</label>
               <select
@@ -800,10 +939,18 @@
             </p>
           </div>
           <div
-            v-if="selectedEntry && !isTvLayout"
+            v-if="selectedEntry && !isTvLayout && !trailerTagsHidden"
             class="toolbar-tags-panel"
             :class="{ 'toolbar-tags-panel--input-open': trailerTagPanelOpen }"
           >
+            <div class="toolbar-tags-panel-actions">
+              <button type="button" class="tag-panel-action-btn" @click="openTrailerTagInput">
+                Adicionar tags
+              </button>
+              <button type="button" class="tag-panel-action-btn" @click="hideTrailerTags">
+                Esconder tags
+              </button>
+            </div>
             <div v-show="trailerTagPanelOpen" class="tag-input-row">
               <input
                 id="tag-input-main"
@@ -898,26 +1045,24 @@
               </svg>
             </button>
             <button
-              v-if="mainVideoEntry"
+              v-if="destaqueToolbarEntry && playerUrl"
               type="button"
               class="icon-tool icon-tool--recents"
-              :class="{ 'icon-tool--recents-on': isPlaybackTitleInRecentList(mainVideoEntry) }"
+              :class="{ 'icon-tool--recents-on': destaqueToolbarActive }"
               :disabled="recentsMutationBusy"
               :title="
-                isPlaybackTitleInRecentList(mainVideoEntry)
+                destaqueToolbarActive
                   ? 'Remover da lista «Destaques»'
                   : 'Adicionar a «Destaques» (lista no topo do menu)'
               "
               :aria-label="
-                isPlaybackTitleInRecentList(mainVideoEntry)
-                  ? 'Remover de Destaques'
-                  : 'Adicionar a Destaques'
+                destaqueToolbarActive ? 'Remover de Destaques' : 'Adicionar a Destaques'
               "
-              :aria-pressed="isPlaybackTitleInRecentList(mainVideoEntry)"
+              :aria-pressed="destaqueToolbarActive"
               @click="toggleCurrentTitleRecents"
             >
               <svg
-                v-if="!isPlaybackTitleInRecentList(mainVideoEntry)"
+                v-if="!destaqueToolbarActive"
                 class="icon-svg"
                 viewBox="0 0 24 24"
                 aria-hidden="true"
@@ -961,10 +1106,10 @@
               </svg>
             </button>
             <button
-              v-if="editorOpenEntry"
+              v-if="editorDesktopEligible && editorOpenEntry"
               type="button"
               class="icon-tool icon-tool--editor"
-              title="Editar vídeo completo (abre o editor com este ficheiro)"
+              title="Editar vídeo completo (abre o editor — backup e substitui o original)"
               aria-label="Abrir no editor de vídeo"
               @click="openCurrentVideoInEditor"
             >
@@ -978,8 +1123,8 @@
               type="button"
               class="icon-tool icon-tool--trailer-redo"
               :class="{ 'icon-tool--busy': trailerReprocessBusy }"
-              :disabled="trailerReprocessBusy"
-              title="Reprocessar trailer deste vídeo (abre opções do trailer.bat)"
+              :disabled="shrinkInPlaceBusy"
+              title="Reprocessar trailer deste vídeo (fila — opções do trailer.bat)"
               aria-label="Reprocessar trailer"
               @click="openTrailerReprocessDialog"
             >
@@ -988,6 +1133,25 @@
                 <path d="M3 3v5h5" />
                 <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
                 <path d="M16 16h5v5" />
+              </svg>
+            </button>
+            <button
+              v-if="shrinkInPlaceEligible && editorOpenEntry"
+              type="button"
+              class="icon-tool icon-tool--shrink"
+              :class="{ 'icon-tool--busy': shrinkInPlaceBusy }"
+              :disabled="trailerReprocessBusy"
+              title="Shrink do vídeo completo (fila — substitui o original)"
+              aria-label="Shrink do vídeo completo"
+              @click="openShrinkInPlaceDialog"
+            >
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 22h2a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v3" />
+                <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+                <path d="M10 20v-1a2 2 0 1 1 4 0v1a2 2 0 1 1-4 0Z" />
+                <path d="M12 7v1" />
+                <path d="M12 11v1" />
+                <path d="M12 15v1" />
               </svg>
             </button>
             <button
@@ -1124,6 +1288,35 @@
               @keydown.enter.prevent="runSearchSession"
             />
             <button type="button" class="catalog-search-btn" @click="runSearchSession">Buscar</button>
+          </div>
+          <div
+            v-else-if="!catalogGridCollapsed && !searchSessionActive"
+            class="catalog-search-row catalog-search-row--folder"
+          >
+            <select
+              v-model="folderFilterMode"
+              class="catalog-search-mode"
+              aria-label="Modo do filtro nesta pasta"
+            >
+              <option value="tags">Tags</option>
+              <option value="files">Arquivos</option>
+            </select>
+            <input
+              v-model="folderFilterInput"
+              class="catalog-search-input"
+              type="search"
+              placeholder="Filtrar tags / nomes nesta pasta"
+              aria-label="Filtrar catálogo só nesta pasta"
+              @keydown.escape.prevent="folderFilterInput = ''"
+            />
+            <button
+              v-if="folderFilterInput.trim()"
+              type="button"
+              class="catalog-search-btn"
+              @click="folderFilterInput = ''"
+            >
+              Limpar
+            </button>
           </div>
           <div v-if="searchSessionActive && searchSessionError" class="catalog-search-error">
             {{ searchSessionError }}
@@ -1394,6 +1587,15 @@
           <button type="button" class="empty-hint-link" @click="clearCatalogTagFilter">Mostrar todos</button>
         </div>
         <div
+          v-else-if="folderFilterInput.trim() && !entries.length && !loading && fullEntries.length"
+          class="empty-hint"
+        >
+          Nenhum título nesta pasta para
+          <code class="code">{{ folderFilterInput.trim() }}</code>
+          ({{ folderFilterMode === 'tags' ? 'tags' : 'arquivos' }}).
+          <button type="button" class="empty-hint-link" @click="folderFilterInput = ''">Limpar filtro</button>
+        </div>
+        <div
           v-else-if="catalogOriginFilter && !entries.length && !loading && fullEntries.length"
           class="empty-hint"
         >
@@ -1436,6 +1638,13 @@
           Ainda não há títulos em Destaques. No trailer ou no vídeo completo, usa o botão do <strong>olho</strong>
           na barra para adicionar aqui.
         </div>
+        <div v-else-if="sessionIndex === SURPRESA_SESSION_ID && !entries.length && !loading" class="empty-hint">
+          Nenhuma surpresa disponível — só entram vídeos totalmente inéditos. Um título sai da lista quando o
+          <strong>trailer chega ao fim</strong> (trailer visto).
+        </div>
+        <div v-else-if="sessionIndex === LAST_VIEWED_SESSION_ID && !entries.length && !loading" class="empty-hint">
+          Ainda não reproduziu nenhum trailer. Toque um título noutra pasta (mesmo que pouco) para aparecer aqui (últimos {{ LAST_VIEWED_LIMIT }}). Reproduzir dentro desta lista não altera a ordem.
+        </div>
         <div v-else-if="!entries.length && !loading" class="empty-hint">
           Nenhum trailer em <code class="code">trailers/</code> desta sessão (previews opcionais em <code class="code">preview/</code>) ou VIDEO_ROOT mal configurado
           (uma pasta, várias com <code class="code">|</code>, ou JSON array).
@@ -1454,26 +1663,38 @@
               :style="{ height: `${tvGridPaddingTopPx}px` }"
               aria-hidden="true"
             />
+            <template
+              v-for="item in catalogGridDisplayItems"
+              :key="
+                item.kind === 'folder-header'
+                  ? `folder-${item.sessionId}`
+                  : `${libSession(item.entry)}:${item.entry.trailerRel}`
+              "
+            >
             <div
-              v-for="gridRow in catalogGridRenderItems"
-              :key="`${libSession(gridRow.entry)}:${gridRow.entry.trailerRel}`"
+              v-if="item.kind === 'folder-header'"
+              class="grid-folder-header"
+              role="presentation"
+              :aria-label="`Pasta ${item.label}`"
+            >
+              <span class="grid-folder-header-label">{{ item.label }}</span>
+              <span class="grid-folder-header-line" aria-hidden="true" />
+            </div>
+            <div
+              v-else
               class="grid-tile"
               role="group"
-              :data-trailer-rel="gridRow.entry.trailerRel"
+              :data-trailer-rel="item.entry.trailerRel"
               :class="{
-                'grid-tile--selected': focusedIndex === gridRow.index,
-                'grid-tile--full': activeIndex === gridRow.index,
-                'grid-tile--no-main': !gridRow.entry.hasMain,
-                'grid-tile--fav': gridRow.entry.isFavorite,
+                'grid-tile--selected': focusedIndex === item.index,
+                'grid-tile--full': activeIndex === item.index,
+                'grid-tile--no-main': !item.entry.hasMain,
+                'grid-tile--fav': item.entry.isFavorite,
                 'grid-tile--in-destaques':
-                  sessionIndex !== RECENTS_SESSION_ID && isPlaybackTitleInRecentList(gridRow.entry),
+                  sessionIndex !== RECENTS_SESSION_ID && isPlaybackTitleInRecentList(item.entry),
               }"
-              :title="
-                sessionIndex === RECENTS_SESSION_ID
-                  ? `Destaques · ${libraryFolderLabel(libSession(gridRow.entry))} · ${gridRow.entry.mainFilename} · ${formatSize(gridRow.entry.trailerSizeBytes)}`
-                  : `${gridRow.entry.mainFilename} · ${formatSize(gridRow.entry.trailerSizeBytes)}`
-              "
-              @pointerdown="onGridTileChromePointerDown(gridRow.index, $event)"
+              :title="catalogGridTileTitle(item.entry)"
+              @pointerdown="onGridTileChromePointerDown(item.index, $event)"
               @pointerup="onGridTileChromePointerUp"
               @pointerleave="onGridTileChromePointerUp"
               @pointercancel="onGridTileChromePointerUp"
@@ -1481,12 +1702,12 @@
               <button
                 type="button"
                 class="fav-btn fav-btn--tile"
-                :class="{ 'fav-btn--on': gridRow.entry.isFavorite }"
-                :aria-pressed="!!gridRow.entry.isFavorite"
-                :title="gridRow.entry.isFavorite ? 'Retirar dos favoritos' : 'Favorito (sobe na lista)'"
-                @click.stop="toggleFavoriteAtIndex(gridRow.index, { grid: true })"
+                :class="{ 'fav-btn--on': item.entry.isFavorite }"
+                :aria-pressed="!!item.entry.isFavorite"
+                :title="item.entry.isFavorite ? 'Retirar dos favoritos' : 'Favorito'"
+                @click.stop="toggleFavoriteAtIndex(item.index, { grid: true })"
               >
-                {{ gridRow.entry.isFavorite ? '★' : '☆' }}
+                {{ item.entry.isFavorite ? '★' : '☆' }}
               </button>
               <button
                 v-if="sessionIndex === RECENTS_SESSION_ID"
@@ -1495,7 +1716,7 @@
                 :disabled="recentsMutationBusy"
                 title="Remover só desta lista Destaques (não apaga ficheiros)"
                 aria-label="Remover de Destaques"
-                @click.stop="removeFromRecentsAtIndex(gridRow.index)"
+                @click.stop="removeFromRecentsAtIndex(item.index)"
               >
                 <svg class="grid-tile-remove-recents-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round">
                   <path
@@ -1505,7 +1726,7 @@
                 </svg>
               </button>
               <span
-                v-if="sessionIndex !== RECENTS_SESSION_ID && isPlaybackTitleInRecentList(gridRow.entry)"
+                v-if="sessionIndex !== RECENTS_SESSION_ID && isPlaybackTitleInRecentList(item.entry)"
                 class="grid-tile-destaques-eye"
                 title="Na lista Destaques"
                 aria-label="Na lista Destaques"
@@ -1525,7 +1746,7 @@
                 </svg>
               </span>
               <span
-                v-if="isEntryMemorable(gridRow.entry)"
+                v-if="isEntryMemorable(item.entry)"
                 class="watch-badge watch-badge--memorable"
                 title="Memorável"
                 aria-label="Memorável"
@@ -1540,7 +1761,7 @@
                 </svg>
               </span>
               <span
-                v-else-if="isEntryCompleted(gridRow.entry)"
+                v-else-if="isEntryCompleted(item.entry)"
                 class="watch-badge watch-badge--done"
                 title="Já visto até ao fim"
                 aria-label="Já visto até ao fim"
@@ -1550,9 +1771,9 @@
                 </svg>
               </span>
               <span
-                v-else-if="isEntryPartiallyWatched(gridRow.entry)"
+                v-else-if="isEntryPartiallyWatched(item.entry)"
                 class="watch-badge watch-badge--partial"
-                :title="`Visto parcialmente (${formatWatchedSeconds(gridRow.entry.watchedSeconds)})`"
+                :title="`Visto parcialmente (${formatWatchedSeconds(item.entry.watchedSeconds)})`"
                 aria-label="Visto parcialmente"
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1561,7 +1782,7 @@
                 </svg>
               </span>
               <span
-                v-else-if="isEntryTrailerWatched(gridRow.entry)"
+                v-else-if="isEntryTrailerWatched(item.entry)"
                 class="watch-badge watch-badge--trailer"
                 title="Trailer já visto até ao fim"
                 aria-label="Trailer já visto"
@@ -1572,50 +1793,52 @@
                 </svg>
               </span>
               <div
-                v-if="gridRow.entry.previewRel || gridRow.entry.trailerRel"
+                v-if="item.entry.previewRel || item.entry.trailerRel"
                 class="grid-tile-thumb"
                 role="button"
                 tabindex="0"
                 :aria-label="
-                  gridInlinePreviewIndex === gridRow.index
-                    ? `Pré-visualização de ${gridRow.entry.label}. Toque outra vez para o trailer no palco.`
-                    : `Miniatura de ${gridRow.entry.label}. Toque para substituir pelo preview em vídeo.`
+                  gridInlinePreviewIndex === item.index
+                    ? `Pré-visualização de ${item.entry.label}. Toque outra vez para o trailer no palco.`
+                    : `Miniatura de ${item.entry.label}. Toque para substituir pelo preview em vídeo.`
                 "
-                @click.stop="onCatalogThumbClick(gridRow.index)"
-                @keydown.enter.prevent.stop="onCatalogThumbClick(gridRow.index)"
-                @keydown.space.prevent.stop="onCatalogThumbClick(gridRow.index)"
+                @click.stop="onCatalogThumbClick(item.index)"
+                @keydown.enter.prevent.stop="onCatalogThumbClick(item.index)"
+                @keydown.space.prevent.stop="onCatalogThumbClick(item.index)"
               >
                 <video
                   v-if="
                     catalogThumbInlineVideo &&
-                    isDedicatedPreviewVideoRel(gridRow.entry.previewRel) &&
-                    gridInlinePreviewIndex === gridRow.index
+                    isDedicatedPreviewVideoRel(item.entry.previewRel) &&
+                    gridInlinePreviewIndex === item.index
                   "
                   class="grid-inline-preview-video"
-                  :src="apiVideoUrl(gridRow.entry.previewRel!, libSession(gridRow.entry))"
+                  :src="apiVideoUrl(item.entry.previewRel!, libSession(item.entry))"
                   :muted="previewTrailerMuted"
                   playsinline
                   :preload="videoPreloadAttr"
                   tabindex="-1"
                   @loadeddata="onGridInlinePreviewLoaded"
+                  @play="onGridInlinePreviewPlay"
+                  @timeupdate="onGridInlinePreviewTimeUpdate"
                 />
                 <CatalogFrameStrip
                   v-else
-                  :preview-rel="gridRow.entry.previewRel ?? gridRow.entry.trailerRel"
-                  :session-index="libSession(gridRow.entry)"
+                  :preview-rel="item.entry.previewRel ?? item.entry.trailerRel"
+                  :session-index="libSession(item.entry)"
                   :max-slots="catalogThumbMaxSlots"
                 />
                 <button
                   v-if="
                     catalogThumbInlineVideo &&
-                    isDedicatedPreviewVideoRel(gridRow.entry.previewRel) &&
-                    gridInlinePreviewIndex === gridRow.index
+                    isDedicatedPreviewVideoRel(item.entry.previewRel) &&
+                    gridInlinePreviewIndex === item.index
                   "
                   type="button"
                   class="grid-tile-maxi"
                   title="Miniaturas em ecrã inteiro"
                   aria-label="Miniaturas em ecrã inteiro"
-                  @click.stop="openCatalogGalleryDialog(gridRow.index)"
+                  @click.stop="openCatalogGalleryDialog(item.index)"
                 >
                   <svg class="grid-tile-maxi-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M9 3H5a2 2 0 00-2 2v4M21 9V5a2 2 0 00-2-2h-4M15 21h4a2 2 0 002-2v-4M3 15v4a2 2 0 002 2h4" stroke-linecap="round" />
@@ -1630,41 +1853,51 @@
                 class="grid-tile-select"
                 :aria-label="
                   sessionIndex === RECENTS_SESSION_ID
-                    ? `Escolher trailer ${gridRow.entry.label} em Destaques, origem ${libraryFolderLabel(libSession(gridRow.entry))}`
-                    : `Escolher trailer ${gridRow.entry.label}`
+                    ? `Escolher trailer ${item.entry.label} em ${libraryFolderLabel(libSession(item.entry))}`
+                    : isAggregatedLibrarySession()
+                      ? `Escolher trailer ${item.entry.label} em ${aggregatedListTagForSession()}, origem ${libraryFolderLabel(libSession(item.entry))}`
+                      : `Escolher trailer ${item.entry.label}`
                 "
-                @click="onListItemClick(gridRow.index)"
+                @click="onListItemClick(item.index)"
               >
                 <span
-                  v-if="sessionIndex === RECENTS_SESSION_ID"
+                  v-if="showCatalogTileOriginMeta"
                   class="grid-tile-recents-meta"
-                  :title="`Lista Destaques · vídeo da biblioteca «${libraryFolderLabel(libSession(gridRow.entry))}»`"
-                >
-                  <span class="grid-tile-recents-tag">Destaques</span>
-                  <span class="grid-tile-recents-lib">{{ libraryFolderLabel(libSession(gridRow.entry)) }}</span>
-                </span>
-                <span class="grid-tile-label">{{ gridRow.entry.label }}</span>
-                <span v-if="!gridRow.entry.hasMain" class="badge badge--tile">sem completo</span>
-                <span
-                  v-if="(gridRow.entry.tags?.length ?? 0) > 0"
-                  class="grid-tile-tags"
-                  :title="(gridRow.entry.tags ?? []).join(', ')"
+                  :title="
+                    sessionIndex === RECENTS_SESSION_ID
+                      ? `Origem: biblioteca «${libraryFolderLabel(libSession(item.entry))}»`
+                      : `Lista ${aggregatedListTagForSession()} · vídeo da biblioteca «${libraryFolderLabel(libSession(item.entry))}»`
+                  "
                 >
                   <span
-                    v-for="t in (gridRow.entry.tags ?? []).slice(0, 2)"
+                    v-if="sessionIndex !== RECENTS_SESSION_ID"
+                    class="grid-tile-recents-tag"
+                  >{{ aggregatedListTagForSession() }}</span>
+                  <span class="grid-tile-recents-lib">{{ libraryFolderLabel(libSession(item.entry)) }}</span>
+                </span>
+                <span class="grid-tile-label">{{ item.entry.label }}</span>
+                <span v-if="!item.entry.hasMain" class="badge badge--tile">sem completo</span>
+                <span
+                  v-if="(item.entry.tags?.length ?? 0) > 0"
+                  class="grid-tile-tags"
+                  :title="(item.entry.tags ?? []).join(', ')"
+                >
+                  <span
+                    v-for="t in (item.entry.tags ?? []).slice(0, 2)"
                     :key="t"
                     class="grid-tile-tag"
                     :class="{ 'grid-tile-tag--active': catalogTagFilter === t }"
                     >{{ t }}</span
                   >
                   <span
-                    v-if="(gridRow.entry.tags ?? []).length > 2"
+                    v-if="(item.entry.tags ?? []).length > 2"
                     class="grid-tile-tag grid-tile-tag--more"
-                    >+{{ (gridRow.entry.tags ?? []).length - 2 }}</span
+                    >+{{ (item.entry.tags ?? []).length - 2 }}</span
                   >
                 </span>
               </button>
             </div>
+            </template>
             <div
               v-if="isTvLayout && tvGridPaddingBottomPx > 0"
               class="tv-grid-spacer"
@@ -1771,6 +2004,34 @@
               >
                 <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
                 <circle cx="12" cy="12" r="3.5" />
+              </svg>
+              <svg
+                v-if="s.id === SURPRESA_SESSION_ID"
+                class="session-menu-item-eye"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M9.5 2.5l1.5 3.5 3.5 1.5-3.5 1.5-1.5 3.5-1.5-3.5-3.5-1.5 3.5-1.5z" />
+                <path d="M18.5 12.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" />
+              </svg>
+              <svg
+                v-if="s.id === LAST_VIEWED_SESSION_ID"
+                class="session-menu-item-eye"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
               </svg>
               {{ s.label }}
             </span>
@@ -1910,7 +2171,7 @@
       <div
         v-show="trailerReprocessDialogOpen"
         class="move-title-backdrop"
-        @click="!trailerReprocessBusy && (trailerReprocessDialogOpen = false)"
+        @click="trailerReprocessDialogOpen = false"
       />
       <div
         v-show="trailerReprocessDialogOpen"
@@ -1921,12 +2182,11 @@
       >
         <div class="trailer-reprocess-dialog-card">
           <div class="session-menu-head">
-            <span id="trailer-reprocess-dialog-title" class="session-menu-title">Reprocessar trailer</span>
+            <span id="trailer-reprocess-dialog-title" class="session-menu-title">Trailer — fila</span>
             <button
               type="button"
               class="session-menu-close"
               aria-label="Fechar"
-              :disabled="trailerReprocessBusy"
               @click="trailerReprocessDialogOpen = false"
             >
               ×
@@ -1934,16 +2194,18 @@
           </div>
           <div class="trailer-reprocess-dialog-body">
             <p class="trailer-reprocess-dialog-hint">
-              Parâmetros do <code class="admin-code">trailer.bat</code> para este vídeo. Substituem o trailer existente em
-              <code class="admin-code">trailers\</code>. Os valores ficam guardados no browser para a próxima vez.
+              Adiciona à fila; processam-se em sequência no servidor (sobrevive a refresh).
+              Histórico permanente em
+              <NuxtLink to="/historico" class="empty-hint-link">/historico</NuxtLink>
+              — limpar a fila não apaga o histórico.
             </p>
             <p v-if="editorOpenEntry" class="trailer-reprocess-dialog-file">
-              {{ editorOpenEntry.mainFilename }}
+              Actual: {{ editorOpenEntry.mainFilename }}
             </p>
 
             <label class="trailer-reprocess-field trailer-reprocess-field--full">
               <span class="trailer-reprocess-label">Modo de coleta</span>
-              <select v-model="trailerParamsForm.collect" class="admin-input" :disabled="trailerReprocessBusy">
+              <select v-model="trailerParamsForm.collect" class="admin-input">
                 <option v-for="(label, mode) in TRAILER_COLLECT_LABELS" :key="mode" :value="mode">
                   {{ label }}
                 </option>
@@ -1960,7 +2222,6 @@
                   max="120"
                   step="1"
                   class="admin-input"
-                  :disabled="trailerReprocessBusy"
                 />
               </label>
               <label class="trailer-reprocess-field">
@@ -1972,7 +2233,6 @@
                   max="50"
                   step="1"
                   class="admin-input"
-                  :disabled="trailerReprocessBusy"
                 />
               </label>
               <label class="trailer-reprocess-field">
@@ -1984,7 +2244,6 @@
                   max="86400"
                   step="60"
                   class="admin-input"
-                  :disabled="trailerReprocessBusy"
                 />
               </label>
               <label class="trailer-reprocess-field">
@@ -1996,7 +2255,6 @@
                   max="3600"
                   step="30"
                   class="admin-input"
-                  :disabled="trailerReprocessBusy"
                 />
               </label>
               <label class="trailer-reprocess-field">
@@ -2008,7 +2266,6 @@
                   max="600"
                   step="1"
                   class="admin-input"
-                  :disabled="trailerReprocessBusy"
                 />
               </label>
             </div>
@@ -2022,22 +2279,21 @@
                 max="900"
                 step="5"
                 class="admin-input"
-                :disabled="trailerReprocessBusy"
               />
             </label>
 
             <div class="trailer-reprocess-grid">
               <label class="trailer-reprocess-field">
                 <span class="trailer-reprocess-label">Velocidade do trailer (×)</span>
-                <input
-                  v-model.number="trailerParamsForm.speed"
-                  type="number"
-                  min="0.5"
-                  max="4"
-                  step="0.5"
-                  class="admin-input"
-                  :disabled="trailerReprocessBusy"
-                />
+                <select v-model.number="trailerParamsForm.speed" class="admin-input">
+                  <option
+                    v-for="s in TRAILER_SPEED_OPTIONS"
+                    :key="s"
+                    :value="s"
+                  >
+                    {{ s === 1 ? '1× (normal)' : `${s}×` }}
+                  </option>
+                </select>
               </label>
               <p class="trailer-reprocess-speed-hint">
                 <template v-if="trailerParamsForm.speed === 1">
@@ -2058,12 +2314,11 @@
                   max="2160"
                   step="1"
                   class="admin-input"
-                  :disabled="trailerReprocessBusy"
                 />
               </label>
               <label class="trailer-reprocess-field">
                 <span class="trailer-reprocess-label">Encoder</span>
-                <select v-model="trailerParamsForm.useNvenc" class="admin-input" :disabled="trailerReprocessBusy">
+                <select v-model="trailerParamsForm.useNvenc" class="admin-input">
                   <option value="auto">Auto (NVENC se disponível)</option>
                   <option value="cpu">CPU (libx264)</option>
                   <option value="nvenc">NVENC (NVIDIA)</option>
@@ -2074,17 +2329,62 @@
                 class="trailer-reprocess-field"
               >
                 <span class="trailer-reprocess-label">Preset NVENC</span>
-                <select v-model="trailerParamsForm.nvencPreset" class="admin-input" :disabled="trailerReprocessBusy">
+                <select v-model="trailerParamsForm.nvencPreset" class="admin-input">
                   <option v-for="p in TRAILER_NVENC_PRESET_OPTIONS" :key="p" :value="p">{{ p }}</option>
                 </select>
               </label>
             </div>
           </div>
+          <div v-if="trailerQueue.length" class="shrink-queue">
+            <div class="shrink-queue-head">
+              <span class="shrink-queue-title">
+                Fila {{ trailerQueueDoneCount }}/{{ trailerQueue.length }}
+                <template v-if="trailerReprocessBusy"> · a processar</template>
+              </span>
+              <button
+                v-if="trailerQueueDoneCount"
+                type="button"
+                class="admin-btn admin-btn--ghost admin-btn--sm"
+                title="Tira da lista os já concluídos ou falhados (não apaga /historico)"
+                @click="clearFinishedTrailerQueue"
+              >
+                Limpar processados
+              </button>
+              <button
+                v-if="trailerQueuePendingCount"
+                type="button"
+                class="admin-btn admin-btn--ghost admin-btn--sm"
+                @click="clearPendingTrailerQueue"
+              >
+                Limpar pendentes
+              </button>
+            </div>
+            <ul class="shrink-queue-list">
+              <li
+                v-for="(item, qi) in trailerQueue"
+                :key="item.id"
+                class="shrink-queue-item"
+                :class="`shrink-queue-item--${item.status}`"
+              >
+                <span class="shrink-queue-idx">{{ qi + 1 }}.</span>
+                <span class="shrink-queue-label" :title="item.mainRel">{{ item.label }}</span>
+                <span class="shrink-queue-status">{{ shrinkQueueStatusLabel(item.status) }}</span>
+                <button
+                  v-if="item.status === 'pending'"
+                  type="button"
+                  class="admin-btn admin-btn--ghost admin-btn--sm"
+                  @click="removeTrailerQueueItem(item.id)"
+                >
+                  Tirar
+                </button>
+              </li>
+            </ul>
+          </div>
+
           <div class="trailer-reprocess-dialog-actions">
             <button
               type="button"
               class="admin-btn admin-btn--ghost"
-              :disabled="trailerReprocessBusy"
               @click="resetTrailerParamsForm"
             >
               Restaurar padrões
@@ -2092,18 +2392,166 @@
             <button
               type="button"
               class="admin-btn admin-btn--ghost"
-              :disabled="trailerReprocessBusy"
               @click="trailerReprocessDialogOpen = false"
             >
-              Cancelar
+              Fechar
             </button>
             <button
               type="button"
               class="admin-btn admin-btn--primary"
-              :disabled="trailerReprocessBusy || !editorOpenEntry"
-              @click="confirmTrailerReprocess"
+              :disabled="!editorOpenEntry?.hasMain || !canEnqueueCurrentTrailer"
+              @click="enqueueCurrentTrailerReprocess"
             >
-              {{ trailerReprocessBusy ? 'A processar…' : 'Reprocessar' }}
+              Adicionar na fila
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-show="shrinkInPlaceDialogOpen"
+        class="move-title-backdrop"
+        @click="shrinkInPlaceDialogOpen = false"
+      />
+      <div
+        v-show="shrinkInPlaceDialogOpen"
+        class="trailer-reprocess-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="shrink-in-place-dialog-title"
+      >
+        <div class="trailer-reprocess-dialog-card">
+          <div class="session-menu-head">
+            <span id="shrink-in-place-dialog-title" class="session-menu-title">Shrink — fila</span>
+            <button
+              type="button"
+              class="session-menu-close"
+              aria-label="Fechar"
+              @click="shrinkInPlaceDialogOpen = false"
+            >
+              ×
+            </button>
+          </div>
+          <div class="trailer-reprocess-dialog-body">
+            <p class="trailer-reprocess-dialog-hint">
+              Adiciona vídeos à fila; processam-se em sequência no servidor (um de cada vez).
+              A fila fica guardada em disco — podes dar refresh e continuar a acompanhar.
+              Histórico em <NuxtLink to="/historico" class="empty-hint-link">/historico</NuxtLink>.
+              Cada um cria <code class="admin-code">shrinked\</code>, faz backup em
+              <code class="admin-code">shrinked_backup\*_bak*</code> e <strong>substitui o original</strong>.
+              Podes fechar este diálogo sem cancelar a fila.
+            </p>
+            <p v-if="editorOpenEntry" class="trailer-reprocess-dialog-file">
+              Actual: {{ editorOpenEntry.mainFilename }}
+            </p>
+            <p v-if="shrinkAlreadyDoneHint" class="shrink-already-warn" role="status">
+              {{ shrinkAlreadyDoneHint }}
+            </p>
+            <p v-if="shrinkSizeWarnHint" class="shrink-already-warn" role="status">
+              {{ shrinkSizeWarnHint }}
+            </p>
+
+            <div class="trailer-reprocess-grid">
+              <label class="trailer-reprocess-field">
+                <span class="trailer-reprocess-label">Resolução (altura)</span>
+                <select v-model.number="shrinkInPlaceForm.height" class="admin-input">
+                  <option
+                    v-for="h in SHRINK_IN_PLACE_HEIGHT_OPTIONS"
+                    :key="h"
+                    :value="h"
+                  >
+                    {{ SHRINK_IN_PLACE_HEIGHT_LABELS[h] ?? `${h}p` }}
+                  </option>
+                </select>
+              </label>
+              <label class="trailer-reprocess-field">
+                <span class="trailer-reprocess-label">Velocidade (×)</span>
+                <select v-model.number="shrinkInPlaceForm.speed" class="admin-input">
+                  <option v-for="s in SHRINK_IN_PLACE_SPEED_OPTIONS" :key="s" :value="s">{{ s }}×</option>
+                </select>
+              </label>
+              <label class="trailer-reprocess-field trailer-reprocess-field--full">
+                <span class="trailer-reprocess-label">Codec de vídeo</span>
+                <select v-model="shrinkInPlaceForm.codec" class="admin-input">
+                  <option v-for="c in SHRINK_IN_PLACE_CODEC_OPTIONS" :key="c.value" :value="c.value">
+                    {{ c.label }}
+                  </option>
+                </select>
+              </label>
+              <label class="trailer-reprocess-field trailer-reprocess-field--full trailer-reprocess-check">
+                <input v-model="shrinkInPlaceForm.prioritizeSize" type="checkbox" />
+                <span>Priorizar tamanho (2ª passagem qualidade se a saída ficar grande)</span>
+              </label>
+            </div>
+
+            <div v-if="shrinkQueue.length" class="shrink-queue">
+            <div class="shrink-queue-head">
+              <span class="shrink-queue-title">
+                Fila {{ shrinkQueueDoneCount }}/{{ shrinkQueue.length }}
+                <template v-if="shrinkInPlaceBusy"> · a processar</template>
+              </span>
+              <button
+                v-if="shrinkQueueDoneCount"
+                type="button"
+                class="admin-btn admin-btn--ghost admin-btn--sm"
+                title="Tira da lista os já concluídos ou falhados (não apaga /historico)"
+                @click="clearFinishedShrinkQueue"
+              >
+                Limpar processados
+              </button>
+              <button
+                v-if="shrinkQueuePendingCount"
+                type="button"
+                class="admin-btn admin-btn--ghost admin-btn--sm"
+                @click="clearPendingShrinkQueue"
+              >
+                Limpar pendentes
+              </button>
+            </div>
+              <ul class="shrink-queue-list">
+                <li
+                  v-for="(item, qi) in shrinkQueue"
+                  :key="item.id"
+                  class="shrink-queue-item"
+                  :class="`shrink-queue-item--${item.status}`"
+                >
+                  <span class="shrink-queue-idx">{{ qi + 1 }}.</span>
+                  <span class="shrink-queue-label" :title="item.mainRel">{{ item.label }}</span>
+                  <span class="shrink-queue-status">{{ shrinkQueueStatusLabel(item.status) }}</span>
+                  <button
+                    v-if="item.status === 'pending'"
+                    type="button"
+                    class="admin-btn admin-btn--ghost admin-btn--sm"
+                    @click="removeShrinkQueueItem(item.id)"
+                  >
+                    Tirar
+                  </button>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div class="trailer-reprocess-dialog-actions">
+            <button
+              type="button"
+              class="admin-btn admin-btn--ghost"
+              @click="resetShrinkInPlaceForm"
+            >
+              Restaurar padrões
+            </button>
+            <button
+              type="button"
+              class="admin-btn admin-btn--ghost"
+              @click="shrinkInPlaceDialogOpen = false"
+            >
+              Fechar
+            </button>
+            <button
+              type="button"
+              class="admin-btn admin-btn--primary"
+              :disabled="!editorOpenEntry?.hasMain || !canEnqueueCurrentShrink"
+              @click="enqueueCurrentShrinkInPlace"
+            >
+              Adicionar na fila
             </button>
           </div>
         </div>
@@ -2119,6 +2567,9 @@ import {
   PLAYBACK_RATES,
   RECENTS_SESSION_ID,
   SEARCH_SESSION_ID,
+  SURPRESA_SESSION_ID,
+  LAST_VIEWED_SESSION_ID,
+  LAST_VIEWED_LIMIT,
   TRAILER_WATCHED_TAG_NAME,
   apiVideoUrl,
   parseApiVideoUrl,
@@ -2132,18 +2583,34 @@ import {
 } from '~/composables/useVideoFolder'
 import IconTrailerRandom from '~/components/IconTrailerRandom.vue'
 import { useSilkTvLayout } from '~/composables/useSilkTvLayout'
+import {
+  readCatalogSessionPrefs,
+  writeCatalogSessionPrefs,
+  type CatalogSessionPrefs,
+} from '~/composables/useCatalogSessionPrefs'
 import { useRecentsCatalogWindow } from '~/composables/useRecentsCatalogWindow'
 import { useTvCatalogVirtualGrid } from '~/composables/useTvCatalogVirtualGrid'
 import { useTvStageVideo } from '~/composables/useTvStageVideo'
 import {
   TRAILER_BAT_PARAMS_DEFAULT,
   TRAILER_COLLECT_LABELS,
+  TRAILER_SPEED_OPTIONS,
   formatTrailerFrameFactor,
   normalizeTrailerBatParams,
   type TrailerBatParams,
 } from '#shared/trailerParams'
+import {
+  SHRINK_IN_PLACE_CODEC_OPTIONS,
+  SHRINK_IN_PLACE_HEIGHT_LABELS,
+  SHRINK_IN_PLACE_HEIGHT_OPTIONS,
+  SHRINK_IN_PLACE_PARAMS_DEFAULT,
+  SHRINK_IN_PLACE_SPEED_OPTIONS,
+  normalizeShrinkInPlaceParams,
+  type ShrinkInPlaceParams,
+} from '#shared/shrinkInPlaceParams'
 
 const { manualTvAssist, isTvLayout } = useSilkTvLayout()
+const catalogPrefsEnabled = computed(() => !manualTvAssist.value)
 
 const videoPreloadAttr = computed<'auto' | 'metadata'>(() => {
   if (!import.meta.client) return 'metadata'
@@ -2159,7 +2626,6 @@ const videoPreloadAttr = computed<'auto' | 'metadata'>(() => {
 /** Plataforma do servidor Node (`process.platform` do host onde corre o Nuxt/Nitro). */
 const serverPlatform = ref('')
 /** Servidor tem VIDEO_ADMIN_TOKEN (útil para mensagens / futuro estado “desactivado”). */
-const adminRevealExplorer = ref(false)
 const catalogMode = ref<'trailers' | 'main-only'>('trailers')
 
 /** Onde o servidor abre a pasta (Finder / Explorador / Linux); o browser pode ser outro OS. */
@@ -2204,16 +2670,203 @@ const moveTitleDesktopEligible = computed(
 /** Desktop largo: atalho para o editor com o vídeo completo actual. */
 const editorDesktopEligible = computed(() => !isTvLayout.value && isWideDesktopUi.value)
 const editorOpenEntry = computed((): TrailerListEntry | null => {
-  if (!editorDesktopEligible.value) return null
+  if (isTvLayout.value) return null
   if (playerUrl.value && mainVideoEntry.value?.hasMain) return mainVideoEntry.value
   if (selectedEntry.value?.hasMain) return selectedEntry.value
   return null
 })
 const trailerReprocessEligible = computed(
-  () => editorDesktopEligible.value && serverPlatform.value.toLowerCase() === 'win32',
+  () => !isTvLayout.value && serverPlatform.value.toLowerCase() === 'win32',
+)
+const shrinkInPlaceEligible = computed(
+  () => !isTvLayout.value && serverPlatform.value.toLowerCase() === 'win32',
 )
 const trailerReprocessBusy = ref(false)
+interface TrailerQueueServerState {
+  items: ShrinkQueueItem[]
+  updatedAt: number
+  busy: boolean
+  currentJobId: string | null
+  currentItemId: string | null
+}
+const trailerQueue = ref<ShrinkQueueItem[]>([])
+let trailerQueueEs: EventSource | null = null
+let trailerQueueMonitorWanted = false
+let trailerQueueLastRunningId: string | null = null
+const trailerQueuePendingCount = computed(
+  () => trailerQueue.value.filter((i) => i.status === 'pending').length,
+)
+const trailerQueueDoneCount = computed(
+  () => trailerQueue.value.filter((i) => i.status === 'done' || i.status === 'failed').length,
+)
+const canEnqueueCurrentTrailer = computed(() => {
+  const entry = editorOpenEntry.value
+  if (!entry?.hasMain) return false
+  const session = libSession(entry)
+  const mainRel = entry.mainRel
+  return !trailerQueue.value.some(
+    (i) =>
+      (i.status === 'pending' || i.status === 'running') &&
+      i.session === session &&
+      i.mainRel === mainRel,
+  )
+})
+const shrinkInPlaceBusy = ref(false)
+type ShrinkLogKind = 'ok' | 'err' | 'skip' | 'meta' | 'plain'
+interface ShrinkLogRow {
+  text: string
+  kind: ShrinkLogKind
+}
+type ShrinkQueueItemStatus = 'pending' | 'running' | 'done' | 'failed'
+interface ShrinkQueueItem {
+  id: string
+  session: number
+  mainRel: string
+  trailerRel: string
+  label: string
+  params: ShrinkInPlaceParams
+  status: ShrinkQueueItemStatus
+  error?: string
+  jobId?: string | null
+}
+interface ShrinkQueueServerState {
+  items: ShrinkQueueItem[]
+  updatedAt: number
+  busy: boolean
+  currentJobId: string | null
+  currentItemId: string | null
+}
+const shrinkQueue = ref<ShrinkQueueItem[]>([])
+let shrinkQueueEs: EventSource | null = null
+let shrinkQueueMonitorWanted = false
+let shrinkQueueLastRunningId: string | null = null
+const shrinkQueuePendingCount = computed(
+  () => shrinkQueue.value.filter((i) => i.status === 'pending').length,
+)
+const shrinkQueueDoneCount = computed(
+  () => shrinkQueue.value.filter((i) => i.status === 'done' || i.status === 'failed').length,
+)
+const canEnqueueCurrentShrink = computed(() => {
+  const entry = editorOpenEntry.value
+  if (!entry?.hasMain) return false
+  const session = libSession(entry)
+  const mainRel = entry.mainRel
+  return !shrinkQueue.value.some(
+    (i) =>
+      (i.status === 'pending' || i.status === 'running') &&
+      i.session === session &&
+      i.mainRel === mainRel,
+  )
+})
+function shrinkQueueStatusLabel(s: ShrinkQueueItemStatus): string {
+  if (s === 'pending') return 'na fila'
+  if (s === 'running') return 'a correr'
+  if (s === 'done') return 'ok'
+  return 'falhou'
+}
+const shrinkInPlaceLogLines = ref<ShrinkLogRow[]>([])
+const shrinkInPlaceLatestLine = ref('')
+const shrinkInPlaceFileLabel = ref('')
+const shrinkInPlacePct = ref<number | null>(null)
+const shrinkInPlaceLastStatus = ref('')
+const shrinkInPlaceErrorSummary = ref('')
+const shrinkInPlaceFailed = ref(false)
+const shrinkInPlaceLogEl = ref<HTMLElement | null>(null)
+const shrinkInPlaceLogCollapsed = ref(false)
+const shrinkInPlacePanelVisible = computed(
+  () =>
+    shrinkInPlaceBusy.value ||
+    shrinkInPlaceLogLines.value.length > 0 ||
+    shrinkQueue.value.some((i) => i.status === 'pending' || i.status === 'running'),
+)
+let shrinkInPlaceDurationSec: number | null = null
+const SHRINK_LOG_CAP = 250
+const shrinkInPlaceSeenSeq = new Set<number>()
+
+function classifyShrinkLogLine(t: string): ShrinkLogKind {
+  if (/\[(ERRO|FATAL|DET)\]/i.test(t) || /\berror\b/i.test(t)) return 'err'
+  if (/\[(SKIP|OVERSIZED|INSUFFICIENT)/i.test(t)) return 'skip'
+  if (/\[OK\]/i.test(t)) return 'ok'
+  if (/\[(INICIO|META|PROCESSANDO|REPLACE|BAT|PHASE|RETRY|LOG|UI)\]/i.test(t)) return 'meta'
+  return 'plain'
+}
+
+function parseHhMmSsToSeconds(raw: string): number | null {
+  const m = raw.trim().match(/^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$/)
+  if (!m) return null
+  const h = Number(m[1])
+  const min = Number(m[2])
+  const sec = Number(m[3])
+  if (![h, min, sec].every((n) => Number.isFinite(n))) return null
+  return h * 3600 + min * 60 + sec
+}
+
+function scrollShrinkLogToBottom() {
+  void nextTick(() => {
+    const el = shrinkInPlaceLogEl.value
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+  })
+}
+
+function ingestShrinkLogLine(text: string, seq?: number) {
+  if (typeof seq === 'number' && Number.isFinite(seq)) {
+    if (shrinkInPlaceSeenSeq.has(seq)) return
+    shrinkInPlaceSeenSeq.add(seq)
+  }
+  const t = String(text ?? '').replace(/\r/g, '').trim()
+  if (!t) return
+  shrinkInPlaceLatestLine.value = t
+  const next = [...shrinkInPlaceLogLines.value, { text: t, kind: classifyShrinkLogLine(t) }]
+  if (next.length > SHRINK_LOG_CAP) next.splice(0, next.length - SHRINK_LOG_CAP)
+  shrinkInPlaceLogLines.value = next
+  scrollShrinkLogToBottom()
+
+  const dur = t.match(/Duration:\s*(\d+:\d{2}:\d{2}(?:\.\d+)?)/i)
+  if (dur?.[1]) {
+    const s = parseHhMmSsToSeconds(dur[1])
+    if (s !== null && s > 0) shrinkInPlaceDurationSec = s
+  }
+  const time = t.match(/\btime=(\d+:\d{2}:\d{2}(?:\.\d+)?)/i)
+  if (time?.[1] && shrinkInPlaceDurationSec && shrinkInPlaceDurationSec > 0) {
+    const cur = parseHhMmSsToSeconds(time[1])
+    if (cur !== null) {
+      shrinkInPlacePct.value = Math.max(
+        0,
+        Math.min(99, Math.round((cur / shrinkInPlaceDurationSec) * 100)),
+      )
+    }
+  }
+  if (/\[REPLACE\]/i.test(t)) shrinkInPlacePct.value = 96
+  else if (/\[OK\]/i.test(t)) shrinkInPlacePct.value = 100
+}
+
+function resetShrinkInPlaceProgressUi(fileLabel = '') {
+  shrinkInPlaceLogLines.value = []
+  shrinkInPlaceLatestLine.value = ''
+  shrinkInPlaceFileLabel.value = fileLabel
+  shrinkInPlacePct.value = null
+  shrinkInPlaceLastStatus.value = ''
+  shrinkInPlaceErrorSummary.value = ''
+  shrinkInPlaceFailed.value = false
+  shrinkInPlaceDurationSec = null
+  shrinkInPlaceSeenSeq.clear()
+  shrinkInPlaceLogCollapsed.value = false
+}
+
+async function copyShrinkInPlaceLog() {
+  const text = shrinkInPlaceLogLines.value.map((r) => r.text).join('\n')
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    showToast('Log copiado.', 'success')
+  } catch {
+    showToast('Não foi possível copiar o log.', 'error')
+  }
+}
+
 const TRAILER_PARAMS_STORAGE_KEY = 'video_player_trailer_reprocess_params'
+const SHRINK_IN_PLACE_STORAGE_KEY = 'video_player_shrink_in_place_params'
 const TRAILER_NVENC_PRESET_OPTIONS = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'] as const
 
 function loadTrailerParamsFromStorage(): TrailerBatParams {
@@ -2236,8 +2889,30 @@ function saveTrailerParamsToStorage(p: TrailerBatParams) {
   }
 }
 
+function loadShrinkInPlaceParamsFromStorage(): ShrinkInPlaceParams {
+  if (typeof localStorage === 'undefined') return { ...SHRINK_IN_PLACE_PARAMS_DEFAULT }
+  try {
+    const raw = localStorage.getItem(SHRINK_IN_PLACE_STORAGE_KEY)
+    if (!raw) return { ...SHRINK_IN_PLACE_PARAMS_DEFAULT }
+    return normalizeShrinkInPlaceParams(JSON.parse(raw) as Record<string, unknown>)
+  } catch {
+    return { ...SHRINK_IN_PLACE_PARAMS_DEFAULT }
+  }
+}
+
+function saveShrinkInPlaceParamsToStorage(p: ShrinkInPlaceParams) {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(SHRINK_IN_PLACE_STORAGE_KEY, JSON.stringify(p))
+  } catch {
+    /* */
+  }
+}
+
 const trailerReprocessDialogOpen = ref(false)
+const shrinkInPlaceDialogOpen = ref(false)
 const trailerParamsForm = ref<TrailerBatParams>(loadTrailerParamsFromStorage())
+const shrinkInPlaceForm = ref<ShrinkInPlaceParams>(loadShrinkInPlaceParamsFromStorage())
 const trailerParamsIsPadrao = computed(() => trailerParamsForm.value.collect === 'padrao')
 const moveTitleDialogOpen = ref(false)
 const moveTitleBusy = ref(false)
@@ -2259,11 +2934,43 @@ const sessions = ref<VideoSessionTab[]>([])
 const sessionIndex = ref(0)
 
 function libSession(entry: TrailerListEntry | null | undefined): number {
-  const n = entry?.librarySession
+  if (!entry) {
+    const si = sessionIndex.value
+    return typeof si === 'number' && Number.isFinite(si) && si >= 0 ? Math.floor(si) : 0
+  }
+  const n = entry.librarySession
   if (typeof n === 'number' && Number.isFinite(n) && n >= 0) return Math.floor(n)
+  if (isAggregatedLibrarySession()) {
+    const rel = entry.trailerRel
+    for (const x of fullEntries.value) {
+      const xs = x.librarySession
+      if (
+        typeof xs === 'number' &&
+        Number.isFinite(xs) &&
+        xs >= 0 &&
+        trailerRelMatchesFocus(x.trailerRel, rel)
+      ) {
+        return Math.floor(xs)
+      }
+    }
+  }
   const si = sessionIndex.value
   if (typeof si === 'number' && Number.isFinite(si) && si >= 0) return Math.floor(si)
   return 0
+}
+
+/** Destaques, Surpresa e Últimos vistos — entradas de várias bibliotecas com `librarySession`. */
+function isAggregatedLibrarySession(si: number = sessionIndex.value): boolean {
+  return (
+    si === RECENTS_SESSION_ID || si === SURPRESA_SESSION_ID || si === LAST_VIEWED_SESSION_ID
+  )
+}
+
+function aggregatedListTagForSession(si: number = sessionIndex.value): string {
+  if (si === RECENTS_SESSION_ID) return 'Destaques'
+  if (si === SURPRESA_SESSION_ID) return 'Surpresa'
+  if (si === LAST_VIEWED_SESSION_ID) return 'Últimos vistos'
+  return ''
 }
 
 /** Rótulo da pasta/biblioteca no menu (`sessions`), por índice real da sessão (≥0). */
@@ -2275,10 +2982,42 @@ function libraryFolderLabel(sessionId: number): string {
   return ''
 }
 
-const recentsMutationBusy = ref(false)
+function libraryFolderSortRank(sessionId: number): number {
+  const idx = sessions.value.findIndex((s) => s.id === sessionId)
+  return idx >= 0 ? idx : 10_000 + sessionId
+}
+
+/** Agrupa entradas multi-biblioteca pela ordem das pastas no menu. */
+function sortEntriesGroupedByLibraryFolder(
+  list: TrailerListEntry[],
+  withinFolder: (a: TrailerListEntry, b: TrailerListEntry) => number,
+): TrailerListEntry[] {
+  return [...list].sort((a, b) => {
+    const ra = libraryFolderSortRank(libSession(a))
+    const rb = libraryFolderSortRank(libSession(b))
+    if (ra !== rb) return ra - rb
+    return withinFolder(a, b)
+  })
+}
+
+const recentsWithinFolderSort = (a: TrailerListEntry, b: TrailerListEntry) => {
+  const ta = a.highlightedAtMs ?? 0
+  const tb = b.highlightedAtMs ?? 0
+  if (ta !== tb) return tb - ta
+  return a.mainRel.localeCompare(b.mainRel, undefined, { sensitivity: 'base' })
+}
+
+const surpriseWithinFolderSort = (a: TrailerListEntry, b: TrailerListEntry) => {
+  const ta = a.highlightedAtMs ?? 0
+  const tb = b.highlightedAtMs ?? 0
+  if (ta !== tb) return ta - tb
+  return a.mainRel.localeCompare(b.mainRel, undefined, { sensitivity: 'base' })
+}
 
 /** Chaves `session:trailerRel` (= estado em SQLite) para ícone olho aberto/fechado. */
-const recentPlaybackKeys = ref<Set<string>>(new Set())
+const recentPlaybackKeyList = ref<string[]>([])
+/** Evita cliques duplos no olho Destaques enquanto a API responde. */
+const recentsMutationBusy = ref(false)
 
 /** Mesma normalização que `server/utils/recentPlaybackDb.normalizeTrailerRel` para bater com SQLite. */
 function normalizeTrailerRelForRecentKey(rel: string): string {
@@ -2290,19 +3029,154 @@ function playbackRecentKey(session: number, trailerRel: string): string {
   return `${s}:${normalizeTrailerRelForRecentKey(trailerRel)}`
 }
 
+function trailerRelMatchesFocus(a: string, b: string): boolean {
+  const na = a.trim().replace(/\\/g, '/').toLowerCase()
+  const nb = b.trim().replace(/\\/g, '/').toLowerCase()
+  return na === nb
+}
+
+function catalogRelStem(rel: string): string {
+  let n = rel.trim().replace(/\\/g, '/').toLowerCase()
+  if (n.startsWith('trailers/')) n = n.slice('trailers/'.length)
+  const slash = n.lastIndexOf('/')
+  const base = slash >= 0 ? n.slice(slash + 1) : n
+  const dot = base.lastIndexOf('.')
+  return dot > 0 ? base.slice(0, dot) : base
+}
+
+function normalizeCatalogPath(rel: string): string {
+  return rel.trim().replace(/\\/g, '/').toLowerCase()
+}
+
+function entryMatchesMainRel(e: TrailerListEntry, mainRel: string): boolean {
+  const n = normalizeCatalogPath(mainRel)
+  if (!n) return false
+  const main = normalizeCatalogPath(String(e.mainRel ?? ''))
+  if (main && main === n) return true
+  const baseN = n.includes('/') ? n.slice(n.lastIndexOf('/') + 1) : n
+  const baseM = main.includes('/') ? main.slice(main.lastIndexOf('/') + 1) : main
+  if (baseN && baseM && baseN === baseM) return true
+  const stem = catalogRelStem(n)
+  if (!stem) return false
+  if (catalogRelStem(main) === stem || catalogRelStem(e.trailerRel) === stem) return true
+  if (main && (main.endsWith(`/${n}`) || n.endsWith(`/${main}`))) return true
+  if (baseN && main.endsWith(`/${baseN}`)) return true
+  return false
+}
+
+function entryMatchesShareRel(e: TrailerListEntry, rel: string): boolean {
+  if (!rel.trim()) return false
+  if (trailerRelMatchesFocus(e.trailerRel, rel)) return true
+  const n = normalizeCatalogPath(rel)
+  const main = normalizeCatalogPath(String(e.mainRel ?? ''))
+  if (main && (main === n || `trailers/${main}` === n)) return true
+  if (main && n.startsWith('trailers/') && entryMatchesMainRel(e, n.slice('trailers/'.length))) {
+    return true
+  }
+  const stem = catalogRelStem(rel)
+  if (!stem) return false
+  return catalogRelStem(e.trailerRel) === stem || (main ? catalogRelStem(main) === stem : false)
+}
+
+function clearCatalogFiltersForShareFocus() {
+  catalogTagFilter.value = null
+  folderFilterInput.value = ''
+  catalogOriginFilter.value = null
+  favoriteCatalogFilter.value = 'all'
+  destaquesCatalogFilter.value = 'all'
+  showOnlyWatched.value = false
+}
+
+function softReloadCatalogKeepFocus() {
+  const keep =
+    (focusedIndex.value !== null ? entries.value[focusedIndex.value]?.trailerRel : null) ||
+    resolvePlaybackEntryFromUrls()?.trailerRel ||
+    null
+  void loadTrailers(keep ? { preserveFocusTrailerRel: keep } : undefined)
+}
+
+function focusEntryByShareTarget(opts: { rel?: string; main?: string }): boolean {
+  const rel = typeof opts.rel === 'string' ? opts.rel.trim() : ''
+  const main = typeof opts.main === 'string' ? opts.main.trim() : ''
+  if (!rel && !main) return false
+
+  const match = (e: TrailerListEntry) => {
+    if (rel && entryMatchesShareRel(e, rel)) return true
+    if (main && entryMatchesMainRel(e, main)) return true
+    return false
+  }
+
+  let ix = entries.value.findIndex(match)
+  if (ix < 0) {
+    if (!fullEntries.value.some(match)) return false
+    clearCatalogFiltersForShareFocus()
+    ix = entries.value.findIndex(match)
+  }
+  if (ix < 0) return false
+  setTrailerIndex(ix)
+  return true
+}
+
 function isPlaybackTitleInRecentList(entry: TrailerListEntry | null | undefined): boolean {
   if (!entry) return false
-  return recentPlaybackKeys.value.has(playbackRecentKey(libSession(entry), entry.trailerRel))
+  const ls = libSession(entry)
+  const rel = entry.trailerRel
+  const keys = recentPlaybackKeyList.value
+  if (keys.includes(playbackRecentKey(ls, rel))) return true
+  for (const key of keys) {
+    const colon = key.indexOf(':')
+    if (colon <= 0) continue
+    const s = Number(key.slice(0, colon))
+    if (!Number.isFinite(s)) continue
+    const kRel = key.slice(colon + 1)
+    if (s === ls && trailerRelMatchesFocus(kRel, rel)) return true
+  }
+  return false
+}
+
+function syncRecentPlaybackKey(session: number, trailerRel: string, inList: boolean) {
+  const key = playbackRecentKey(session, trailerRel)
+  const cur = recentPlaybackKeyList.value
+  if (inList) {
+    if (!cur.includes(key)) recentPlaybackKeyList.value = [...cur, key]
+    return
+  }
+  recentPlaybackKeyList.value = cur.filter((k) => k !== key)
+}
+
+function destaqueFetchErrorMessage(err: unknown, fallback: string): string {
+  const ex = err as {
+    data?: { statusMessage?: string; message?: string }
+    statusMessage?: string
+    message?: string
+  }
+  return (
+    ex?.data?.statusMessage ||
+    ex?.data?.message ||
+    ex?.statusMessage ||
+    ex?.message ||
+    fallback
+  )
 }
 
 async function refreshRecentPlaybackKeys() {
   try {
     const data = await $fetch<{ items: { session: number; trailerRel: string }[] }>('/api/library/recent-list')
-    const next = new Set<string>()
-    for (const r of data.items ?? []) next.add(playbackRecentKey(r.session, r.trailerRel))
-    recentPlaybackKeys.value = next
+    const next: string[] = []
+    for (const r of data.items ?? []) next.push(playbackRecentKey(r.session, r.trailerRel))
+    recentPlaybackKeyList.value = next
   } catch {
     /* manter último estado */
+  }
+}
+
+function applyDestaqueTrailerRelLocal(session: number, fromRel: string, toRel: string) {
+  const canonical = normalizeTrailerRelForRecentKey(toRel)
+  if (!canonical.startsWith('trailers/')) return
+  for (const e of fullEntries.value) {
+    if (libSession(e) === session && trailerRelMatchesFocus(e.trailerRel, fromRel)) {
+      e.trailerRel = canonical
+    }
   }
 }
 
@@ -2326,56 +3200,6 @@ function showToast(message: string, variant: 'success' | 'error' = 'success') {
   }, 3400)
 }
 
-/** Olho na barra: alterna entrada em «Recentes» (SQLite). */
-async function toggleCurrentTitleRecents() {
-  const e =
-    playerUrl.value && mainVideoEntry.value ? mainVideoEntry.value : selectedEntry.value
-  if (!e || recentsMutationBusy.value) return
-  const inList = isPlaybackTitleInRecentList(e)
-  recentsMutationBusy.value = true
-  try {
-    if (inList) {
-      await $fetch('/api/library/recent-remove', {
-        method: 'POST',
-        body: { session: libSession(e), trailerRel: e.trailerRel },
-      })
-      showToast('Removido de Destaques.', 'success')
-      const removeIdx = entries.value.findIndex(
-        (x) => libSession(x) === libSession(e) && x.trailerRel === e.trailerRel,
-      )
-      await refreshRecentPlaybackKeys()
-      if (sessionIndex.value === RECENTS_SESSION_ID) {
-        const neighborRel =
-          removeIdx >= 0 && entries.value.length > 1
-            ? (entries.value[removeIdx + 1] ?? entries.value[removeIdx - 1])?.trailerRel
-            : undefined
-        await loadTrailers(
-          typeof neighborRel === 'string' ? { preserveFocusTrailerRel: neighborRel } : {},
-        )
-      }
-    } else {
-      await $fetch('/api/library/recent-play', {
-        method: 'POST',
-        body: { session: libSession(e), trailerRel: e.trailerRel },
-      })
-      showToast('Adicionado a Destaques.', 'success')
-      await refreshRecentPlaybackKeys()
-      syncCatalogIndicesToPlayback()
-      if (sessionIndex.value === RECENTS_SESSION_ID) {
-        await loadTrailers({ preserveFocusTrailerRel: e.trailerRel })
-      }
-    }
-  } catch (err: unknown) {
-    const ex = err as { data?: { statusMessage?: string }; message?: string }
-    showToast(
-      ex?.data?.statusMessage || ex?.message || 'Não foi possível atualizar Destaques.',
-      'error',
-    )
-  } finally {
-    recentsMutationBusy.value = false
-  }
-}
-
 async function removeFromRecentsAtIndex(i: number) {
   const e = entries.value[i]
   if (!e || recentsMutationBusy.value) return
@@ -2386,6 +3210,7 @@ async function removeFromRecentsAtIndex(i: number) {
       body: { session: libSession(e), trailerRel: e.trailerRel },
     })
     showToast('Removido de Destaques.', 'success')
+    await refreshRecentPlaybackKeys()
     const neighborRel =
       entries.value.length > 1
         ? (entries.value[i + 1] ?? entries.value[i - 1])?.trailerRel ?? undefined
@@ -2394,14 +3219,16 @@ async function removeFromRecentsAtIndex(i: number) {
       typeof neighborRel === 'string' ? { preserveFocusTrailerRel: neighborRel } : {},
     )
   } catch (err: unknown) {
-    const ex = err as { data?: { statusMessage?: string }; message?: string }
-    showToast(
-      ex?.data?.statusMessage || ex?.message || 'Não foi possível remover de Destaques.',
-      'error',
-    )
+    showToast(destaqueFetchErrorMessage(err, 'Não foi possível remover de Destaques.'), 'error')
   } finally {
     recentsMutationBusy.value = false
   }
+}
+
+function removeFocusedFromRecents() {
+  const i = focusedIndex.value
+  if (i === null) return
+  void removeFromRecentsAtIndex(i)
 }
 
 /** Evita `router.replace` a disparar o watcher da rota em loop. */
@@ -2436,6 +3263,9 @@ const catalogThumbInlineVideo = computed(
 const catalogTagFilter = ref<string | null>(null)
 /** Filtro por pasta/biblioteca de origem (só Destaques). */
 const catalogOriginFilter = ref<string | null>(null)
+/** Caixa de filtro local (só a lista da sessão/pasta actual). */
+const folderFilterInput = ref('')
+const folderFilterMode = ref<'files' | 'tags'>('tags')
 /**
  * Filtro "Só vistos": quando `true`, restringe o catálogo aos vídeos com
  * tag `concluido` OU `memoravel`. Combina com `catalogTagFilter` (AND).
@@ -2455,33 +3285,73 @@ function cycleCatalogTriFilter(current: CatalogTriFilter): CatalogTriFilter {
 }
 
 type CatalogSortKey = 'name' | 'date' | 'size'
-const catalogSortKey = ref<CatalogSortKey>('name')
-const catalogSortDir = ref<'asc' | 'desc'>('asc')
+const CATALOG_SORT_STORAGE_KEY = 'video_player_catalog_sort'
+
+function readStoredCatalogSort(): { key: CatalogSortKey; dir: 'asc' | 'desc' } | null {
+  if (typeof localStorage === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(CATALOG_SORT_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { key?: unknown; dir?: unknown }
+    const key = parsed.key
+    const dir = parsed.dir
+    if (key !== 'name' && key !== 'date' && key !== 'size') return null
+    if (dir !== 'asc' && dir !== 'desc') return null
+    return { key, dir }
+  } catch {
+    return null
+  }
+}
+
+function writeStoredCatalogSort(key: CatalogSortKey, dir: 'asc' | 'desc') {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(CATALOG_SORT_STORAGE_KEY, JSON.stringify({ key, dir }))
+  } catch {
+    /* ignore */
+  }
+}
+
+const storedCatalogSort = readStoredCatalogSort()
+const catalogSortKey = ref<CatalogSortKey>(storedCatalogSort?.key ?? 'size')
+const catalogSortDir = ref<'asc' | 'desc'>(storedCatalogSort?.dir ?? 'desc')
 
 function applyDestaquesCatalogSortDefaults() {
   catalogSortKey.value = 'date'
   catalogSortDir.value = 'desc'
 }
 
+function applyFolderCatalogSortDefaults() {
+  const stored = readStoredCatalogSort()
+  if (stored) {
+    catalogSortKey.value = stored.key
+    catalogSortDir.value = stored.dir
+    return
+  }
+  catalogSortKey.value = 'size'
+  catalogSortDir.value = 'desc'
+}
+
 function compareCatalogEntries(a: TrailerListEntry, b: TrailerListEntry): number {
-  const isRecentsSession = sessionIndex.value === RECENTS_SESSION_ID
+  const fixedOrder = isAggregatedLibrarySession()
 
-  // "Vistos" = concluído OU memorável → empurrados para o fim, em qualquer caso.
-  const wa = isEntryWatchedClass(a)
-  const wb = isEntryWatchedClass(b)
-  if (wa !== wb) return wa ? 1 : -1
+  if (!fixedOrder) {
+    const wa = isEntryWatchedClass(a)
+    const wb = isEntryWatchedClass(b)
+    if (wa !== wb) return wa ? 1 : -1
+  }
 
-  // Em Destaques: ignorar marcação de favorito para ordenar e ordenar SEMPRE por inserção (mais recente primeiro).
-  if (isRecentsSession) {
+  if (fixedOrder) {
     const ta = a.highlightedAtMs ?? 0
     const tb = b.highlightedAtMs ?? 0
-    if (ta !== tb) return ta < tb ? 1 : -1
+    const surpriseAsc = sessionIndex.value === SURPRESA_SESSION_ID
+    if (ta !== tb) {
+      if (surpriseAsc) return ta < tb ? -1 : ta > tb ? 1 : 0
+      return ta < tb ? 1 : ta > tb ? -1 : 0
+    }
     return a.mainRel.localeCompare(b.mainRel, undefined, { sensitivity: 'base' })
   }
 
-  const fa = a.isFavorite === true
-  const fb = b.isFavorite === true
-  if (fa !== fb) return fa ? -1 : 1
   const dir = catalogSortDir.value === 'asc' ? 1 : -1
   if (catalogSortKey.value === 'name') {
     const c = a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })
@@ -2506,16 +3376,6 @@ function sortCatalogList(list: TrailerListEntry[]): TrailerListEntry[] {
   return [...list].sort(compareCatalogEntries)
 }
 
-/** Destaques: data de inserção / toque, mais recente primeiro (índice 0). */
-function sortRecentsByDateDesc(list: TrailerListEntry[]): TrailerListEntry[] {
-  return [...list].sort((a, b) => {
-    const ta = a.highlightedAtMs ?? 0
-    const tb = b.highlightedAtMs ?? 0
-    if (ta !== tb) return tb - ta
-    return a.mainRel.localeCompare(b.mainRel, undefined, { sensitivity: 'base' })
-  })
-}
-
 const entries = computed(() => {
   const tag = catalogTagFilter.value
   const origin = catalogOriginFilter.value
@@ -2523,7 +3383,7 @@ const entries = computed(() => {
   const si = sessionIndex.value
   let filtered = tag
     ? raw.filter((e) => {
-        const list = si === RECENTS_SESSION_ID ? entryUserTags(e) : (e.tags ?? [])
+        const list = isAggregatedLibrarySession(si) ? entryUserTags(e) : (e.tags ?? [])
         return list.includes(tag)
       })
     : raw
@@ -2533,6 +3393,20 @@ const entries = computed(() => {
     filtered = filtered.filter((e) =>
       entryOriginTags(e).some((t) => t.trim().toLowerCase() === want),
     )
+  }
+  const folderQ = folderFilterInput.value.trim().toLowerCase()
+  if (folderQ && si !== SEARCH_SESSION_ID) {
+    if (folderFilterMode.value === 'tags') {
+      filtered = filtered.filter((e) => {
+        const list = isAggregatedLibrarySession(si) ? entryUserTags(e) : (e.tags ?? [])
+        return list.some((t) => t.toLowerCase().includes(folderQ))
+      })
+    } else {
+      filtered = filtered.filter((e) => {
+        const hay = `${e.label ?? ''} ${e.mainFilename ?? ''} ${e.trailerRel ?? ''} ${e.mainRel ?? ''}`
+        return hay.toLowerCase().includes(folderQ)
+      })
+    }
   }
   if (showOnlyWatched.value) {
     filtered = filtered.filter(isEntryWatchedClass)
@@ -2547,8 +3421,12 @@ const entries = computed(() => {
   } else if (destaquesCatalogFilter.value === 'exclude') {
     filtered = filtered.filter((e) => !isPlaybackTitleInRecentList(e))
   }
-  if (si === RECENTS_SESSION_ID) {
-    return sortRecentsByDateDesc(filtered)
+  // Destaques / Últimos vistos: ordem global por data de entrada (mais recente primeiro).
+  if (si === RECENTS_SESSION_ID || si === LAST_VIEWED_SESSION_ID) {
+    return [...filtered].sort(recentsWithinFolderSort)
+  }
+  if (si === SURPRESA_SESSION_ID) {
+    return sortEntriesGroupedByLibraryFolder(filtered, surpriseWithinFolderSort)
   }
   return sortCatalogList(filtered)
 })
@@ -2624,14 +3502,16 @@ const destaquesCatalogFilterTitle = computed(() => {
 const catalogSortDateTitle = computed(() =>
   sessionIndex.value === RECENTS_SESSION_ID
     ? 'Ordenar por data em que o título foi adicionado a Destaques. Voltar a clicar inverte.'
-    : 'Ordenar por data do ficheiro completo (criação quando disponível). Voltar a clicar inverte.',
+    : sessionIndex.value === LAST_VIEWED_SESSION_ID
+      ? 'Ordenar por data da última reprodução do trailer. Voltar a clicar inverte.'
+      : 'Ordenar por data do ficheiro completo (criação quando disponível). Voltar a clicar inverte.',
 )
 
 const sessionMenuTopTags = computed(() => {
   const counts = new Map<string, number>()
   for (const entry of fullEntries.value) {
     const list =
-      sessionIndex.value === RECENTS_SESSION_ID ? entryUserTags(entry) : (entry.tags ?? [])
+      isAggregatedLibrarySession() ? entryUserTags(entry) : (entry.tags ?? [])
     for (const t of list) {
       const tag = t.trim()
       if (!tag) continue
@@ -2728,9 +3608,10 @@ function captureEntryRel(idx: number | null): string | null {
 }
 
 function cycleCatalogSort(key: CatalogSortKey) {
-  // Em Destaques a ordenação é fixa: data de inserção (desc).
-  if (sessionIndex.value === RECENTS_SESSION_ID) {
-    applyDestaquesCatalogSortDefaults()
+  if (isAggregatedLibrarySession()) {
+    if (sessionIndex.value === RECENTS_SESSION_ID || sessionIndex.value === LAST_VIEWED_SESSION_ID) {
+      applyDestaquesCatalogSortDefaults()
+    }
     return
   }
 
@@ -2743,8 +3624,9 @@ function cycleCatalogSort(key: CatalogSortKey) {
     catalogSortDir.value = catalogSortDir.value === 'asc' ? 'desc' : 'asc'
   } else {
     catalogSortKey.value = key
-    catalogSortDir.value = 'asc'
+    catalogSortDir.value = key === 'name' ? 'asc' : 'desc'
   }
+  writeStoredCatalogSort(catalogSortKey.value, catalogSortDir.value)
 
   nextTick(() => {
     const map = (rel: string | null) =>
@@ -2775,6 +3657,19 @@ function cycleCatalogSort(key: CatalogSortKey) {
 
 const errorMsg = ref('')
 const loading = ref(false)
+const catalogGateRequired = ref(false)
+const catalogUnlocked = ref(true)
+const catalogGatePassword = ref('')
+const catalogGateError = ref('')
+const catalogGateBusy = ref(false)
+const catalogGateChecking = ref(true)
+const catalogGateInputRef = ref<HTMLInputElement | null>(null)
+const catalogGateVisible = computed(
+  () =>
+    !manualTvAssist.value &&
+    !isTvLayout.value &&
+    (catalogGateChecking.value || (catalogGateRequired.value && !catalogUnlocked.value)),
+)
 
 const focusedIndex = ref<number | null>(null)
 const activeIndex = ref<number | null>(null)
@@ -2829,6 +3724,55 @@ const {
   tvGridPaddingBottomPx,
 } = useTvCatalogVirtualGrid(isTvLayout, entries, focusedIndex)
 
+type CatalogGridDisplayItem =
+  | { kind: 'folder-header'; sessionId: number; label: string }
+  | { kind: 'tile'; entry: TrailerListEntry; index: number }
+
+const showCatalogFolderHeaders = computed(
+  () => sessionIndex.value === SURPRESA_SESSION_ID && !isTvLayout.value,
+)
+
+/** Meta «origem» no cartão — Destaques e Surpresa/TV; separadores de pasta só na Surpresa desktop. */
+const showCatalogTileOriginMeta = computed(() => {
+  const si = sessionIndex.value
+  if (si === RECENTS_SESSION_ID) return true
+  if (si === SURPRESA_SESSION_ID || si === LAST_VIEWED_SESSION_ID) {
+    return !showCatalogFolderHeaders.value
+  }
+  return false
+})
+
+function catalogGridTileTitle(entry: TrailerListEntry): string {
+  const size = formatSize(entry.trailerSizeBytes)
+  const si = sessionIndex.value
+  const lib = libraryFolderLabel(libSession(entry))
+  if (si === RECENTS_SESSION_ID) {
+    return `${lib} · ${entry.mainFilename} · ${size}`
+  }
+  if (si === SURPRESA_SESSION_ID || si === LAST_VIEWED_SESSION_ID) {
+    return `${aggregatedListTagForSession()} · ${lib} · ${entry.mainFilename} · ${size}`
+  }
+  return `${entry.mainFilename} · ${size}`
+}
+
+const catalogGridDisplayItems = computed((): CatalogGridDisplayItem[] => {
+  const rows = catalogGridRenderItems.value
+  if (!showCatalogFolderHeaders.value) {
+    return rows.map((row) => ({ kind: 'tile' as const, entry: row.entry, index: row.index }))
+  }
+  const out: CatalogGridDisplayItem[] = []
+  let lastSession: number | null = null
+  for (const row of rows) {
+    const sid = libSession(row.entry)
+    if (sid !== lastSession) {
+      out.push({ kind: 'folder-header', sessionId: sid, label: libraryFolderLabel(sid) })
+      lastSession = sid
+    }
+    out.push({ kind: 'tile', entry: row.entry, index: row.index })
+  }
+  return out
+})
+
 /** Modo TV minimal: um unico video no palco (sem grelha). */
 const tvMinimalVideoRef = ref<HTMLVideoElement | null>(null)
 
@@ -2868,11 +3812,25 @@ watch(
   { flush: 'post' },
 )
 
-watch(isTvLayout, (on) => {
+watch(isTvLayout, (on, wasOn) => {
   if (on) {
     void nextTick(() => applyTvMinimalVideoSrc(tvMinimalVideoSrc.value))
   } else {
     releaseVideoElement(tvMinimalVideoRef.value)
+  }
+  if (
+    wasOn !== undefined &&
+    on !== wasOn &&
+    sessionIndex.value === RECENTS_SESSION_ID &&
+    sessions.value.length
+  ) {
+    const rel =
+      focusedIndex.value !== null
+        ? entries.value[focusedIndex.value]?.trailerRel
+        : undefined
+    void loadTrailers(
+      typeof rel === 'string' ? { preserveFocusTrailerRel: rel } : {},
+    )
   }
 })
 
@@ -2889,6 +3847,19 @@ function ensureTvMinimalPlayback(index = 0) {
     return
   }
   const i = Math.min(Math.max(0, Math.floor(index)), list.length - 1)
+  const next = list[i]
+  const playing = resolvePlaybackEntryFromUrls()
+  if (
+    playerUrl.value &&
+    playing &&
+    next &&
+    trailerRelMatchesFocus(playing.trailerRel, next.trailerRel) &&
+    libSession(playing) === libSession(next)
+  ) {
+    focusedIndex.value = i
+    activeIndex.value = i
+    return
+  }
   playerUrl.value = null
   activeIndex.value = null
   gridInlinePreviewIndex.value = null
@@ -2942,8 +3913,17 @@ function onTvMinimalLoadedData() {
   void el.play().catch(() => {})
 }
 
+function onTvMinimalPlay() {
+  syncMainVideoPausedForUi()
+  if (!playerUrl.value) recordTrailerLastViewed(selectedEntry.value)
+}
+
 function onTvMinimalTimeUpdate() {
-  if (!isTvLayout.value || !playerUrl.value) return
+  if (!isTvLayout.value) return
+  if (!playerUrl.value) {
+    recordTrailerLastViewed(selectedEntry.value)
+    return
+  }
   onMainVideoTimeUpdate()
 }
 
@@ -2963,8 +3943,7 @@ function onTvMinimalEnded() {
     onMainVideoEnded()
     return
   }
-  void markCurrentTrailerWatchedFireAndForget()
-  goToNextTrailer()
+  void advanceAfterTrailerEnded()
 }
 
 async function onTvMinimalBackToTrailer() {
@@ -3058,7 +4037,20 @@ const gridInlinePreviewIndex = ref<number | null>(null)
 
 function onGridInlinePreviewLoaded(ev: Event) {
   const v = ev.target
-  if (v instanceof HTMLVideoElement) v.play().catch(() => {})
+  if (!(v instanceof HTMLVideoElement)) return
+  v.play().catch(() => {})
+}
+
+function onGridInlinePreviewPlay() {
+  const i = gridInlinePreviewIndex.value
+  if (i === null) return
+  recordTrailerLastViewed(entries.value[i] ?? null)
+}
+
+function onGridInlinePreviewTimeUpdate() {
+  const i = gridInlinePreviewIndex.value
+  if (i === null) return
+  recordTrailerLastViewed(entries.value[i] ?? null)
 }
 
 function onCatalogThumbClick(i: number) {
@@ -3078,10 +4070,109 @@ function onCatalogThumbClick(i: number) {
 const theaterMode = ref(false)
 const sessionMenuOpen = ref(false)
 const trailerTagPanelOpen = ref(false)
+const trailerTagsHidden = ref(false)
+
+function showTrailerTagsAndToggleInput() {
+  if (trailerTagsHidden.value) {
+    trailerTagsHidden.value = false
+    trailerTagPanelOpen.value = true
+    return
+  }
+  trailerTagPanelOpen.value = !trailerTagPanelOpen.value
+}
+
+function openTrailerTagInput() {
+  trailerTagPanelOpen.value = true
+}
+
+function hideTrailerTags() {
+  trailerTagPanelOpen.value = false
+  trailerTagsHidden.value = true
+}
+
 const searchSessionInput = ref('')
 const searchSessionQuery = ref('')
 const searchSessionError = ref('')
 const searchSessionMode = ref<'files' | 'tags'>('tags')
+
+let suppressCatalogPrefsPersist = false
+
+function snapshotCatalogSessionPrefs(): CatalogSessionPrefs {
+  return {
+    tagFilter: catalogTagFilter.value,
+    originFilter: catalogOriginFilter.value,
+    folderFilterInput: folderFilterInput.value,
+    folderFilterMode: folderFilterMode.value,
+    showOnlyWatched: showOnlyWatched.value,
+    favoriteFilter: favoriteCatalogFilter.value,
+    destaquesFilter: destaquesCatalogFilter.value,
+    sortKey: catalogSortKey.value,
+    sortDir: catalogSortDir.value,
+    searchInput: searchSessionInput.value,
+    searchQuery: searchSessionQuery.value,
+    searchMode: searchSessionMode.value,
+  }
+}
+
+function restoreCatalogSessionPrefsFor(sessionId: number) {
+  suppressCatalogPrefsPersist = true
+  try {
+    const stored = readCatalogSessionPrefs(sessionId)
+    if (stored) {
+      catalogTagFilter.value = stored.tagFilter
+      catalogOriginFilter.value = stored.originFilter
+      folderFilterInput.value = stored.folderFilterInput
+      folderFilterMode.value = stored.folderFilterMode
+      showOnlyWatched.value = stored.showOnlyWatched
+      favoriteCatalogFilter.value = stored.favoriteFilter
+      destaquesCatalogFilter.value = stored.destaquesFilter
+      catalogSortKey.value = stored.sortKey
+      catalogSortDir.value = stored.sortDir
+      searchSessionInput.value = stored.searchInput
+      searchSessionQuery.value = stored.searchQuery
+      searchSessionMode.value = stored.searchMode
+      return
+    }
+    catalogTagFilter.value = null
+    catalogOriginFilter.value = null
+    folderFilterInput.value = ''
+    folderFilterMode.value = 'tags'
+    showOnlyWatched.value = false
+    favoriteCatalogFilter.value = 'all'
+    destaquesCatalogFilter.value = 'all'
+    searchSessionInput.value = ''
+    searchSessionQuery.value = ''
+    searchSessionMode.value = 'tags'
+    if (sessionId === RECENTS_SESSION_ID || sessionId === LAST_VIEWED_SESSION_ID) {
+      applyDestaquesCatalogSortDefaults()
+    } else if (sessionId >= 0) {
+      applyFolderCatalogSortDefaults()
+    }
+  } finally {
+    suppressCatalogPrefsPersist = false
+  }
+}
+
+watch(
+  [
+    catalogTagFilter,
+    catalogOriginFilter,
+    folderFilterInput,
+    folderFilterMode,
+    showOnlyWatched,
+    favoriteCatalogFilter,
+    destaquesCatalogFilter,
+    catalogSortKey,
+    catalogSortDir,
+    searchSessionInput,
+    searchSessionQuery,
+    searchSessionMode,
+  ],
+  () => {
+    if (suppressCatalogPrefsPersist || !catalogPrefsEnabled.value) return
+    writeCatalogSessionPrefs(sessionIndex.value, snapshotCatalogSessionPrefs())
+  },
+)
 
 const CATALOG_GRID_COLLAPSED_KEY = 'video-player-catalog-grid-collapsed'
 const catalogGridCollapsed = ref(false)
@@ -3600,11 +4691,12 @@ const playbackFolderCaption = computed(() => {
   if (!entry) return ''
   const lib = sessions.value.find((s) => s.id === libSession(entry))?.label?.trim() ?? ''
   const sub = parentRelDir(entry.mainRel)
-  const destaquesPrefix =
-    sessionIndex.value === RECENTS_SESSION_ID ? (lib ? `Destaques · ${lib}` : 'Destaques') : ''
-  if (sessionIndex.value === RECENTS_SESSION_ID) {
-    if (sub && destaquesPrefix) return `${destaquesPrefix} · ${sub.replace(/\//g, ' / ')}`
-    return destaquesPrefix || 'Destaques'
+  const si = sessionIndex.value
+  if (si === SURPRESA_SESSION_ID || si === LAST_VIEWED_SESSION_ID) {
+    const aggTag = aggregatedListTagForSession(si)
+    const prefix = lib ? `${aggTag} · ${lib}` : aggTag
+    if (sub && prefix) return `${prefix} · ${sub.replace(/\//g, ' / ')}`
+    return prefix || aggTag || '—'
   }
   if (sub && lib) return `${lib} · ${sub.replace(/\//g, ' / ')}`
   if (sub) return sub.replace(/\//g, ' / ')
@@ -3629,6 +4721,80 @@ const mainVideoEntry = computed(() => {
   return null
 })
 
+/** Título activo na barra (trailer ou vídeo completo) — olho Destaques usa isto. */
+const destaqueToolbarEntry = computed(() => {
+  if (playerUrl.value && mainVideoEntry.value) return mainVideoEntry.value
+  return selectedEntry.value
+})
+
+const destaqueToolbarActive = computed(() => {
+  void recentPlaybackKeyList.value
+  return isPlaybackTitleInRecentList(destaqueToolbarEntry.value)
+})
+
+/** Olho na barra: adiciona ou remove o título activo de «Destaques» (SQLite). */
+async function toggleCurrentTitleRecents() {
+  if (recentsMutationBusy.value) return
+  const e = destaqueToolbarEntry.value
+  if (!e?.trailerRel?.trim()) {
+    showToast('Selecciona um trailer ou vídeo antes de adicionar a Destaques.', 'error')
+    return
+  }
+  const ls = libSession(e)
+  const trailerRel = e.trailerRel
+  const inList = isPlaybackTitleInRecentList(e)
+  recentsMutationBusy.value = true
+  try {
+    if (inList) {
+      const res = await $fetch<{ trailerRel?: string }>('/api/library/recent-remove', {
+        method: 'POST',
+        body: { session: ls, trailerRel },
+      })
+      const canonical =
+        typeof res.trailerRel === 'string' ? res.trailerRel : trailerRel
+      if (typeof res.trailerRel === 'string') {
+        applyDestaqueTrailerRelLocal(ls, trailerRel, res.trailerRel)
+      }
+      syncRecentPlaybackKey(ls, canonical, false)
+      showToast('Removido de Destaques.', 'success')
+      const removeIdx = entries.value.findIndex(
+        (x) => libSession(x) === ls && trailerRelMatchesFocus(x.trailerRel, trailerRel),
+      )
+      await refreshRecentPlaybackKeys()
+      if (sessionIndex.value === RECENTS_SESSION_ID) {
+        const neighborRel =
+          removeIdx >= 0 && entries.value.length > 1
+            ? (entries.value[removeIdx + 1] ?? entries.value[removeIdx - 1])?.trailerRel
+            : undefined
+        await loadTrailers(
+          typeof neighborRel === 'string' ? { preserveFocusTrailerRel: neighborRel } : {},
+        )
+      }
+    } else {
+      const res = await $fetch<{ trailerRel?: string }>('/api/library/recent-play', {
+        method: 'POST',
+        body: { session: ls, trailerRel },
+      })
+      const canonical =
+        typeof res.trailerRel === 'string' ? res.trailerRel : trailerRel
+      if (typeof res.trailerRel === 'string') {
+        applyDestaqueTrailerRelLocal(ls, trailerRel, res.trailerRel)
+      }
+      syncRecentPlaybackKey(ls, canonical, true)
+      showToast('Adicionado a Destaques.', 'success')
+      await refreshRecentPlaybackKeys()
+      syncCatalogIndicesToPlayback()
+      if (sessionIndex.value === RECENTS_SESSION_ID) {
+        await loadTrailers({ preserveFocusTrailerRel: canonical })
+      }
+    }
+  } catch (err: unknown) {
+    showToast(destaqueFetchErrorMessage(err, 'Não foi possível adicionar a Destaques.'), 'error')
+  } finally {
+    recentsMutationBusy.value = false
+  }
+}
+
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -3641,19 +4807,6 @@ function formatGB(bytes: number) {
 }
 
 async function revealPlayingFileInExplorer() {
-  if (typeof sessionStorage === 'undefined') return
-  const tok = sessionStorage.getItem('video_admin_token')?.trim() ?? ''
-  if (!tok) {
-    errorMsg.value =
-      'Para abrir a pasta no servidor, abre a página Admin e clica em «Guardar no browser» com o mesmo token (VIDEO_ADMIN_TOKEN).'
-    return
-  }
-  if (!adminRevealExplorer.value) {
-    errorMsg.value =
-      'O servidor não reportou token admin activo. Coloca VIDEO_ADMIN_TOKEN ou NUXT_ADMIN_TOKEN no .env na raiz do projecto, guarda o ficheiro, reinicia o npm run dev/start e recarrega a lista (muda de biblioteca e volta).'
-    return
-  }
-
   let target: 'main' | 'trailer' | 'preview'
   let rel: string
   let sessionForReveal: number
@@ -3691,7 +4844,6 @@ async function revealPlayingFileInExplorer() {
     await $fetch('/api/admin/reveal-in-explorer', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${tok}`,
         'Content-Type': 'application/json',
       },
       body: {
@@ -3721,6 +4873,16 @@ function formatWatchedSeconds(secs: number | null | undefined): string {
 
 function setPreviewForIndex(i: number | null) {
   if (isTvLayout.value && playerUrl.value) {
+    const next = i !== null ? entries.value[i] : null
+    const playing = resolvePlaybackEntryFromUrls()
+    if (
+      playing &&
+      next &&
+      trailerRelMatchesFocus(playing.trailerRel, next.trailerRel) &&
+      libSession(playing) === libSession(next)
+    ) {
+      return
+    }
     playerUrl.value = null
     activeIndex.value = null
   }
@@ -3735,10 +4897,51 @@ function setPreviewForIndex(i: number | null) {
   previewUrl.value = apiVideoUrl(e.trailerRel, libSession(e))
 }
 
+let lastViewedRecordedKey: string | null = null
+
+function recordTrailerLastViewed(entry: TrailerListEntry | null | undefined) {
+  if (!entry?.trailerRel?.trim()) return
+  if (sessionIndex.value === LAST_VIEWED_SESSION_ID) return
+  const ls = libSession(entry)
+  const rel = normalizeTrailerRelForRecentKey(entry.trailerRel)
+  if (!rel.toLowerCase().startsWith('trailers/')) return
+  const key = playbackRecentKey(ls, rel)
+  if (lastViewedRecordedKey === key) return
+  lastViewedRecordedKey = key
+  void $fetch('/api/library/trailer-view', {
+    method: 'POST',
+    body: { session: ls, trailerRel: entry.trailerRel },
+  }).catch(() => {
+    if (lastViewedRecordedKey === key) lastViewedRecordedKey = null
+  })
+}
+
 function setTrailerIndex(i: number) {
   gridInlinePreviewIndex.value = null
   trailerTagPanelOpen.value = false
   focusedIndex.value = i
+  const next = entries.value[i]
+  const playing = resolvePlaybackEntryFromUrls()
+  if (
+    playerUrl.value &&
+    playing &&
+    next &&
+    trailerRelMatchesFocus(playing.trailerRel, next.trailerRel) &&
+    libSession(playing) === libSession(next)
+  ) {
+    void nextTick(() => {
+      requestAnimationFrame(() => {
+        if (isTvLayout.value) {
+          const root = tvMinimalRailScroll.value
+          const btn = root?.querySelectorAll<HTMLElement>('.tv-minimal-thumb')[i]
+          btn?.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+          return
+        }
+        if (next.trailerRel) scrollCatalogGridToTrailerRel(next.trailerRel)
+      })
+    })
+    return
+  }
   setPreviewForIndex(i)
   void nextTick(() => {
     requestAnimationFrame(() => {
@@ -3764,10 +4967,24 @@ function onPreviewLoaded() {
   }
 }
 
+function onPreviewPlay() {
+  recordTrailerLastViewed(selectedEntry.value)
+}
+
+function onPreviewTimeUpdate() {
+  if (playerUrl.value) return
+  recordTrailerLastViewed(selectedEntry.value)
+}
+
 function onTvStageLoadedData() {
   if (!isTvLayout.value) return
   if (playerUrl.value) return
   onPreviewLoaded()
+}
+
+function onTvStagePlay() {
+  syncMainVideoPausedForUi()
+  if (!playerUrl.value) recordTrailerLastViewed(selectedEntry.value)
 }
 
 function onTvStageLoadedMetadata() {
@@ -3776,7 +4993,11 @@ function onTvStageLoadedMetadata() {
 }
 
 function onTvStageTimeUpdate() {
-  if (!isTvLayout.value || !playerUrl.value) return
+  if (!isTvLayout.value) return
+  if (!playerUrl.value) {
+    recordTrailerLastViewed(selectedEntry.value)
+    return
+  }
   onMainVideoTimeUpdate()
 }
 
@@ -3940,17 +5161,36 @@ function goToPrevTrailer() {
   setTrailerIndex(prev)
 }
 
+/** Próximo título na fila Surpresa antes de remover o actual (índice circular). */
+function surpriseNextTrailerRelAfterCurrent(): string | null {
+  const i = focusedIndex.value
+  const list = entries.value
+  const n = list.length
+  if (i === null || n < 2) return null
+  const nextIdx = i + 1 < n ? i + 1 : 0
+  return list[nextIdx]?.trailerRel ?? null
+}
+
+/** Fim do preview: marca trailer-visto e avança (Surpresa recarrega mantendo o próximo). */
+async function advanceAfterTrailerEnded() {
+  const onSurprise = sessionIndex.value === SURPRESA_SESSION_ID
+  const nextRel = onSurprise ? surpriseNextTrailerRelAfterCurrent() : null
+  await markCurrentTrailerWatchedFireAndForget({ surpriseFocusNextRel: nextRel })
+  if (!onSurprise) goToNextTrailer()
+}
+
 /** Avança para o próximo trailer quando o atual termina (lista circular). */
 function onPreviewEnded() {
-  void markCurrentTrailerWatchedFireAndForget()
-  goToNextTrailer()
+  void advanceAfterTrailerEnded()
 }
 
 /**
  * Marca como `trailer-visto` o trailer actualmente em foco (que acabou de chegar ao fim do preview).
  * Atualiza a tag localmente para o badge azul aparecer já no próximo render — não afecta sort/random.
  */
-async function markCurrentTrailerWatchedFireAndForget() {
+async function markCurrentTrailerWatchedFireAndForget(opts?: {
+  surpriseFocusNextRel?: string | null
+}) {
   const i = focusedIndex.value
   if (i === null) return
   const entry = entries.value[i]
@@ -3971,6 +5211,17 @@ async function markCurrentTrailerWatchedFireAndForget() {
           a.localeCompare(b, undefined, { sensitivity: 'base' }),
         )
       }
+    }
+    if (sessionIndex.value === SURPRESA_SESSION_ID) {
+      const nextRel =
+        typeof opts?.surpriseFocusNextRel === 'string'
+          ? opts.surpriseFocusNextRel
+          : surpriseNextTrailerRelAfterCurrent()
+      await loadTrailers(
+        typeof nextRel === 'string'
+          ? { preserveFocusTrailerRel: nextRel }
+          : {},
+      )
     }
   } catch {
     /* */
@@ -4479,9 +5730,20 @@ function sortTags(tags: string[]): string[] {
 }
 
 function applyEntryTagsLocal(trailerRel: string, libS: number, tags: string[]): void {
-  const idx = findFullEntryIndex(trailerRel, libS)
+  const idx = fullEntries.value.findIndex(
+    (x) => trailerRelMatchesFocus(x.trailerRel, trailerRel) && libSession(x) === libS,
+  )
   if (idx < 0) return
-  fullEntries.value[idx].tags = sortTags(tags)
+  const cur = fullEntries.value[idx]!
+  let next = sortTags(tags)
+  const folderPair = cur.folderPairTag?.trim()
+  if (folderPair) {
+    const low = folderPair.toLowerCase()
+    if (!next.some((t) => t.trim().toLowerCase() === low)) {
+      next = sortTags([...next, folderPair])
+    }
+  }
+  fullEntries.value[idx] = { ...cur, tags: next }
 }
 
 function mergeTagSuggestions(...names: string[]): void {
@@ -4645,30 +5907,33 @@ async function addTagFromInput() {
   const trailerRel = e.trailerRel
   const ls = libSession(e)
   const idx = findFullEntryIndex(trailerRel, ls)
-  const prevTags = idx >= 0 ? [...(fullEntries.value[idx].tags ?? [])] : []
+  const prevTags = idx >= 0 ? [...(fullEntries.value[idx].tags ?? [])] : [...(e.tags ?? [])]
 
-  if (idx >= 0) {
-    applyEntryTagsLocal(trailerRel, ls, [...new Set([...prevTags, ...parts])])
-  }
+  applyEntryTagsLocal(trailerRel, ls, [...new Set([...prevTags, ...parts])])
   mergeTagSuggestions(...parts)
   newTagInput.value = ''
+  const keepRel = trailerRel
 
   try {
     let serverTags = prevTags
     for (const name of parts) {
-      const res = await $fetch<{ tags?: string[] }>('/api/library/tags', {
+      const res = await $fetch<{ tags?: string[]; trailerRel?: string }>('/api/library/tags', {
         method: 'POST',
         body: { session: ls, trailerRel, name },
       })
       if (Array.isArray(res.tags)) serverTags = res.tags
     }
     applyEntryTagsLocal(trailerRel, ls, serverTags)
+    const ni = findEntryIndexInEntries(keepRel, ls)
+    if (ni >= 0) focusedIndex.value = ni
     errorMsg.value = ''
   } catch (err: unknown) {
     applyEntryTagsLocal(trailerRel, ls, prevTags)
     const ex = err as { data?: { statusMessage?: string }; message?: string }
-    errorMsg.value =
+    const msg =
       ex?.data?.statusMessage || ex?.message || 'Não foi possível gravar a tag (servidor).'
+    errorMsg.value = msg
+    showToast(msg, 'error')
   }
 }
 
@@ -4854,73 +6119,192 @@ function openCurrentVideoInEditor() {
     query: {
       session: String(libSession(entry)),
       file: entry.mainRel,
+      useVideo: '1',
     },
   })
 }
 
-function waitTrailerReprocessJob(jobId: string): Promise<'done' | 'failed'> {
-  return new Promise((resolve, reject) => {
-    const url = `/api/admin/trailer-reprocess-stream?jobId=${encodeURIComponent(jobId)}`
-    const es = new EventSource(url)
-    es.addEventListener('status', (ev) => {
-      try {
-        const data = JSON.parse((ev as MessageEvent).data) as { status?: string }
-        if (data.status === 'done') {
-          es.close()
-          resolve('done')
-        } else if (data.status === 'failed') {
-          es.close()
-          resolve('failed')
-        }
-      } catch {
-        /* */
-      }
-    })
-    es.onerror = () => {
-      es.close()
-      reject(new Error('Ligação ao job de trailer perdida.'))
+function applyTrailerQueueState(state: TrailerQueueServerState) {
+  trailerQueue.value = Array.isArray(state.items)
+    ? state.items.map((i) => ({
+        id: i.id,
+        session: i.session,
+        mainRel: i.mainRel,
+        trailerRel: i.trailerRel,
+        label: i.label,
+        params: i.params as unknown as ShrinkInPlaceParams,
+        status: i.status,
+        error: i.error,
+        jobId: i.jobId,
+      }))
+    : []
+  trailerReprocessBusy.value = Boolean(state.busy)
+  const running = trailerQueue.value.find((i) => i.status === 'running')
+  if (running) {
+    if (running.id !== trailerQueueLastRunningId) {
+      trailerQueueLastRunningId = running.id
     }
-  })
+  } else {
+    trailerQueueLastRunningId = null
+  }
 }
 
-async function reprocessCurrentTrailer(params?: TrailerBatParams) {
+function stopTrailerQueueMonitor() {
+  trailerQueueMonitorWanted = false
+  if (trailerQueueEs) {
+    try {
+      trailerQueueEs.close()
+    } catch {
+      /* */
+    }
+    trailerQueueEs = null
+  }
+}
+
+function ensureTrailerQueueMonitor() {
+  if (!import.meta.client) return
+  trailerQueueMonitorWanted = true
+  if (trailerQueueEs) return
+  const es = new EventSource('/api/admin/trailer-reprocess-queue-stream')
+  trailerQueueEs = es
+  es.addEventListener('queue', (ev) => {
+    try {
+      const data = JSON.parse((ev as MessageEvent).data) as TrailerQueueServerState
+      applyTrailerQueueState(data)
+      if (!data.busy && trailerQueueMonitorWanted) {
+        window.setTimeout(() => {
+          if (!trailerReprocessBusy.value) stopTrailerQueueMonitor()
+        }, 2000)
+      }
+    } catch {
+      /* */
+    }
+  })
+  es.addEventListener('job-status', (ev) => {
+    try {
+      const data = JSON.parse((ev as MessageEvent).data) as {
+        itemId?: string
+        status?: string
+        error?: string | null
+      }
+      const item = trailerQueue.value.find((i) => i.id === data.itemId)
+      if (data.status === 'done') {
+        showToast(item ? `Trailer OK — ${item.label}` : 'Trailer reprocessado.', 'success')
+        void softReloadCatalogKeepFocus()
+      } else if (data.status === 'failed') {
+        const msg =
+          (typeof data.error === 'string' && data.error.trim()) ||
+          'Falha ao reprocessar o trailer.'
+        errorMsg.value = msg
+        showToast(msg, 'error')
+      }
+    } catch {
+      /* */
+    }
+  })
+  es.onerror = () => {
+    if (!trailerQueueMonitorWanted) return
+    try {
+      es.close()
+    } catch {
+      /* */
+    }
+    if (trailerQueueEs === es) trailerQueueEs = null
+    window.setTimeout(() => {
+      if (trailerQueueMonitorWanted && trailerReprocessBusy.value) ensureTrailerQueueMonitor()
+    }, 1500)
+  }
+}
+
+async function restoreTrailerQueueFromServer() {
+  if (!import.meta.client) return
+  try {
+    const state = await $fetch<TrailerQueueServerState>('/api/admin/trailer-reprocess-queue')
+    applyTrailerQueueState(state)
+    if (state.busy || state.items.some((i) => i.status === 'pending' || i.status === 'running')) {
+      ensureTrailerQueueMonitor()
+    }
+  } catch {
+    /* */
+  }
+}
+
+async function enqueueCurrentTrailerReprocess() {
   const entry = editorOpenEntry.value
-  if (!entry?.hasMain || trailerReprocessBusy.value) return
+  if (!entry?.hasMain) return
   if (serverPlatform.value.toLowerCase() !== 'win32') {
     errorMsg.value = 'Reprocessar trailer só funciona com o servidor em Windows.'
     return
   }
-  const trailerParams = normalizeTrailerBatParams(params ?? trailerParamsForm.value)
+  if (!canEnqueueCurrentTrailer.value) {
+    showToast('Este vídeo já está na fila de trailers.', 'error')
+    return
+  }
+  const trailerParams = normalizeTrailerBatParams(trailerParamsForm.value)
   trailerParamsForm.value = trailerParams
   saveTrailerParamsToStorage(trailerParams)
-  trailerReprocessBusy.value = true
   try {
-    const { jobId } = await $fetch<{ jobId: string }>('/api/admin/trailer-reprocess-start', {
+    const state = await $fetch<TrailerQueueServerState>('/api/admin/trailer-reprocess-queue', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: {
+        action: 'enqueue',
         session: libSession(entry),
         mainRel: entry.mainRel,
+        trailerRel: entry.trailerRel,
+        label: entry.mainFilename || entry.mainRel,
         params: trailerParams,
       },
     })
-    errorMsg.value = 'A reprocessar trailer… (pode demorar alguns minutos)'
-    const result = await waitTrailerReprocessJob(jobId)
-    if (result === 'done') {
-      await loadTrailers({ preserveFocusTrailerRel: entry.trailerRel })
-      errorMsg.value = 'Trailer reprocessado com sucesso.'
-    } else {
-      errorMsg.value =
-        'Falha ao reprocessar o trailer — o ficheiro em trailers\\ pode ter sido apagado; verifica a consola do servidor e tenta de novo.'
-    }
+    applyTrailerQueueState(state)
+    const n = state.items.filter((i) => i.status === 'pending' || i.status === 'running').length
+    showToast(`Trailer na fila (${n} activo(s)).`, 'success')
+    ensureTrailerQueueMonitor()
   } catch (err: unknown) {
-    const ex = err as { data?: { statusMessage?: string }; message?: string }
-    errorMsg.value =
-      ex?.data?.statusMessage || ex?.message || 'Não foi possível reprocessar o trailer.'
-  } finally {
-    trailerReprocessBusy.value = false
+    const ex = err as { data?: { statusMessage?: string; message?: string }; message?: string }
+    const msg =
+      ex?.data?.statusMessage ||
+      ex?.data?.message ||
+      ex?.message ||
+      'Não foi possível adicionar à fila de trailers.'
+    showToast(msg, 'error')
+    errorMsg.value = msg
+  }
+}
+
+async function removeTrailerQueueItem(id: string) {
+  try {
+    const state = await $fetch<TrailerQueueServerState>('/api/admin/trailer-reprocess-queue', {
+      method: 'POST',
+      body: { action: 'remove', id },
+    })
+    applyTrailerQueueState(state)
+  } catch {
+    showToast('Não foi possível tirar da fila.', 'error')
+  }
+}
+
+async function clearPendingTrailerQueue() {
+  try {
+    const state = await $fetch<TrailerQueueServerState>('/api/admin/trailer-reprocess-queue', {
+      method: 'POST',
+      body: { action: 'clear-pending' },
+    })
+    applyTrailerQueueState(state)
+  } catch {
+    showToast('Não foi possível limpar a fila.', 'error')
+  }
+}
+
+async function clearFinishedTrailerQueue() {
+  try {
+    const state = await $fetch<TrailerQueueServerState>('/api/admin/trailer-reprocess-queue', {
+      method: 'POST',
+      body: { action: 'clear-finished' },
+    })
+    applyTrailerQueueState(state)
+  } catch {
+    showToast('Não foi possível limpar os processados.', 'error')
   }
 }
 
@@ -4928,18 +6312,362 @@ function openTrailerReprocessDialog() {
   if (!editorOpenEntry.value?.hasMain) return
   trailerParamsForm.value = loadTrailerParamsFromStorage()
   trailerReprocessDialogOpen.value = true
+  void restoreTrailerQueueFromServer()
 }
 
 function resetTrailerParamsForm() {
   trailerParamsForm.value = { ...TRAILER_BAT_PARAMS_DEFAULT }
 }
 
-async function confirmTrailerReprocess() {
-  const normalized = normalizeTrailerBatParams(trailerParamsForm.value)
-  trailerParamsForm.value = normalized
-  saveTrailerParamsToStorage(normalized)
-  trailerReprocessDialogOpen.value = false
-  await reprocessCurrentTrailer(normalized)
+function applyShrinkQueueState(state: ShrinkQueueServerState) {
+  shrinkQueue.value = Array.isArray(state.items) ? state.items.map((i) => ({ ...i })) : []
+  shrinkInPlaceBusy.value = Boolean(state.busy)
+  const running = shrinkQueue.value.find((i) => i.status === 'running')
+  if (running) {
+    if (typeof window !== 'undefined' && shrinkPanelDismissTimer != null) {
+      window.clearTimeout(shrinkPanelDismissTimer)
+      shrinkPanelDismissTimer = null
+    }
+    if (running.id !== shrinkQueueLastRunningId) {
+      shrinkQueueLastRunningId = running.id
+      resetShrinkInPlaceProgressUi(running.label)
+      ingestShrinkLogLine(
+        `[UI] fila ${shrinkQueueDoneCount.value + 1}/${shrinkQueue.value.length} · ${running.label} · ${running.params.speed}x · ${running.params.height}px · ${running.params.codec}`,
+      )
+    }
+    shrinkInPlaceFileLabel.value = running.label
+    shrinkInPlaceLastStatus.value = `Shrink fila ${shrinkQueueDoneCount.value + 1}/${shrinkQueue.value.length}`
+  } else {
+    shrinkQueueLastRunningId = null
+    if (!state.busy) {
+      const fail = shrinkQueue.value.filter((i) => i.status === 'failed').length
+      const ok = shrinkQueue.value.filter((i) => i.status === 'done').length
+      if (ok + fail > 0) {
+        if (fail === 0) {
+          shrinkInPlaceFailed.value = false
+          shrinkInPlaceLastStatus.value = `Fila concluída (${ok})`
+          shrinkInPlaceLatestLine.value = `Fila concluída (${ok})`
+        } else {
+          shrinkInPlaceFailed.value = true
+          shrinkInPlaceLastStatus.value = `Fila: ${ok} ok · ${fail} falhou`
+          shrinkInPlaceLatestLine.value = `Fila: ${ok} ok · ${fail} falhou`
+        }
+        scheduleShrinkPanelDismiss()
+      } else if (!shrinkQueue.value.some((i) => i.status === 'pending' || i.status === 'running')) {
+        scheduleShrinkPanelDismiss()
+      }
+    }
+  }
+}
+
+let shrinkPanelDismissTimer: number | null = null
+function scheduleShrinkPanelDismiss() {
+  if (typeof window === 'undefined') return
+  if (shrinkPanelDismissTimer != null) {
+    window.clearTimeout(shrinkPanelDismissTimer)
+    shrinkPanelDismissTimer = null
+  }
+  shrinkPanelDismissTimer = window.setTimeout(() => {
+    shrinkPanelDismissTimer = null
+    if (shrinkInPlaceBusy.value) return
+    if (shrinkQueue.value.some((i) => i.status === 'pending' || i.status === 'running')) return
+    resetShrinkInPlaceProgressUi()
+  }, 2800)
+}
+
+function stopShrinkQueueMonitor() {
+  shrinkQueueMonitorWanted = false
+  if (shrinkQueueEs) {
+    try {
+      shrinkQueueEs.close()
+    } catch {
+      /* */
+    }
+    shrinkQueueEs = null
+  }
+}
+
+function ensureShrinkQueueMonitor() {
+  if (!import.meta.client) return
+  shrinkQueueMonitorWanted = true
+  if (shrinkQueueEs) return
+  const es = new EventSource('/api/admin/shrink-in-place-queue-stream')
+  shrinkQueueEs = es
+  es.addEventListener('queue', (ev) => {
+    try {
+      const data = JSON.parse((ev as MessageEvent).data) as ShrinkQueueServerState
+      applyShrinkQueueState(data)
+      if (!data.busy && shrinkQueueMonitorWanted) {
+        window.setTimeout(() => {
+          if (!shrinkInPlaceBusy.value) stopShrinkQueueMonitor()
+        }, 2000)
+      }
+    } catch {
+      /* */
+    }
+  })
+  es.addEventListener('line', (ev) => {
+    try {
+      const data = JSON.parse((ev as MessageEvent).data) as {
+        text?: string
+        seq?: number
+        itemId?: string
+      }
+      if (typeof data.text === 'string') ingestShrinkLogLine(data.text, data.seq)
+    } catch {
+      /* */
+    }
+  })
+  es.addEventListener('job-status', (ev) => {
+    try {
+      const data = JSON.parse((ev as MessageEvent).data) as {
+        itemId?: string
+        status?: string
+        error?: string | null
+      }
+      const item = shrinkQueue.value.find((i) => i.id === data.itemId)
+      if (data.status === 'done') {
+        shrinkInPlacePct.value = 100
+        shrinkInPlaceFailed.value = false
+        shrinkInPlaceLatestLine.value = item ? `OK — ${item.label}` : 'Shrink concluído'
+        ingestShrinkLogLine(item ? `[OK] fila: ${item.label}` : '[OK] shrink')
+        void softReloadCatalogKeepFocus()
+      } else if (data.status === 'failed') {
+        shrinkInPlaceFailed.value = true
+        shrinkInPlaceLastStatus.value = 'Shrink falhou'
+        const msg =
+          (typeof data.error === 'string' && data.error.trim()) ||
+          shrinkInPlaceLatestLine.value ||
+          'Falha no shrink — o original não foi alterado.'
+        shrinkInPlaceErrorSummary.value = msg
+        errorMsg.value = msg
+        ingestShrinkLogLine(`[ERRO] ${msg}`)
+      }
+    } catch {
+      /* */
+    }
+  })
+  es.onerror = () => {
+    if (!shrinkQueueMonitorWanted) return
+    try {
+      es.close()
+    } catch {
+      /* */
+    }
+    if (shrinkQueueEs === es) shrinkQueueEs = null
+    window.setTimeout(() => {
+      if (shrinkQueueMonitorWanted && shrinkInPlaceBusy.value) ensureShrinkQueueMonitor()
+    }, 1500)
+  }
+}
+
+async function restoreShrinkQueueFromServer() {
+  if (!import.meta.client) return
+  try {
+    const state = await $fetch<ShrinkQueueServerState>('/api/admin/shrink-in-place-queue')
+    const running = state.items.find((i) => i.status === 'running')
+    if (running) shrinkQueueLastRunningId = running.id
+    applyShrinkQueueState(state)
+    if (state.busy || state.items.some((i) => i.status === 'pending' || i.status === 'running')) {
+      ensureShrinkQueueMonitor()
+    }
+  } catch {
+    /* */
+  }
+}
+
+async function enqueueCurrentShrinkInPlace() {
+  const entry = editorOpenEntry.value
+  if (!entry?.hasMain) return
+  if (serverPlatform.value.toLowerCase() !== 'win32') {
+    errorMsg.value = 'Shrink in-place só funciona com o servidor em Windows.'
+    return
+  }
+  if (!canEnqueueCurrentShrink.value) {
+    showToast('Este vídeo já está na fila.', 'error')
+    return
+  }
+  await refreshShrinkAlreadyDoneHint()
+  if (shrinkAlreadyDone.value) {
+    const when = shrinkAlreadyDoneAt.value
+      ? new Date(shrinkAlreadyDoneAt.value).toLocaleString()
+      : null
+    const ok = confirm(
+      when
+        ? `Este vídeo já foi shrinkado pelo grid (${when}).\n\nEnfileirar outra vez? O ficheiro actual será processado e substituído de novo.`
+        : `Este vídeo já foi shrinkado pelo grid.\n\nEnfileirar outra vez? O ficheiro actual será processado e substituído de novo.`,
+    )
+    if (!ok) return
+  }
+  if (!confirmShrinkSizeWarnings(entry.mainSizeBytes ?? 0)) return
+  const params = normalizeShrinkInPlaceParams(shrinkInPlaceForm.value)
+  shrinkInPlaceForm.value = params
+  saveShrinkInPlaceParamsToStorage(params)
+  try {
+    if (playerUrl.value) await closeFullVideo()
+    const state = await $fetch<ShrinkQueueServerState>('/api/admin/shrink-in-place-queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: {
+        action: 'enqueue',
+        session: libSession(entry),
+        mainRel: entry.mainRel,
+        trailerRel: entry.trailerRel,
+        label: entry.mainFilename || entry.mainRel,
+        params,
+      },
+    })
+    applyShrinkQueueState(state)
+    const pending = state.items.filter((i) => i.status === 'pending' || i.status === 'running').length
+    showToast(`Na fila (${pending} activo(s)).`, 'success')
+    const running = state.items.find((i) => i.status === 'running')
+    if (running && !shrinkInPlaceLogLines.value.length) {
+      resetShrinkInPlaceProgressUi(running.label)
+    }
+    ensureShrinkQueueMonitor()
+  } catch (err: unknown) {
+    const ex = err as { data?: { statusMessage?: string; message?: string }; message?: string }
+    const msg =
+      ex?.data?.statusMessage ||
+      ex?.data?.message ||
+      ex?.message ||
+      'Não foi possível adicionar à fila.'
+    showToast(msg, 'error')
+    errorMsg.value = msg
+  }
+}
+
+async function removeShrinkQueueItem(id: string) {
+  try {
+    const state = await $fetch<ShrinkQueueServerState>('/api/admin/shrink-in-place-queue', {
+      method: 'POST',
+      body: { action: 'remove', id },
+    })
+    applyShrinkQueueState(state)
+  } catch {
+    showToast('Não foi possível tirar da fila.', 'error')
+  }
+}
+
+async function clearPendingShrinkQueue() {
+  try {
+    const state = await $fetch<ShrinkQueueServerState>('/api/admin/shrink-in-place-queue', {
+      method: 'POST',
+      body: { action: 'clear-pending' },
+    })
+    applyShrinkQueueState(state)
+  } catch {
+    showToast('Não foi possível limpar a fila.', 'error')
+  }
+}
+
+async function clearFinishedShrinkQueue() {
+  try {
+    const state = await $fetch<ShrinkQueueServerState>('/api/admin/shrink-in-place-queue', {
+      method: 'POST',
+      body: { action: 'clear-finished' },
+    })
+    applyShrinkQueueState(state)
+  } catch {
+    showToast('Não foi possível limpar os processados.', 'error')
+  }
+}
+
+const shrinkAlreadyDoneAt = ref<number | null>(null)
+const shrinkAlreadyDone = ref(false)
+const SHRINK_WARN_BELOW_1GB = 1024 * 1024 * 1024
+const SHRINK_WARN_BELOW_500MB = 500 * 1024 * 1024
+const shrinkAlreadyDoneHint = computed(() => {
+  if (!shrinkAlreadyDone.value) return ''
+  if (shrinkAlreadyDoneAt.value) {
+    try {
+      return `Já shrinkado pelo grid em ${new Date(shrinkAlreadyDoneAt.value).toLocaleString()}. Enfileirar outra vez substitui o ficheiro de novo.`
+    } catch {
+      /* */
+    }
+  }
+  return 'Este vídeo já foi shrinkado pelo grid. Enfileirar outra vez substitui o ficheiro de novo.'
+})
+const shrinkSizeWarnHint = computed(() => {
+  const bytes = editorOpenEntry.value?.mainSizeBytes ?? 0
+  if (!Number.isFinite(bytes) || bytes <= 0) return ''
+  const label = formatGB(bytes) || formatSize(bytes)
+  if (bytes < SHRINK_WARN_BELOW_500MB) {
+    return `Ficheiro pequeno (${label}): abaixo de 500 MB — shrink costuma valer pouco; confirma duas vezes ao enfileirar.`
+  }
+  if (bytes < SHRINK_WARN_BELOW_1GB) {
+    return `Ficheiro abaixo de 1 GB (${label}): confirma ao enfileirar se quiseres shrinkar na mesma.`
+  }
+  return ''
+})
+
+function confirmShrinkSizeWarnings(bytes: number): boolean {
+  if (!Number.isFinite(bytes) || bytes <= 0) return true
+  const label = formatGB(bytes) || formatSize(bytes)
+  if (bytes < SHRINK_WARN_BELOW_500MB) {
+    const ok1 = confirm(
+      `Este vídeo tem só ${label} (abaixo de 500 MB).\n\nShrink em ficheiros tão pequenos costuma poupar pouco espaço e gasta tempo/CPU.\n\nQueres continuar na mesma?`,
+    )
+    if (!ok1) return false
+    const ok2 = confirm(
+      `Confirma outra vez: ${label} é abaixo de 500 MB.\n\nTens a certeza que queres enfileirar o shrink?`,
+    )
+    return ok2
+  }
+  if (bytes < SHRINK_WARN_BELOW_1GB) {
+    return confirm(
+      `Este vídeo tem ${label} (abaixo de 1 GB).\n\nO ganho de espaço pode ser pequeno. Enfileirar shrink na mesma?`,
+    )
+  }
+  return true
+}
+
+async function refreshShrinkAlreadyDoneHint() {
+  shrinkAlreadyDoneAt.value = null
+  shrinkAlreadyDone.value = false
+  const entry = editorOpenEntry.value
+  if (!entry?.hasMain || !import.meta.client) return
+  const session = libSession(entry)
+  const mainRel = entry.mainRel
+  const mainBase = mainRel.replace(/\\/g, '/').split('/').pop()?.toLowerCase() || ''
+  const fromQueue = shrinkQueue.value.some(
+    (i) =>
+      i.status === 'done' &&
+      i.session === session &&
+      (i.mainRel === mainRel ||
+        i.mainRel.replace(/\\/g, '/').split('/').pop()?.toLowerCase() === mainBase),
+  )
+  if (fromQueue) shrinkAlreadyDone.value = true
+  try {
+    const res = await $fetch<{
+      alreadyShrunk?: boolean
+      entry?: { endedAt?: number } | null
+    }>('/api/admin/process-job-history', {
+      query: {
+        kind: 'shrink',
+        session,
+        mainRel,
+      },
+    })
+    if (res.alreadyShrunk) {
+      shrinkAlreadyDone.value = true
+      if (res.entry?.endedAt) shrinkAlreadyDoneAt.value = res.entry.endedAt
+    }
+  } catch {
+    /* */
+  }
+}
+
+function openShrinkInPlaceDialog() {
+  if (!editorOpenEntry.value?.hasMain) return
+  shrinkInPlaceForm.value = loadShrinkInPlaceParamsFromStorage()
+  shrinkInPlaceDialogOpen.value = true
+  void restoreShrinkQueueFromServer()
+  void refreshShrinkAlreadyDoneHint()
+}
+
+function resetShrinkInPlaceForm() {
+  shrinkInPlaceForm.value = { ...SHRINK_IN_PLACE_PARAMS_DEFAULT }
 }
 
 function openMoveTitleDialog() {
@@ -5047,6 +6775,8 @@ function syncRateFromVideo() {
   }
 }
 
+let sessionsBootstrapped = false
+
 async function loadSessions() {
   try {
     const data = await $fetch<{ sessions: VideoSessionTab[] }>('/api/sessions')
@@ -5058,21 +6788,22 @@ async function loadSessions() {
       sessions.value[0]?.id ??
       0
 
-    // Se a URL define sessão válida, respeitar.
     if (routeSession !== null && sessions.value.some((s) => s.id === routeSession)) {
       sessionIndex.value = routeSession
+      sessionsBootstrapped = true
       return
     }
 
-    // Sem ?session=, iniciar na vista agregada Favoritos (-1), se existir.
-    if (routeSession === null) {
+    if (!sessionsBootstrapped) {
       sessionIndex.value = defaultSessionId
+      sessionsBootstrapped = true
       return
     }
 
     if (!sessions.value.some((s) => s.id === sessionIndex.value)) {
       sessionIndex.value = defaultSessionId
     }
+    sessionsBootstrapped = true
   } catch (e: unknown) {
     sessions.value = []
     const err = e as { data?: { statusMessage?: string }; message?: string }
@@ -5111,6 +6842,10 @@ function onLibraryRefreshMessage(ev: MessageEvent) {
 }
 
 async function selectSession(id: number, opts?: { preserveFocusTrailerRel?: string | null }) {
+  const prevSession = sessionIndex.value
+  if (prevSession === SURPRESA_SESSION_ID && id !== SURPRESA_SESSION_ID) {
+    void $fetch('/api/trailers/surprise-viewed', { method: 'POST' }).catch(() => {})
+  }
   if (id === sessionIndex.value) {
     const rel = typeof opts?.preserveFocusTrailerRel === 'string' ? opts.preserveFocusTrailerRel : ''
     if (rel) {
@@ -5127,7 +6862,10 @@ async function selectSession(id: number, opts?: { preserveFocusTrailerRel?: stri
   clearPinnedTrailers()
   gridInlinePreviewIndex.value = null
   catalogGalleryIndex.value = null
-  catalogTagFilter.value = null
+  if (!catalogPrefsEnabled.value) {
+    catalogTagFilter.value = null
+    folderFilterInput.value = ''
+  }
   trailerTagPanelOpen.value = false
   shuffleForwardEnabled.value = false
   sequentialForwardOnceAfterPrev.value = false
@@ -5138,17 +6876,9 @@ async function selectSession(id: number, opts?: { preserveFocusTrailerRel?: stri
   await loadTrailers(opts)
 }
 
-function trailerRelMatchesFocus(a: string, b: string): boolean {
-  const na = a.trim().replace(/\\/g, '/').toLowerCase()
-  const nb = b.trim().replace(/\\/g, '/').toLowerCase()
-  return na === nb
-}
-
-/** Fallback quando não há URL nem entrada preservada: Destaques / TV no primeiro; aleatório nas outras bibliotecas. */
-function fallbackCatalogStartIndex(len: number): number {
-  if (len <= 0) return 0
-  if (isTvLayout.value || sessionIndex.value === RECENTS_SESSION_ID) return 0
-  return Math.floor(Math.random() * len)
+/** Índice inicial do catálogo: primeiro da lista já ordenada (ex. mais recente com Data ↓). */
+function fallbackCatalogStartIndex(_len: number): number {
+  return 0
 }
 
 type CatalogLoadOpts = {
@@ -5158,7 +6888,6 @@ type CatalogLoadOpts = {
 
 function applyServerCatalogPayload(data: {
   serverPlatform?: string
-  adminRevealExplorer?: boolean
   catalogMode?: 'trailers' | 'main-only'
   fastPlay?: {
     rate?: number
@@ -5170,7 +6899,6 @@ function applyServerCatalogPayload(data: {
 }) {
   serverPlatform.value =
     typeof data.serverPlatform === 'string' ? data.serverPlatform : ''
-  adminRevealExplorer.value = data.adminRevealExplorer === true
   if (data.fastPlay && typeof data.fastPlay === 'object') {
     const nRate = Number(data.fastPlay.rate)
     const nStep = Number(data.fastPlay.stepSeconds)
@@ -5199,15 +6927,21 @@ async function applyCatalogFocusAfterLoad(
   preserveRel: string | null,
 ) {
   const qSessionFromRoute = parseShareSessionQuery(route.query.session)
+  const pending = peekPendingCatalogOpen()
   const shareRelForThisSession =
     !preserveRel &&
     (qSessionFromRoute === null || qSessionFromRoute === sessionIndex.value)
-      ? normalizeShareRelQuery(route.query.rel)
+      ? pending.rel
+      : ''
+  const shareFileForThisSession =
+    !preserveRel &&
+    (qSessionFromRoute === null || qSessionFromRoute === sessionIndex.value)
+      ? pending.file
       : ''
 
   if (list.length) {
     if (preserveRel) {
-      const ni = list.findIndex((e) => trailerRelMatchesFocus(e.trailerRel, preserveRel))
+      const ni = list.findIndex((e) => entryMatchesShareRel(e, preserveRel))
       if (ni >= 0) {
         focusedIndex.value = ni
       } else if (keepPlaybackAcrossReload) {
@@ -5220,9 +6954,27 @@ async function applyCatalogFocusAfterLoad(
             : 0
         focusedIndex.value = slot
       }
-    } else if (shareRelForThisSession) {
-      const ei = list.findIndex((e) => e.trailerRel === shareRelForThisSession)
-      focusedIndex.value = ei >= 0 ? ei : fallbackCatalogStartIndex(list.length)
+    } else if (shareRelForThisSession || shareFileForThisSession) {
+      const findIx = (lst: TrailerListEntry[]) =>
+        lst.findIndex(
+          (e) =>
+            (shareRelForThisSession && entryMatchesShareRel(e, shareRelForThisSession)) ||
+            (shareFileForThisSession && entryMatchesMainRel(e, shareFileForThisSession)),
+        )
+      let ei = findIx(list)
+      if (ei < 0) {
+        const inFull = fullEntries.value.some(
+          (e) =>
+            (shareRelForThisSession && entryMatchesShareRel(e, shareRelForThisSession)) ||
+            (shareFileForThisSession && entryMatchesMainRel(e, shareFileForThisSession)),
+        )
+        if (inFull) {
+          clearCatalogFiltersForShareFocus()
+          ei = findIx(entries.value)
+        }
+      }
+      const len = ei >= 0 ? entries.value.length || list.length : list.length
+      focusedIndex.value = ei >= 0 ? ei : fallbackCatalogStartIndex(len)
     } else {
       focusedIndex.value = fallbackCatalogStartIndex(list.length)
     }
@@ -5231,7 +6983,7 @@ async function applyCatalogFocusAfterLoad(
   }
 
   if (keepPlaybackAcrossReload && preserveRel) {
-    const niFull = list.findIndex((e) => trailerRelMatchesFocus(e.trailerRel, preserveRel))
+    const niFull = list.findIndex((e) => entryMatchesShareRel(e, preserveRel))
     if (niFull >= 0) {
       activeIndex.value = niFull
       focusedIndex.value = niFull
@@ -5246,7 +6998,13 @@ async function applyCatalogFocusAfterLoad(
   }
 
   if (isTvLayout.value) {
-    if (list.length) ensureTvMinimalPlayback(focusedIndex.value ?? 0)
+    if (list.length) {
+      if (keepPlaybackAcrossReload && playerUrl.value) {
+        void nextTick(() => applyTvMinimalVideoSrc(tvMinimalVideoSrc.value))
+      } else {
+        ensureTvMinimalPlayback(focusedIndex.value ?? 0)
+      }
+    }
     return
   }
 
@@ -5389,9 +7147,8 @@ async function loadTrailers(opts?: {
     gridInlinePreviewIndex.value = null
     catalogGalleryIndex.value = null
     serverPlatform.value = ''
-    adminRevealExplorer.value = false
     catalogMode.value = 'trailers'
-    recentPlaybackKeys.value = new Set()
+    recentPlaybackKeyList.value = []
     return
   }
   errorMsg.value = ''
@@ -5418,14 +7175,18 @@ async function loadTrailers(opts?: {
     ? searchQ.length >= 2
       ? `/api/library/search?q=${encodeURIComponent(searchQ)}&mode=${encodeURIComponent(searchSessionMode.value)}`
       : ''
-    : sessionIndex.value === RECENTS_SESSION_ID
-      ? (() => {
-          const sid = recentsLibrarySessionFilter()
-          return sid !== null
-            ? `/api/trailers/recent?librarySession=${sid}`
-            : '/api/trailers/recent'
-        })()
-      : `/api/trailers?session=${sessionIndex.value}`
+    : sessionIndex.value === SURPRESA_SESSION_ID
+      ? '/api/trailers/surprise'
+      : sessionIndex.value === LAST_VIEWED_SESSION_ID
+        ? '/api/trailers/last-viewed'
+        : sessionIndex.value === RECENTS_SESSION_ID
+          ? (() => {
+              const sid = recentsLibrarySessionFilter()
+              return sid !== null
+                ? `/api/trailers/recent?librarySession=${sid}`
+                : '/api/trailers/recent'
+            })()
+          : `/api/trailers?session=${sessionIndex.value}`
   if (!trailerUrl) {
     fullEntries.value = []
     tagSuggestions.value = []
@@ -5443,7 +7204,6 @@ async function loadTrailers(opts?: {
       originCounts?: { session: number; tag: string; count: number }[]
       tagSuggestions?: string[]
       serverPlatform?: string
-      adminRevealExplorer?: boolean
       catalogMode?: 'trailers' | 'main-only'
       fastPlay?: {
         rate?: number
@@ -5504,9 +7264,57 @@ function parseCatalogTriFilterQuery(raw: unknown): CatalogTriFilter | null {
 }
 
 function normalizeShareRelQuery(raw: unknown): string {
-  const t = routeQueryString(raw).trim().replace(/\\/g, '/')
+  let t = routeQueryString(raw).trim().replace(/\\/g, '/')
+  if (!t) return ''
+  if (/%[0-9a-fA-F]{2}/.test(t)) {
+    try {
+      t = decodeURIComponent(t)
+    } catch {
+      /* keep raw */
+    }
+  }
+  t = t.replace(/\+/g, ' ').trim().replace(/\\/g, '/')
   if (!t || t.includes('..')) return ''
   return t
+}
+
+function readShareFileFromRoute(): string {
+  return (
+    normalizeShareRelQuery(route.query.file) ||
+    normalizeShareRelQuery(route.query.main) ||
+    ''
+  )
+}
+
+const pendingCatalogOpen = ref<{ rel: string; file: string; session: number | null } | null>(null)
+
+function capturePendingCatalogOpenFromRoute() {
+  const rel = normalizeShareRelQuery(route.query.rel)
+  const file = readShareFileFromRoute()
+  const session = parseShareSessionQuery(route.query.session)
+  if (!rel && !file && session === null) {
+    pendingCatalogOpen.value = null
+    return
+  }
+  pendingCatalogOpen.value = { rel, file, session }
+}
+
+function peekPendingCatalogOpen(): { rel: string; file: string } {
+  const p = pendingCatalogOpen.value
+  if (!p) {
+    return {
+      rel: normalizeShareRelQuery(route.query.rel),
+      file: readShareFileFromRoute(),
+    }
+  }
+  return {
+    rel: p.rel || normalizeShareRelQuery(route.query.rel),
+    file: p.file || readShareFileFromRoute(),
+  }
+}
+
+function clearPendingCatalogOpen() {
+  pendingCatalogOpen.value = null
 }
 
 function parseShareSessionQuery(raw: unknown): number | null {
@@ -5516,38 +7324,45 @@ function parseShareSessionQuery(raw: unknown): number | null {
   if (!Number.isFinite(n)) return null
   if (n === SEARCH_SESSION_ID) return n
   if (n === RECENTS_SESSION_ID) return n
+  if (n === SURPRESA_SESSION_ID) return n
+  if (n === LAST_VIEWED_SESSION_ID) return n
   if (n < 0) return null
   return n
 }
 
 function focusEntryByTrailerRel(trailerRel: string): boolean {
-  let ix = entries.value.findIndex((e) => e.trailerRel === trailerRel)
-  if (ix < 0) {
-    if (!fullEntries.value.some((e) => e.trailerRel === trailerRel)) return false
-    catalogTagFilter.value = null
-    ix = entries.value.findIndex((e) => e.trailerRel === trailerRel)
-  }
-  if (ix < 0) return false
-  setTrailerIndex(ix)
-  return true
+  return focusEntryByShareTarget({ rel: trailerRel })
 }
 
 function shareRouteQueryMatchesDesired(desired: Record<string, string>): boolean {
   const curS = routeQueryString(route.query.session)
   const curR = normalizeShareRelQuery(route.query.rel)
+  const curM = readShareFileFromRoute()
   const curFav = routeQueryString(route.query.fav).trim().toLowerCase()
   const curDst = routeQueryString(route.query.dst).trim().toLowerCase()
   const wantS = desired.session ?? ''
   const wantR = desired.rel ? normalizeShareRelQuery(desired.rel) : ''
+  const wantM = desired.file
+    ? normalizeShareRelQuery(desired.file)
+    : desired.main
+      ? normalizeShareRelQuery(desired.main)
+      : ''
   const wantFav = (desired.fav ?? '').trim().toLowerCase()
   const wantDst = (desired.dst ?? '').trim().toLowerCase()
-  return curS === wantS && curR === wantR && curFav === wantFav && curDst === wantDst
+  return (
+    curS === wantS &&
+    curR === wantR &&
+    curM === wantM &&
+    curFav === wantFav &&
+    curDst === wantDst
+  )
 }
 
 /**
- * Query desejada: `session` sempre que há biblioteca; `rel` só no completo ou, em trailer,
- * quando o URL já traz `rel` e coincide com o título focado (link partilhado).
- * Ao sair do completo (`justClosedFull`), só `session` (remove `rel` imposto pelo completo).
+ * Query desejada: `session` sempre que há biblioteca.
+ * `rel` não é imposto ao abrir o completo (evita router.replace / reload no Silk).
+ * Em trailer, `rel` só se o URL já o trouxer e coincidir com o focado (link partilhado).
+ * Ao sair do completo (`justClosedFull`), só `session`.
  */
 function buildDesiredShareQuery(justClosedFull: boolean): Record<string, string> {
   if (!sessions.value.length) return {}
@@ -5561,9 +7376,10 @@ function buildDesiredShareQuery(justClosedFull: boolean): Record<string, string>
   if (dst !== 'all') filterQuery.dst = dst
 
   if (isFull) {
-    const e = entries.value[activeIndex.value!]
-    if (!e) return { session: sessionStr, ...filterQuery }
-    return { session: sessionStr, rel: e.trailerRel, ...filterQuery }
+    const out: Record<string, string> = { session: sessionStr, ...filterQuery }
+    const existingRel = normalizeShareRelQuery(route.query.rel)
+    if (existingRel) out.rel = existingRel
+    return out
   }
 
   if (justClosedFull) {
@@ -5571,10 +7387,17 @@ function buildDesiredShareQuery(justClosedFull: boolean): Record<string, string>
   }
 
   const out: Record<string, string> = { session: sessionStr, ...filterQuery }
-  const rr = normalizeShareRelQuery(route.query.rel)
-  const fr =
-    focusedIndex.value !== null ? entries.value[focusedIndex.value]?.trailerRel ?? '' : ''
-  if (rr && fr && rr === fr) out.rel = rr
+  const pending = peekPendingCatalogOpen()
+  const rr = pending.rel || normalizeShareRelQuery(route.query.rel)
+  const mm = pending.file || readShareFileFromRoute()
+  const focused = focusedIndex.value !== null ? entries.value[focusedIndex.value] : null
+  if (focused) {
+    if (rr && entryMatchesShareRel(focused, rr)) out.rel = focused.trailerRel || rr
+    if (mm && entryMatchesMainRel(focused, mm)) out.file = focused.mainRel || mm
+  } else if (pendingCatalogOpen.value) {
+    if (rr) out.rel = rr
+    if (mm) out.file = mm
+  }
   return out
 }
 
@@ -5594,9 +7417,12 @@ function syncShareUrlFromState() {
   ignoreNextRouteQueryWatch = true
   void router
     .replace({ path: route.path, query: desired })
+    .catch(() => {})
     .finally(() => {
-      nextTick(() => {
-        ignoreNextRouteQueryWatch = false
+      void nextTick(() => {
+        requestAnimationFrame(() => {
+          ignoreNextRouteQueryWatch = false
+        })
       })
     })
 }
@@ -5658,10 +7484,12 @@ function scrollCatalogGridToTopAndFocusFirst() {
 
 async function applyShareQueryFromRoute() {
   const qSession = parseShareSessionQuery(route.query.session)
-  const rel = normalizeShareRelQuery(route.query.rel)
+  const pending = peekPendingCatalogOpen()
+  const rel = pending.rel
+  const main = pending.file
   const qFav = parseCatalogTriFilterQuery(route.query.fav)
   const qDst = parseCatalogTriFilterQuery(route.query.dst)
-  if (rel === '' && qSession === null && qFav === null && qDst === null) return
+  if (rel === '' && main === '' && qSession === null && qFav === null && qDst === null) return
 
   suppressShareUrlSync = true
   try {
@@ -5687,32 +7515,55 @@ async function applyShareQueryFromRoute() {
       await loadTrailers()
     }
 
-    if (rel) {
-      const playingRel =
+    if (rel || main) {
+      const playingEntry =
         playerUrl.value && activeIndex.value !== null
-          ? entries.value[activeIndex.value]?.trailerRel
+          ? entries.value[activeIndex.value]
           : null
-      if (playerUrl.value && playingRel && playingRel !== rel) {
+      const playingMatches =
+        !!playingEntry &&
+        ((rel && entryMatchesShareRel(playingEntry, rel)) ||
+          (main && entryMatchesMainRel(playingEntry, main)))
+      if (playerUrl.value && playingEntry && !playingMatches) {
         await closeFullVideo()
       }
 
-      const cur = focusedIndex.value !== null ? entries.value[focusedIndex.value]?.trailerRel : null
-      if (cur !== rel) {
-        if (!focusEntryByTrailerRel(rel)) {
-          errorMsg.value = `Título não encontrado nesta biblioteca: ${rel}`
+      const cur = focusedIndex.value !== null ? entries.value[focusedIndex.value] : null
+      const curMatches =
+        !!cur &&
+        ((rel && entryMatchesShareRel(cur, rel)) || (main && entryMatchesMainRel(cur, main)))
+      if (!curMatches) {
+        if (playerUrl.value && playingMatches) {
+          const ix = entries.value.findIndex(
+            (e) =>
+              (rel && entryMatchesShareRel(e, rel)) || (main && entryMatchesMainRel(e, main)),
+          )
+          if (ix >= 0) {
+            focusedIndex.value = ix
+            clearPendingCatalogOpen()
+          }
+        } else if (focusEntryByShareTarget({ rel, main })) {
+          clearPendingCatalogOpen()
+        } else {
+          errorMsg.value = `Título não encontrado nesta biblioteca: ${main || rel}`
         }
+      } else {
+        clearPendingCatalogOpen()
       }
     }
 
-    if (
-      rel &&
-      focusedIndex.value !== null &&
-      entries.value[focusedIndex.value]?.trailerRel === rel
-    ) {
-      await nextTick()
-      requestAnimationFrame(() => {
-        scrollCatalogGridToTrailerRel(rel)
-      })
+    if ((rel || main) && focusedIndex.value !== null) {
+      const focused = entries.value[focusedIndex.value]
+      const ok =
+        !!focused &&
+        ((rel && entryMatchesShareRel(focused, rel)) ||
+          (main && entryMatchesMainRel(focused, main)))
+      if (ok && focused?.trailerRel) {
+        await nextTick()
+        requestAnimationFrame(() => {
+          scrollCatalogGridToTrailerRel(focused.trailerRel)
+        })
+      }
     }
   } finally {
     suppressShareUrlSync = false
@@ -5720,10 +7571,11 @@ async function applyShareQueryFromRoute() {
 }
 
 watch(
-  () => [route.query.session, route.query.rel, route.query.fav, route.query.dst],
+  () => [route.query.session, route.query.rel, route.query.file, route.query.main, route.query.fav, route.query.dst],
   async () => {
     if (ignoreNextRouteQueryWatch) return
     if (!sessions.value.length) return
+    capturePendingCatalogOpenFromRoute()
     await applyShareQueryFromRoute()
   },
 )
@@ -5753,17 +7605,29 @@ watch([sessionIndex, focusedIndex, activeIndex, playerUrl, favoriteCatalogFilter
 }, { flush: 'post' })
 
 watch(sessionIndex, (si, prevSi) => {
-  if (si === RECENTS_SESSION_ID) {
-    applyDestaquesCatalogSortDefaults()
-    if (prevSi !== RECENTS_SESSION_ID) {
-      recentsCatalog.setPaginationEnabled(true)
+  lastViewedRecordedKey = null
+  if (catalogPrefsEnabled.value) {
+    restoreCatalogSessionPrefsFor(si)
+    if (si === RECENTS_SESSION_ID && catalogOriginFilter.value) {
+      syncRecentsOriginApiFilter()
     }
+  } else if (si === RECENTS_SESSION_ID) {
+    applyDestaquesCatalogSortDefaults()
   } else {
     catalogOriginFilter.value = null
-    teardownRecentsLoadObserver()
-    recentsCatalog.reset()
+    if (si >= 0 && prevSi !== undefined && prevSi !== si) applyFolderCatalogSortDefaults()
   }
-})
+  if (prevSi !== undefined) {
+    if (si === RECENTS_SESSION_ID) {
+      if (prevSi !== RECENTS_SESSION_ID) {
+        recentsCatalog.setPaginationEnabled(true)
+      }
+    } else {
+      teardownRecentsLoadObserver()
+      recentsCatalog.reset()
+    }
+  }
+}, { immediate: true })
 
 watch(
   manualTvAssist,
@@ -5774,7 +7638,81 @@ watch(
   { immediate: true },
 )
 
+const CATALOG_TAB_UNLOCK_KEY = 'vp_catalog_tab_ok'
+
+function readCatalogTabUnlocked(): boolean {
+  if (typeof sessionStorage === 'undefined') return false
+  try {
+    return sessionStorage.getItem(CATALOG_TAB_UNLOCK_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeCatalogTabUnlocked(on: boolean) {
+  if (typeof sessionStorage === 'undefined') return
+  try {
+    if (on) sessionStorage.setItem(CATALOG_TAB_UNLOCK_KEY, '1')
+    else sessionStorage.removeItem(CATALOG_TAB_UNLOCK_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
 onMounted(async () => {
+  catalogGateChecking.value = true
+  const tvQueryOn = (() => {
+    const v = route.query.tv
+    if (v === undefined || v === null) return false
+    const raw = Array.isArray(v) ? v[0] : v
+    const n = String(raw).toLowerCase()
+    return n === '1' || n === 'true' || n === 'yes'
+  })()
+  const tvLaunch = tvQueryOn || manualTvAssist.value || isTvLayout.value
+
+  try {
+    if (tvLaunch) {
+      await $fetch('/api/catalog-lock?tv=1', { credentials: 'include' })
+      catalogGateRequired.value = false
+      catalogUnlocked.value = true
+    } else {
+      const tabOk = readCatalogTabUnlocked()
+      const lockUrl = tabOk ? '/api/catalog-lock' : '/api/catalog-lock?fresh=1'
+      const lock = await $fetch<{ required: boolean; unlocked: boolean; tvBypass?: boolean }>(
+        lockUrl,
+        { credentials: 'include' },
+      )
+      catalogGateRequired.value = Boolean(lock.required)
+      if (lock.required) {
+        if (tabOk && lock.unlocked) {
+          catalogUnlocked.value = true
+        } else {
+          writeCatalogTabUnlocked(false)
+          catalogUnlocked.value = false
+        }
+      } else {
+        writeCatalogTabUnlocked(false)
+        catalogUnlocked.value = true
+      }
+    }
+  } catch {
+    catalogGateRequired.value = false
+    catalogUnlocked.value = true
+  } finally {
+    catalogGateChecking.value = false
+  }
+
+  if (!tvLaunch && catalogGateRequired.value && !catalogUnlocked.value) {
+    await nextTick()
+    catalogGateInputRef.value?.focus()
+    return
+  }
+
+  await bootstrapPlayerChrome()
+})
+
+async function bootstrapCatalogAfterUnlock() {
+  capturePendingCatalogOpenFromRoute()
   await loadSessions()
   if (sessions.value.length) {
     await loadTrailers()
@@ -5783,6 +7721,12 @@ onMounted(async () => {
     if (isTvLayout.value) ensureTvMinimalPlayback(focusedIndex.value ?? 0)
     syncShareUrlFromState()
   }
+}
+
+async function bootstrapPlayerChrome() {
+  await bootstrapCatalogAfterUnlock()
+  void restoreShrinkQueueFromServer()
+  void restoreTrailerQueueFromServer()
   if (typeof window === 'undefined') return
   try {
     catalogGridCollapsed.value = sessionStorage.getItem(CATALOG_GRID_COLLAPSED_KEY) === '1'
@@ -5818,9 +7762,34 @@ onMounted(async () => {
       libraryRefreshChannel = null
     }
   }
-})
+}
+
+async function submitCatalogUnlock() {
+  catalogGateError.value = ''
+  catalogGateBusy.value = true
+  try {
+    await $fetch('/api/catalog-unlock', {
+      method: 'POST',
+      credentials: 'include',
+      body: { password: catalogGatePassword.value },
+    })
+    writeCatalogTabUnlocked(true)
+    catalogUnlocked.value = true
+    catalogGatePassword.value = ''
+    await bootstrapPlayerChrome()
+  } catch (e: unknown) {
+    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    catalogGateError.value = ex?.data?.statusMessage || ex?.message || 'Senha incorrecta.'
+    catalogUnlocked.value = false
+    writeCatalogTabUnlocked(false)
+  } finally {
+    catalogGateBusy.value = false
+  }
+}
 
 onUnmounted(() => {
+  stopShrinkQueueMonitor()
+  stopTrailerQueueMonitor()
   teardownRecentsLoadObserver()
   releaseVideoElement(tvMinimalVideoRef.value)
   stopFastPlay(false)
@@ -5914,6 +7883,74 @@ onUnmounted(() => {
   border-radius: 8px;
   color: #f8b4b0;
   font-size: 0.85rem;
+}
+
+.catalog-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0c0d10;
+}
+
+.catalog-gate-card {
+  width: min(92vw, 22rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem 1.35rem;
+  border: 1px solid #2a2d36;
+  border-radius: 12px;
+  background: #14161c;
+}
+
+.catalog-gate-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #e8eaef;
+}
+
+.catalog-gate-hint {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #9aa0ad;
+  line-height: 1.4;
+}
+
+.catalog-gate-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #3a3f4c;
+  border-radius: 8px;
+  background: #0c0d10;
+  color: #e8eaef;
+  font-size: 1rem;
+}
+
+.catalog-gate-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #f8b4b0;
+}
+
+.catalog-gate-btn {
+  padding: 0.65rem 0.9rem;
+  border: none;
+  border-radius: 8px;
+  background: #3d6df0;
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.catalog-gate-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .toast {
@@ -6031,7 +8068,8 @@ onUnmounted(() => {
     min-height: 0;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .sidebar {
@@ -6177,6 +8215,18 @@ onUnmounted(() => {
   width: 100%;
   display: flex;
   gap: 0.4rem;
+}
+
+.catalog-search-row--folder .catalog-search-mode,
+.catalog-search-row--folder .catalog-search-input {
+  border-color: #3c4a3f;
+  background: #132018;
+  color: #e8f5ec;
+}
+
+.catalog-search-row--folder .catalog-search-btn {
+  border-color: #4a7a58;
+  background: #1e3d28;
 }
 
 .catalog-search-mode {
@@ -6710,6 +8760,35 @@ onUnmounted(() => {
     grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
     gap: 1rem;
   }
+}
+
+.grid-folder-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.45rem;
+  padding: 0.1rem 0.05rem 0.05rem;
+}
+
+.grid-folder-header:first-child {
+  margin-top: 0;
+}
+
+.grid-folder-header-label {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #9aa3b2;
+}
+
+.grid-folder-header-line {
+  flex: 1;
+  min-width: 2rem;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(138, 180, 248, 0.42), rgba(138, 180, 248, 0.08) 72%, transparent);
 }
 
 .grid-tile {
@@ -7632,6 +9711,17 @@ onUnmounted(() => {
   word-break: break-all;
 }
 
+.shrink-already-warn {
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid #5c4a1f;
+  background: #2a2415;
+  color: #f0d78c;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .trailer-reprocess-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -7721,6 +9811,297 @@ onUnmounted(() => {
   background: #1a73e8;
   border-color: #1a73e8;
   color: #fff;
+}
+
+.trailer-reprocess-check {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+}
+
+.trailer-reprocess-check input {
+  margin-top: 0.15rem;
+  flex: 0 0 auto;
+}
+
+.trailer-reprocess-check span {
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: #c4c9d0;
+}
+
+.shrink-queue {
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid #2d333b;
+}
+
+.shrink-queue-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 0.65rem;
+  margin-bottom: 0.4rem;
+}
+
+.shrink-queue-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #c5ddf5;
+  letter-spacing: 0.02em;
+}
+
+.shrink-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 11rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.shrink-queue-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.45rem;
+  padding: 0.32rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid #2d333b;
+  background: #0c0d10;
+  font-size: 0.78rem;
+}
+
+.shrink-queue-item--running {
+  border-color: #3a5f8a;
+  background: #121a24;
+}
+
+.shrink-queue-item--done {
+  border-color: #2f5a3d;
+  color: #a8d7b5;
+}
+
+.shrink-queue-item--failed {
+  border-color: #8b3a36;
+  color: #f8b4b0;
+}
+
+.shrink-queue-idx {
+  flex: 0 0 auto;
+  color: #9aa0a6;
+  font-variant-numeric: tabular-nums;
+}
+
+.shrink-queue-label {
+  flex: 1 1 8rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e8eaed;
+}
+
+.shrink-queue-status {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #9aa0a6;
+  text-transform: lowercase;
+}
+
+.shrink-queue-item--running .shrink-queue-status {
+  color: #8ab4f8;
+}
+
+.shrink-queue-item--done .shrink-queue-status {
+  color: #a8d7b5;
+}
+
+.shrink-queue-item--failed .shrink-queue-status {
+  color: #f8b4b0;
+}
+
+.trailer-reprocess-dialog-card .admin-btn--sm {
+  padding: 0.22rem 0.45rem;
+  font-size: 0.72rem;
+}
+
+.icon-tool--shrink.icon-tool--busy,
+.icon-tool--trailer-redo.icon-tool--busy {
+  opacity: 0.55;
+}
+
+.job-progress-panel {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+  padding: 0.55rem 0.65rem 0.6rem;
+  border-radius: 10px;
+  border: 1px solid #2d3a4a;
+  background: #12161c;
+}
+
+.job-progress-panel--failed {
+  border-color: #8b3a36;
+  background: #1a1212;
+}
+
+.job-progress-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.55rem;
+  margin-bottom: 0.4rem;
+}
+
+.job-progress-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #c5ddf5;
+  letter-spacing: 0.02em;
+}
+
+.job-progress-panel--failed .job-progress-title {
+  color: #f8b4b0;
+}
+
+.job-progress-file {
+  flex: 1 1 8rem;
+  min-width: 0;
+  font-size: 0.72rem;
+  color: #9aa0a6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-progress-copy {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.22rem 0.45rem;
+  border-radius: 7px;
+  border: 1px solid #3c4043;
+  background: #1e2228;
+  color: #c5cad3;
+  cursor: pointer;
+}
+
+.job-progress-copy:hover {
+  background: #2a2f37;
+  color: #fff;
+}
+
+.job-progress-dismiss {
+  flex: 0 0 auto;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 1px solid #3c4043;
+  border-radius: 7px;
+  background: #1e2228;
+  color: #c5cad3;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.job-progress-dismiss:hover {
+  background: #2a2f37;
+  color: #fff;
+}
+
+.job-progress-track {
+  position: relative;
+  height: 7px;
+  border-radius: 999px;
+  background: #1c222b;
+  overflow: hidden;
+  margin-bottom: 0.4rem;
+}
+
+.job-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1a73e8, #5f9dee);
+  transition: width 0.25s ease;
+}
+
+.job-progress-track--indeterminate .job-progress-fill {
+  width: 38%;
+  animation: job-progress-slide 1.15s ease-in-out infinite;
+}
+
+@keyframes job-progress-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.job-progress-error {
+  margin: 0 0 0.35rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid rgba(220, 105, 100, 0.35);
+  background: rgba(88, 32, 32, 0.35);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #ffd0cb;
+  word-break: break-word;
+}
+
+.job-progress-line {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #e8eaed;
+  word-break: break-word;
+}
+
+.job-progress-log {
+  max-height: min(42vh, 18rem);
+  overflow: auto;
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  background: #0c0e12;
+  border: 1px solid #252a32;
+  font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.68rem;
+  line-height: 1.45;
+  color: #9aa0a6;
+}
+
+.job-progress-log-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.job-progress-log-line + .job-progress-log-line {
+  margin-top: 0.14rem;
+}
+
+.job-progress-log-line--err {
+  color: #f8b4b0;
+}
+
+.job-progress-log-line--skip {
+  color: #e8c27a;
+}
+
+.job-progress-log-line--ok {
+  color: #a8d7b5;
+}
+
+.job-progress-log-line--meta {
+  color: #9ec5f0;
 }
 
 @media (max-width: 480px) {
@@ -8347,6 +10728,7 @@ onUnmounted(() => {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   padding-bottom: 2px;
+  scrollbar-width: thin;
 }
 
 .icon-tool {
@@ -8493,6 +10875,34 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  flex-shrink: 0;
+  max-height: min(34vh, 15rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.toolbar-tags-panel-actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.tag-panel-action-btn {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid #3c4043;
+  border-radius: 6px;
+  background: #1a1d22;
+  color: #e8eaed;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tag-panel-action-btn:hover {
+  background: #252a32;
 }
 
 .toolbar--full-compact {
@@ -8507,6 +10917,7 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: stretch;
   gap: 0.5rem;
+  flex-shrink: 0;
 }
 
 .toolbar-full-main-row {
@@ -8518,6 +10929,10 @@ onUnmounted(() => {
   gap: 0.5rem;
   width: 100%;
   min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
 }
 
 /* Silk/Fire TV: evita o bloco de velocidade "escapar" à direita em toolbars muito cheias. */
@@ -8549,6 +10964,12 @@ onUnmounted(() => {
   min-width: 0;
   padding-top: 0.35rem;
   border-top: 1px solid #2d333b;
+  flex-shrink: 0;
+  max-height: min(34vh, 15rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 .rate-block--inline {
@@ -8699,6 +11120,7 @@ onUnmounted(() => {
   .toolbar-trailer-icons {
     flex-wrap: wrap;
     row-gap: 0.35rem;
+    overflow-x: visible;
   }
 
   .toolbar-trailer-icons > .rate-block--inline {
@@ -8726,6 +11148,7 @@ onUnmounted(() => {
   .toolbar-full-main-row {
     flex-wrap: wrap;
     row-gap: 0.35rem;
+    overflow-x: visible;
   }
 
   .toolbar-full-main-row > .rate-block--inline {
@@ -8751,6 +11174,27 @@ onUnmounted(() => {
 
   .rate-label--compact {
     font-size: 0.72rem;
+  }
+
+  .icon-tool {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+  }
+
+  .catalog-head {
+    align-items: flex-start;
+  }
+
+  .catalog-head-tools {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .watched-filter-toggle {
+    font-size: 0.68rem;
+    padding: 0.3rem 0.48rem;
   }
 }
 
@@ -9078,6 +11522,18 @@ onUnmounted(() => {
   color: #fff6e0;
   font-size: 0.75rem;
   padding: 0.35rem 0.45rem;
+}
+
+.tv-minimal-btn--remove-destaques {
+  border-color: #c97a7a;
+  background: #3d2020;
+  color: #ffe8e4;
+  font-size: 0.72rem;
+  padding: 0.35rem 0.42rem;
+}
+
+.tv-minimal-btn--remove-destaques:active:not(:disabled) {
+  background: #5a2828;
 }
 
 .tv-minimal-rate {

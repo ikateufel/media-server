@@ -266,6 +266,8 @@ export async function moveTitleLibraryState(
 
   mainRel: string,
 
+  opts?: { toIsTrash?: boolean },
+
 ): Promise<void> {
 
   const state = await readLibraryState()
@@ -284,15 +286,19 @@ export async function moveTitleLibraryState(
 
     if (state.favorites[fromK].length === 0) delete state.favorites[fromK]
 
-    const toArr = state.favorites[toK] ?? []
+    if (!opts?.toIsTrash) {
 
-    if (!toArr.includes(trailerRel)) {
+      const toArr = state.favorites[toK] ?? []
 
-      state.favorites[toK] = [...toArr, trailerRel].sort((a, b) =>
+      if (!toArr.includes(trailerRel)) {
 
-        a.localeCompare(b, undefined, { sensitivity: 'base' }),
+        state.favorites[toK] = [...toArr, trailerRel].sort((a, b) =>
 
-      )
+          a.localeCompare(b, undefined, { sensitivity: 'base' }),
+
+        )
+
+      }
 
     }
 

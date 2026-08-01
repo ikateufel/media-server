@@ -1,5 +1,4 @@
 import { createError, readBody } from 'h3'
-import { requireAdminToken } from '../../utils/requireAdmin'
 import {
   normalizeEditMode,
   resolveEditorFile,
@@ -12,8 +11,6 @@ import { assertAllowedSourceRoot } from '../../utils/shrinkJobs'
  * Valida ficheiro, splits e marcações antes de exportar.
  */
 export default defineEventHandler(async (event) => {
-  requireAdminToken(event)
-
   const body = (await readBody(event).catch(() => null)) as {
     sourceRoot?: unknown
     file?: unknown

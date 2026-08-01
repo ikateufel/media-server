@@ -1,9 +1,11 @@
+import { requireCatalogUnlock } from '../../utils/catalogAccess'
 import { createError, getQuery } from 'h3'
 import { resolveTrailerRelForTagMutation } from '../../utils/catalogTagMutation'
-import { normalizeTagInput, removeTagFromVideo } from '../../utils/videoTagsDb'
+import { getTagsForVideo, normalizeTagInput, removeTagFromVideo } from '../../utils/videoTagsDb'
 import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
 
 export default defineEventHandler(async (event) => {
+  requireCatalogUnlock(event)
   const config = useRuntimeConfig(event)
   const roots = getVideoRootsFromRuntime(config)
   if (!roots.length) {
@@ -37,7 +39,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Nome de tag inválido.' })
   }
 
-  const trailerRel = await resolveTrailerRelForTagMutation(event, session, trailerRelIn)
-  const tags = removeTagFromVideo(session, trailerRel, name)
-  return { tags }
+  const requested = trailerRelIn
+  const canonicalRel = await resolveTrailerRelForTagMutation(event, session, trailerRelIn)
+  removeTagFromVideo(session, canonicalRel, name)
+  removeTagFromVideo(session, requested, name)
+  const tags = [
+    ...new Set([...getTagsForVideo(session, requested), ...getTagsForVideo(session, canonicalRel)]),
+  ].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  return { tags, trailerRel: requested }
 })

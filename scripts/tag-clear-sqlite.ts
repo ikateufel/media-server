@@ -35,6 +35,8 @@ function main() {
 
   const d = new DatabaseSync(dbPath)
   try {
+    d.exec('PRAGMA journal_mode = WAL')
+    d.exec('PRAGMA busy_timeout = 30000')
     ensureIsManualColumn(d)
 
     const vtTotal =
@@ -46,7 +48,7 @@ function main() {
     const tgTotal =
       (d.prepare('SELECT COUNT(*) AS c FROM tags').get() as { c: number } | undefined)?.c ?? 0
 
-    d.exec('BEGIN')
+    d.exec('BEGIN IMMEDIATE')
     if (wipeAll) {
       d.exec('DELETE FROM video_tags')
       d.exec('DELETE FROM tags')

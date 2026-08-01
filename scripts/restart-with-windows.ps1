@@ -1,4 +1,4 @@
-# Para o servidor `npm run start` deste repo e relanca start-with-windows.vbs.
+# Para o servidor `npm run start` deste repo e relanca start-with-windows.ps1.
 
 $ErrorActionPreference = 'Continue'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -28,20 +28,15 @@ if ($result.Stopped -eq 0) {
   }
 }
 
+$ps1 = Join-Path $PSScriptRoot 'start-with-windows.ps1'
+if (Test-Path -LiteralPath $ps1) {
+  Write-RestartLog 'restart: a relancar start-with-windows.ps1'
+  $p = Start-Process -FilePath 'powershell.exe' -ArgumentList @(
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $ps1
+  ) -Wait -PassThru -WindowStyle Hidden
+  exit $p.ExitCode
+}
+
 Write-RestartLog 'restart: a relancar start-with-windows.vbs'
 Start-Process -FilePath 'wscript.exe' -ArgumentList @('//nologo', $vbs) -WindowStyle Hidden | Out-Null
-
-$up = $null
-for ($i = 0; $i -lt 25; $i++) {
-  Start-Sleep -Seconds 1
-  $up = @(Get-ProductionNodeProcesses)
-  if ($up.Count) { break }
-}
-
-if ($up -and $up.Count) {
-  Write-RestartLog ("restart: OK - servidor activo (PID " + $up[0].ProcessId + ")")
-  exit 0
-}
-
-Write-RestartLog 'restart: AVISO - nenhum node de producao apos 25s; ver data\startup-server.log'
-exit 1
+exit 0

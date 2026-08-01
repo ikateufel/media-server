@@ -1,15 +1,16 @@
 <template>
-  <div class="admin-page">
+  <div class="admin-page" :class="{ 'admin-page--with-video': !!videoSrc }">
     <header class="admin-head">
       <h1 class="admin-title">Editor de vídeo</h1>
       <div class="admin-head-links">
         <NuxtLink to="/" class="admin-back">← Reprodutor</NuxtLink>
         <NuxtLink to="/admin" class="admin-back">Admin</NuxtLink>
+        <NuxtLink to="/historico" class="admin-back">Histórico</NuxtLink>
         <NuxtLink to="/shrink" class="admin-back">Shrink</NuxtLink>
       </div>
     </header>
 
-    <p class="admin-lead">
+    <p v-if="!videoSrc" class="admin-lead">
       Marque trechos a <strong>excluir</strong> (vermelho) ou <strong>recortar</strong> (verde), opcionalmente
       <strong>pontos de split</strong> (azul) para gerar <code class="admin-code">edited\nome_c1.mp4</code>,
       <code class="admin-code">_c2</code>… — exclusões e recortes aplicam-se dentro de cada parte.
@@ -19,28 +20,33 @@
       O servidor está em <strong>{{ serverPlatform }}</strong> — a exportação só funciona com Node em Windows.
     </p>
 
-    <section class="admin-card">
-      <h2 class="admin-h2">Token</h2>
-      <div class="admin-row">
+    <section v-if="videoSrc" class="admin-card admin-card--narrow admin-card--compact">
+      <div class="admin-row editor-file-row">
+        <select v-model="sourceSession" class="admin-input" @change="onSourceSessionChange">
+          <option value="">— biblioteca —</option>
+          <option v-for="(row, i) in menuRows" :key="i" :value="String(i)">
+            [{{ i }}] {{ row.title || row.path }}
+          </option>
+        </select>
         <input
-          v-model="token"
-          type="password"
-          class="admin-input admin-input--wide"
-          autocomplete="current-password"
-          placeholder="VIDEO_ADMIN_TOKEN"
+          v-model="fileRel"
+          type="text"
+          class="admin-input admin-input--wide editor-source-path"
+          spellcheck="false"
         />
-        <button type="button" class="admin-btn" @click="persistToken">Guardar</button>
-        <button type="button" class="admin-btn admin-btn--ghost" @click="loadMenu">Carregar bibliotecas</button>
+        <button type="button" class="admin-btn" :disabled="!canLoadVideo" @click="loadVideo">Recarregar</button>
       </div>
       <p v-if="loadError" class="admin-err">{{ loadError }}</p>
+      <p v-if="videoLoadErr" class="admin-err">{{ videoLoadErr }}</p>
     </section>
 
-    <section class="admin-card">
+    <section v-if="!videoSrc" class="admin-card admin-card--narrow">
       <h2 class="admin-h2">Vídeo de origem</h2>
       <p class="admin-muted">
         Escolha a biblioteca no menu (ex.: «_selected»). O caminho do ficheiro é relativo a essa pasta —
         use só o nome se o vídeo estiver na raiz da biblioteca.
       </p>
+      <p v-if="loadError" class="admin-err">{{ loadError }}</p>
       <div class="admin-row">
         <select v-model="sourceSession" class="admin-input admin-input--wide" @change="onSourceSessionChange">
           <option value="">— escolher biblioteca —</option>
@@ -48,6 +54,7 @@
             [{{ i }}] {{ row.title || row.path }}
           </option>
         </select>
+        <button type="button" class="admin-btn admin-btn--ghost" @click="loadMenu">Actualizar bibliotecas</button>
       </div>
       <input
         v-model="sourceRoot"
@@ -92,16 +99,22 @@
       <p v-if="videoLoadErr" class="admin-err">{{ videoLoadErr }}</p>
     </section>
 
-    <section v-if="videoSrc" class="admin-card editor-player-card">
-      <h2 class="admin-h2">Player</h2>
-      <p class="admin-muted editor-file-label">{{ fileRel }}</p>
+    <div v-if="videoSrc" class="editor-workspace">
+    <section class="admin-card editor-player-card">
+      <div class="editor-player-head">
+        <h2 class="admin-h2">Player</h2>
+        <p class="admin-muted editor-file-label">{{ fileRel }}</p>
+      </div>
 
-      <div class="editor-video-wrap">
+      <div class="editor-stage">
+      <div ref="videoWrapRef" class="editor-video-wrap">
         <video
+          :key="videoSrc"
           ref="videoRef"
           class="editor-video"
           controls
           playsinline
+          preload="auto"
           :src="videoSrc"
           @loadedmetadata="onVideoLoaded"
           @timeupdate="onTimeUpdate"
@@ -109,6 +122,7 @@
         />
       </div>
 
+      <div class="editor-controls">
       <div class="editor-time-row">
         <span class="editor-time-current">{{ formatTime(currentTime) }}</span>
         <span class="editor-time-sep">/</span>
@@ -212,6 +226,8 @@
         Repete início/fim para cada trecho. Trechos sobrepostos do mesmo tipo são fundidos na exportação.
         Atalho <kbd>Enter</kbd> usa o modo seleccionado acima.
       </p>
+      </div>
+      </div>
 
       <div class="editor-split-section">
         <h3 class="editor-h3">Split em partes (c1, c2, …)</h3>
@@ -317,6 +333,14 @@
           <input v-model="force" type="checkbox" />
           Substituir se já existir em edited\
         </label>
+        <label
+          v-if="canUseVideoOption"
+          class="admin-check-label editor-force"
+          :title="useVideoHint"
+        >
+          <input v-model="useVideo" type="checkbox" :disabled="!!splitPoints.length" />
+          Usar vídeo (backup + substituir original)
+        </label>
       </div>
       <div class="admin-row editor-export-actions">
         <button
@@ -333,7 +357,7 @@
           :disabled="!canExportExclude"
           @click="startExport('exclude')"
         >
-          Gerar ficheiro único (excluir)
+          {{ useVideo ? 'Usar vídeo (excluir)' : 'Gerar ficheiro único (excluir)' }}
         </button>
         <button
           type="button"
@@ -341,7 +365,7 @@
           :disabled="!canExportKeep"
           @click="startExport('keep')"
         >
-          Gerar ficheiro único (recortes)
+          {{ useVideo ? 'Usar vídeo (recortes)' : 'Gerar ficheiro único (recortes)' }}
         </button>
       </div>
       <div class="admin-row">
@@ -369,7 +393,17 @@
         >
           Validar recorte
         </button>
+        <button
+          type="button"
+          class="admin-btn admin-btn--ghost"
+          :disabled="!canOpenEditedFolder || revealEditedBusy"
+          title="Abre a pasta edited\ do vídeo no Explorador"
+          @click="openEditedFolder"
+        >
+          {{ revealEditedBusy ? 'A abrir…' : 'Abrir pasta edited' }}
+        </button>
       </div>
+      <p v-if="revealEditedErr" class="admin-err">{{ revealEditedErr }}</p>
       <p v-if="validateMsg" :class="validateOk ? 'admin-ok' : 'admin-err'">{{ validateMsg }}</p>
       <p v-if="startErr" class="admin-err">{{ startErr }}</p>
     </section>
@@ -419,6 +453,7 @@
         >{{ line.text }}{{ '\n' }}</span></pre>
       </details>
     </section>
+    </div>
   </div>
 </template>
 
@@ -471,23 +506,25 @@ interface JobSnapshot {
   totalLines: number
   cancelRequested: boolean
   oversizedOutput?: OversizedOutputEntry | null
+  newFileRel?: string | null
+  useVideo?: boolean
 }
 
 const EDITOR_JOB_STORAGE_KEY = 'video_admin_editor_job_id'
 const VISIBLE_LINES_CAP = 400
 
-const token = ref('')
+const loadError = ref('')
 const route = useRoute()
 const menuRows = ref<MenuRow[]>([])
 const sourceSession = ref('')
 const sourceRoot = ref('')
 const fileRel = ref('')
-const loadError = ref('')
 const videoLoadErr = ref('')
 const videoSrc = ref('')
 const dropActive = ref(false)
 
 const videoRef = ref<HTMLVideoElement | null>(null)
+const videoWrapRef = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const folderInputRef = ref<HTMLInputElement | null>(null)
 const duration = ref(0)
@@ -502,10 +539,13 @@ const splitPoints = ref<SplitPoint[]>([])
 const height = ref(1080)
 const speed = ref<1 | 1.25 | 1.5 | 2>(1)
 const force = ref(false)
+const useVideo = ref(false)
 const validating = ref(false)
 const validateMsg = ref('')
 const validateOk = ref(false)
 const startErr = ref('')
+const revealEditedBusy = ref(false)
+const revealEditedErr = ref('')
 
 const serverPlatform = ref('')
 const isWinServer = computed(() => serverPlatform.value === 'win32')
@@ -587,9 +627,24 @@ const pendingStyle = computed(() => {
   }
 })
 
-const canLoadVideo = computed(
-  () => !!sourceRoot.value.trim() && !!fileRel.value.trim() && isVideoName(fileRel.value),
-)
+const canLoadVideo = computed(() => {
+  const hasFile = !!fileRel.value.trim() && isVideoName(fileRel.value)
+  if (!hasFile) return false
+  if (sourceRoot.value.trim()) return true
+  return resolvedSessionIndex() != null
+})
+
+function resolvedSessionIndex(): number | null {
+  const raw = sourceSession.value
+  if (raw === '' || raw == null) return null
+  const sn = Number(raw)
+  if (!Number.isFinite(sn) || sn < 0 || !Number.isInteger(sn)) return null
+  return sn
+}
+
+function usesSessionVideoApi(): boolean {
+  return resolvedSessionIndex() != null
+}
 
 const canAddMark = computed(() => {
   if (markInTime.value == null || markOutTime.value == null) return false
@@ -600,7 +655,6 @@ const exportBaseOk = computed(
   () =>
     isWinServer.value &&
     !jobActive.value &&
-    !!token.value.trim() &&
     !!sourceRoot.value.trim() &&
     !!fileRel.value.trim() &&
     !!videoSrc.value,
@@ -615,6 +669,53 @@ const canExportKeep = computed(
 const canExportSplit = computed(
   () => exportBaseOk.value && splitPoints.value.length > 0 && duration.value > 0,
 )
+
+const canUseVideoOption = computed(() => exportBaseOk.value && resolvedSessionIndex() != null)
+
+const useVideoHint = computed(() =>
+  splitPoints.value.length
+    ? 'Desactivado com splits — gera vários ficheiros em edited\\'
+    : 'Copia o original para edited_backup\\ e substitui o ficheiro principal pelo editado.',
+)
+
+const canOpenEditedFolder = computed(() => {
+  if (!fileRel.value.trim() || !isVideoName(fileRel.value)) return false
+  return resolveRevealSession() != null
+})
+
+function resolveRevealSession(): number | null {
+  const fromSelect = resolvedSessionIndex()
+  if (fromSelect != null) return fromSelect
+  const root = sourceRoot.value.trim().replace(/[/\\]+$/, '').toLowerCase()
+  if (!root) return null
+  const idx = menuRows.value.findIndex(
+    (r) => r.path.trim().replace(/[/\\]+$/, '').toLowerCase() === root,
+  )
+  return idx >= 0 ? idx : null
+}
+
+async function openEditedFolder() {
+  revealEditedErr.value = ''
+  const session = resolveRevealSession()
+  const rel = normalizeRel(fileRel.value)
+  if (session == null || !rel) {
+    revealEditedErr.value = 'Indique a biblioteca e o ficheiro de origem.'
+    return
+  }
+  revealEditedBusy.value = true
+  try {
+    await $fetch('/api/admin/reveal-in-explorer', {
+      method: 'POST',
+      body: { session, target: 'edited', rel },
+    })
+  } catch (e: unknown) {
+    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    revealEditedErr.value =
+      ex?.data?.statusMessage || ex?.message || 'Não foi possível abrir a pasta edited.'
+  } finally {
+    revealEditedBusy.value = false
+  }
+}
 
 function splitPointPct(time: number): number {
   if (!duration.value) return 0
@@ -659,6 +760,7 @@ function onSourceSessionChange() {
 function readRouteVideoQuery(): boolean {
   const fileRaw = route.query.file
   const sessionRaw = route.query.session
+  const useVideoRaw = route.query.useVideo
   const file =
     typeof fileRaw === 'string' ? fileRaw : Array.isArray(fileRaw) ? (fileRaw[0] ?? '') : ''
   if (!file.trim()) return false
@@ -671,13 +773,20 @@ function readRouteVideoQuery(): boolean {
     if (sn < menuRows.value.length) {
       sourceRoot.value = menuRows.value[sn]!.path.trim()
     }
+    const uv =
+      typeof useVideoRaw === 'string'
+        ? useVideoRaw
+        : Array.isArray(useVideoRaw)
+          ? (useVideoRaw[0] ?? '')
+          : ''
+    useVideo.value = uv !== '0' && uv !== 'false'
   }
   return true
 }
 
 async function applyRoutePrefill() {
   if (!readRouteVideoQuery()) return
-  if (sourceRoot.value.trim() && token.value.trim() && canLoadVideo.value) {
+  if (canLoadVideo.value) {
     await loadVideo()
   }
 }
@@ -702,11 +811,17 @@ function pickVideoRelFromList(list: FileList | File[]): string | null {
   return null
 }
 
-function editorVideoUrl(sourceRoot: string, rel: string, adminToken: string): string {
+function editorVideoUrl(root: string, rel: string): string {
+  const session = resolvedSessionIndex()
+  if (session != null) {
+    const q = new URLSearchParams()
+    q.set('session', String(session))
+    q.set('rel', rel)
+    return `/api/video?${q.toString()}`
+  }
   const q = new URLSearchParams()
-  q.set('sourceRoot', sourceRoot.trim())
+  q.set('sourceRoot', root.trim())
   q.set('rel', rel)
-  q.set('token', adminToken.trim())
   return `/api/admin/editor-video?${q.toString()}`
 }
 
@@ -715,7 +830,7 @@ function applyVideoRel(relRaw: string, autoLoad = true) {
   if (!rel || !isVideoName(rel)) return false
   fileRel.value = rel
   videoLoadErr.value = ''
-  if (autoLoad && sourceRoot.value.trim() && token.value.trim()) {
+  if (autoLoad && canLoadVideo.value) {
     void loadVideo()
   }
   return true
@@ -756,17 +871,13 @@ async function loadVideo() {
   videoLoadErr.value = ''
   const rel = normalizeRel(fileRel.value)
   const root = sourceRoot.value.trim()
-  const adminToken = token.value.trim()
+  const sessionApi = usesSessionVideoApi()
   if (!rel || !isVideoName(rel)) {
     videoLoadErr.value = 'Indique um ficheiro de vídeo válido.'
     return
   }
-  if (!root) {
+  if (!sessionApi && !root) {
     videoLoadErr.value = 'Escolha uma biblioteca ou indique a pasta de origem.'
-    return
-  }
-  if (!adminToken) {
-    videoLoadErr.value = 'Preencha o token admin e guarde.'
     return
   }
   fileRel.value = rel
@@ -776,7 +887,11 @@ async function loadVideo() {
   markOutTime.value = null
   duration.value = 0
   currentTime.value = 0
-  videoSrc.value = editorVideoUrl(root, rel, adminToken)
+  if (videoWrapRef.value) {
+    videoWrapRef.value.style.aspectRatio = ''
+    videoWrapRef.value.style.width = ''
+  }
+  videoSrc.value = editorVideoUrl(root, rel)
 }
 
 function onVideoLoaded() {
@@ -784,11 +899,16 @@ function onVideoLoaded() {
   if (!v) return
   duration.value = Number.isFinite(v.duration) ? v.duration : 0
   videoLoadErr.value = ''
+  const wrap = videoWrapRef.value
+  if (wrap && v.videoWidth > 0 && v.videoHeight > 0) {
+    wrap.style.aspectRatio = `${v.videoWidth} / ${v.videoHeight}`
+    wrap.style.width = `min(100%, calc((100dvh - 11.5rem) * ${v.videoWidth} / ${v.videoHeight}))`
+  }
 }
 
 function onVideoError() {
   videoLoadErr.value =
-    'Não foi possível reproduzir o vídeo. Confirme pasta de origem, caminho do ficheiro e token.'
+    'Não foi possível reproduzir o vídeo. Confirme pasta de origem e caminho do ficheiro.'
   duration.value = 0
 }
 
@@ -893,27 +1013,13 @@ function removeMarked(id: string) {
   validateMsg.value = ''
 }
 
-async function adminHeaders(): Promise<Record<string, string>> {
-  const t = token.value.trim()
-  if (!t) throw new Error('Preencha o token e guarde.')
-  return { Authorization: `Bearer ${t}` }
-}
-
-function persistToken() {
-  if (!import.meta.client) return
-  sessionStorage.setItem('video_admin_token', token.value.trim())
-  loadError.value = ''
-  void loadMenu().then(() => applyRoutePrefill())
-}
-
 async function loadMenu() {
   loadError.value = ''
   try {
-    const h = await adminHeaders()
     const data = await $fetch<{
       serverPlatform: string
       items: MenuRow[]
-    }>('/api/admin/menu', { headers: h })
+    }>('/api/editor/menu')
     serverPlatform.value = data.serverPlatform ?? ''
     menuRows.value = Array.isArray(data.items) ? data.items : []
     if (!sourceRoot.value.trim() && menuRows.value[0] && !route.query.session) {
@@ -936,6 +1042,7 @@ function markedForMode(mode: EditorMarkMode) {
 }
 
 function exportBody(mode?: EditorMarkMode) {
+  const session = resolvedSessionIndex()
   return {
     sourceRoot: sourceRoot.value.trim(),
     file: normalizeRel(fileRel.value),
@@ -947,6 +1054,8 @@ function exportBody(mode?: EditorMarkMode) {
     height: height.value,
     speed: speed.value,
     force: force.value,
+    useVideo: useVideo.value && !splitPoints.value.length,
+    ...(session != null ? { session } : {}),
   }
 }
 
@@ -963,12 +1072,11 @@ async function validateExportSplit() {
   if (!canExportSplit.value) return
   validating.value = true
   try {
-    const h = await adminHeaders()
     const data = await $fetch<{ partCount: number; chunkPlans: { label: string }[] }>(
       '/api/admin/editor-validate',
       {
         method: 'POST',
-        headers: { ...h, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: exportBody(),
       },
     )
@@ -988,10 +1096,9 @@ async function startExportSplit() {
   startErr.value = ''
   jobErr.value = ''
   try {
-    const h = await adminHeaders()
     const data = await $fetch<{ jobId: string }>('/api/admin/editor-start', {
       method: 'POST',
-      headers: { ...h, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: exportBody(),
     })
     rememberJobId(data.jobId)
@@ -1009,12 +1116,11 @@ async function validateExport(mode: EditorMarkMode) {
   if (!can) return
   validating.value = true
   try {
-    const h = await adminHeaders()
     const data = await $fetch<{ keepCount: number; markedCount: number; editMode: EditorMarkMode }>(
       '/api/admin/editor-validate',
       {
         method: 'POST',
-        headers: { ...h, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: exportBodySingle(mode),
       },
     )
@@ -1072,12 +1178,7 @@ function pruneLinesIfNeeded(snap: JobSnapshot) {
 
 function openStreamForJob(jobId: string) {
   closeStream()
-  const t = token.value.trim()
-  if (!t) {
-    jobErr.value = 'Token em falta.'
-    return
-  }
-  const url = `/api/admin/editor-stream?jobId=${encodeURIComponent(jobId)}&token=${encodeURIComponent(t)}`
+  const url = `/api/admin/editor-stream?jobId=${encodeURIComponent(jobId)}`
   let es: EventSource
   try {
     es = new EventSource(url)
@@ -1121,6 +1222,10 @@ function openStreamForJob(jobId: string) {
     try {
       job.value = JSON.parse((ev as MessageEvent).data) as JobSnapshot
       void scrollTailToBottom()
+      if (job.value?.status === 'done' && job.value.newFileRel) {
+        fileRel.value = job.value.newFileRel
+        void loadVideo()
+      }
     } catch {
       /* */
     }
@@ -1132,12 +1237,8 @@ function openStreamForJob(jobId: string) {
 }
 
 async function bootstrapJob() {
-  if (!token.value.trim()) return
   try {
-    const h = await adminHeaders()
-    const data = await $fetch<{ editorRunningJob: JobSnapshot | null }>('/api/admin/editor-status', {
-      headers: h,
-    })
+    const data = await $fetch<{ editorRunningJob: JobSnapshot | null }>('/api/admin/editor-status')
     const running = data.editorRunningJob
     if (running) {
       rememberJobId(running.id)
@@ -1146,9 +1247,9 @@ async function bootstrapJob() {
     }
     const stored = sessionStorage.getItem(EDITOR_JOB_STORAGE_KEY)
     if (stored) {
-      const snap = await $fetch<JobSnapshot>(`/api/admin/editor-status?jobId=${encodeURIComponent(stored)}`, {
-        headers: h,
-      })
+      const snap = await $fetch<JobSnapshot>(
+        `/api/admin/editor-status?jobId=${encodeURIComponent(stored)}`,
+      )
       if (snap.status === 'running') openStreamForJob(stored)
       else job.value = snap
     }
@@ -1163,10 +1264,9 @@ async function startExport(mode: EditorMarkMode) {
   startErr.value = ''
   jobErr.value = ''
   try {
-    const h = await adminHeaders()
     const data = await $fetch<{ jobId: string }>('/api/admin/editor-start', {
       method: 'POST',
-      headers: { ...h, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: exportBodySingle(mode),
     })
     rememberJobId(data.jobId)
@@ -1181,10 +1281,9 @@ async function cancelJob() {
   if (!job.value || !jobActive.value) return
   if (!confirm('Cancelar o processamento em curso?')) return
   try {
-    const h = await adminHeaders()
     await $fetch('/api/admin/editor-cancel', {
       method: 'POST',
-      headers: { ...h, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: { jobId: job.value.id },
     })
     if (job.value) job.value.cancelRequested = true
@@ -1244,19 +1343,16 @@ function onKeyDown(ev: KeyboardEvent) {
 
 onMounted(() => {
   if (!import.meta.client) return
-  token.value = sessionStorage.getItem('video_admin_token') ?? ''
   readRouteVideoQuery()
   window.addEventListener('keydown', onKeyDown)
-  if (token.value.trim()) {
-    void loadMenu().then(() => bootstrapJob())
-  }
+  void loadMenu().then(() => bootstrapJob())
 })
 
 watch(
-  () => [route.query.session, route.query.file],
+  () => [route.query.session, route.query.file, route.query.useVideo],
   () => {
     readRouteVideoQuery()
-    if (token.value.trim() && menuRows.value.length) {
+    if (canLoadVideo.value) {
       void applyRoutePrefill()
     }
   },
@@ -1270,11 +1366,49 @@ onUnmounted(() => {
 
 <style scoped>
 .admin-page {
-  min-height: 100vh;
-  padding: 1.25rem 1.5rem 2.5rem;
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0.85rem 1.1rem 1.75rem;
   background: #0c0d10;
   color: #e8eaed;
   font-family: system-ui, sans-serif;
+}
+
+.admin-page--with-video {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100dvh;
+  overflow: hidden;
+  padding: 0.45rem 0.75rem 0.65rem;
+}
+
+.admin-page--with-video .admin-head {
+  flex-shrink: 0;
+  margin-bottom: 0.3rem;
+}
+
+.admin-page--with-video .admin-title {
+  font-size: 1.1rem;
+}
+
+.admin-page--with-video .admin-card--compact {
+  flex-shrink: 0;
+  margin-bottom: 0.4rem;
+}
+
+.admin-page--with-video .editor-workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
 }
 
 .admin-head {
@@ -1283,7 +1417,7 @@ onUnmounted(() => {
   align-items: baseline;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.65rem;
 }
 
 .admin-head-links {
@@ -1294,7 +1428,7 @@ onUnmounted(() => {
 
 .admin-title {
   margin: 0;
-  font-size: 1.45rem;
+  font-size: 1.35rem;
   font-weight: 650;
 }
 
@@ -1338,7 +1472,31 @@ onUnmounted(() => {
   border-radius: 10px;
   padding: 1rem 1.1rem;
   margin-bottom: 1rem;
+  max-width: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.admin-card--narrow {
   max-width: 56rem;
+}
+
+.admin-card--compact {
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.65rem;
+}
+
+.admin-card--compact .admin-h2 {
+  margin-bottom: 0.35rem;
+  font-size: 0.95rem;
+}
+
+.editor-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: none;
 }
 
 .admin-h2 {
@@ -1377,6 +1535,7 @@ onUnmounted(() => {
 .admin-input--full {
   width: 100%;
   margin-top: 0.5rem;
+  box-sizing: border-box;
 }
 
 .admin-btn {
@@ -1481,8 +1640,42 @@ onUnmounted(() => {
   color: #e8eaed;
 }
 
+.editor-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
 .editor-player-card {
-  max-width: 64rem;
+  max-width: none;
+  margin-bottom: 0;
+}
+
+.admin-page--with-video .editor-player-card {
+  flex: 0 0 auto;
+  padding: 0.55rem 0.7rem 0.7rem;
+}
+
+.editor-player-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 1rem;
+  margin-bottom: 0.4rem;
+}
+
+.admin-page--with-video .editor-player-head {
+  margin-bottom: 0.3rem;
+}
+
+.editor-player-head .admin-h2 {
+  margin: 0;
+}
+
+.editor-player-head .editor-file-label {
+  margin: 0;
 }
 
 .editor-file-label {
@@ -1490,17 +1683,46 @@ onUnmounted(() => {
   font-family: ui-monospace, Consolas, monospace;
 }
 
+.editor-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  width: 100%;
+}
+
 .editor-video-wrap {
+  position: relative;
+  width: min(100%, calc((100dvh - 11.5rem) * 16 / 9));
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-inline: auto;
   background: #000;
   border-radius: 8px;
   overflow: hidden;
-  margin-bottom: 0.65rem;
 }
 
 .editor-video {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
-  max-height: min(56vh, 520px);
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.editor-controls {
+  flex: 0 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid #2d333b;
+  background: #12151a;
+}
+
+.editor-controls .editor-mark-help {
+  margin-bottom: 0;
 }
 
 .editor-time-row {

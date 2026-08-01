@@ -96,3 +96,72 @@ export function remapRecentPlaybackAfterMove(fromSession: number, toSession: num
     ).run(toS, fromS, rel)
   })
 }
+
+export interface TrailerViewHistoryRow {
+  session: number
+  trailerRel: string
+  viewedAt: string
+}
+
+function ensureViewHistoryTable() {
+  const d = getVideoTagsDb()
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS trailer_view_history (
+      session INTEGER NOT NULL,
+      trailer_rel TEXT NOT NULL,
+      viewed_at TEXT NOT NULL,
+      PRIMARY KEY (session, trailer_rel)
+    );
+    CREATE INDEX IF NOT EXISTS idx_trailer_view_history_at ON trailer_view_history(viewed_at);
+  `)
+}
+
+export const TRAILER_VIEW_HISTORY_LIMIT = 50
+
+/** Histórico automático de trailers reproduzidos (lista «Últimos vistos» — distinto de Destaques). */
+export function pushTrailerViewHistory(session: number, trailerRel: string): void {
+  const rel = normalizeTrailerRel(trailerRel)
+  if (!rel.startsWith('trailers/')) return
+  const s = Math.max(0, Math.floor(session))
+  const viewedAt = new Date().toISOString()
+  const d = getVideoTagsDb()
+  ensureViewHistoryTable()
+  runVideoTagsTxn(d, () => {
+    d.prepare('DELETE FROM trailer_view_history WHERE session = ? AND trailer_rel = ?').run(s, rel)
+    d.prepare(
+      'INSERT INTO trailer_view_history (session, trailer_rel, viewed_at) VALUES (?, ?, ?)',
+    ).run(s, rel, viewedAt)
+    d.prepare(
+      `DELETE FROM trailer_view_history
+       WHERE rowid NOT IN (
+         SELECT rowid FROM trailer_view_history ORDER BY viewed_at DESC LIMIT ?
+       )`,
+    ).run(TRAILER_VIEW_HISTORY_LIMIT)
+  })
+}
+
+export function readTrailerViewHistoryList(
+  limit = TRAILER_VIEW_HISTORY_LIMIT,
+): TrailerViewHistoryRow[] {
+  ensureViewHistoryTable()
+  const d = getVideoTagsDb()
+  const cap = Math.max(1, Math.min(200, Math.floor(limit)))
+  return d
+    .prepare(
+      `SELECT session, trailer_rel AS trailerRel, viewed_at AS viewedAt
+       FROM trailer_view_history
+       ORDER BY viewed_at DESC
+       LIMIT ?`,
+    )
+    .all(cap) as TrailerViewHistoryRow[]
+}
+
+export function purgeTrailerViewHistory(session: number, trailerRel: string): void {
+  ensureViewHistoryTable()
+  const rel = normalizeTrailerRel(trailerRel)
+  const d = getVideoTagsDb()
+  d.prepare('DELETE FROM trailer_view_history WHERE session = ? AND trailer_rel = ?').run(
+    Math.max(0, Math.floor(session)),
+    rel,
+  )
+}

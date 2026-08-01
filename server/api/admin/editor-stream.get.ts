@@ -1,5 +1,4 @@
 import { createError, getQuery, setResponseHeader } from 'h3'
-import { requireAdminTokenAllowQuery } from '../../utils/requireAdmin'
 import {
   getEditorJobSnapshot,
   subscribeEditorJob,
@@ -7,8 +6,6 @@ import {
 } from '../../utils/editorJobs'
 
 export default defineEventHandler(async (event) => {
-  requireAdminTokenAllowQuery(event)
-
   const q = getQuery(event) as Record<string, unknown>
   const jobId = typeof q.jobId === 'string' ? q.jobId.trim() : ''
   if (!jobId) {

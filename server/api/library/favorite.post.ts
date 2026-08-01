@@ -1,9 +1,11 @@
+import { requireCatalogUnlock } from '../../utils/catalogAccess'
 import { createError, readBody } from 'h3'
 import { resolveTrailerRelForTagMutation } from '../../utils/catalogTagMutation'
 import { toggleFavorite } from '../../utils/libraryState'
 import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
 
 export default defineEventHandler(async (event) => {
+  requireCatalogUnlock(event)
   const config = useRuntimeConfig(event)
   const roots = getVideoRootsFromRuntime(config)
   const body = (await readBody(event)) as { session?: unknown; trailerRel?: unknown }

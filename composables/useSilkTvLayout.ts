@@ -1,4 +1,4 @@
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
 
 const TV_ASSIST_STORAGE_KEY = 'video-player-tv-layout-assist'
@@ -23,9 +23,9 @@ function writeTvAssistStored(on: boolean) {
 }
 
 /**
- * `?tv=1` (ou true/yes) grava em `localStorage` até `?tv=0`. Esse modo manual controla **só** o
- * assistente de rolagem do catálogo (▲▼, «Topo da lista», scrollbar escondida). O layout alargado
- * (`layout--tv-silk`) usa `isTvLayout` (manual **ou** UA Silk/Fire TV).
+ * `?tv=1` (ou true/yes) grava em `localStorage` até `?tv=0`.
+ * No telemóvel/ecrã estreito isso só activa o assistente de rolagem do catálogo —
+ * o chrome TV completo (`tv-minimal`) fica reservado a Silk/Fire TV ou ecrã largo.
  */
 function parseTvAssistFromQuery(query: RouteLocationNormalizedLoaded['query']): boolean {
   const v = query.tv
@@ -46,7 +46,7 @@ function parseTvOffFromQuery(query: RouteLocationNormalizedLoaded['query']): boo
 
 /**
  * Heurística para Amazon Silk / Fire TV e variantes. Não é segurança — só UX/CSS.
- * Alguns WebViews omitem «Silk» no userAgent; o layout TV manual continua disponível com `?tv=1`.
+ * Alguns WebViews omitem «Silk» no userAgent; o layout TV manual continua disponível com `?tv=1` em ecrã largo.
  */
 function detectSilkTvLikeUa(): boolean {
   if (typeof navigator === 'undefined') return false
@@ -78,15 +78,26 @@ function detectSilkTvLikeUa(): boolean {
 }
 
 /**
- * - `manualTvAssist`: `?tv=1` / preferência guardada (até `?tv=0`) — botões ▲▼ + scrollbar do grelha escondida.
- * - `isSilkTvUa`: só User-Agent Silk / Fire TV (para outras heurísticas; rolagem do catálogo **não** depende disto).
- * - `isTvLayout`: UA Silk/Fire TV **ou** `manualTvAssist` — classe `layout--tv-silk`, margens, grelha.
+ * - `manualTvAssist`: `?tv=1` / preferência guardada — botões ▲▼ + scrollbar da grelha escondida.
+ * - `isSilkTvUa`: User-Agent Silk / Fire TV.
+ * - `isTvLayout`: chrome TV completo (`tv-minimal`) — Silk/Fire TV, ou `?tv=1` **só em ecrã ≥960px**.
+ *   No telemóvel nunca troca para `tv-minimal` só por causa do `tv=1` guardado.
  */
 export function useSilkTvLayout() {
   const route = useRoute()
 
   const uaSilkRef = ref(import.meta.client ? detectSilkTvLikeUa() : false)
   const tvStoredOn = ref(import.meta.client ? readTvAssistStored() : false)
+  const wideViewport = ref(
+    import.meta.client && typeof window !== 'undefined'
+      ? window.matchMedia('(min-width: 960px)').matches
+      : true,
+  )
+  let wideMql: MediaQueryList | null = null
+
+  function syncWideViewport() {
+    wideViewport.value = wideMql?.matches ?? true
+  }
 
   watch(
     () => route.query.tv,
@@ -111,11 +122,25 @@ export function useSilkTvLayout() {
   })
 
   const isSilkTvUa = computed(() => uaSilkRef.value)
-  const isTvLayout = computed(() => uaSilkRef.value || manualTvAssist.value)
+  const isTvLayout = computed(() => {
+    if (uaSilkRef.value) return true
+    if (manualTvAssist.value && wideViewport.value) return true
+    return false
+  })
 
   onMounted(() => {
     uaSilkRef.value = detectSilkTvLikeUa()
     tvStoredOn.value = readTvAssistStored()
+    if (typeof window !== 'undefined') {
+      wideMql = window.matchMedia('(min-width: 960px)')
+      syncWideViewport()
+      wideMql.addEventListener('change', syncWideViewport)
+    }
+  })
+
+  onUnmounted(() => {
+    wideMql?.removeEventListener('change', syncWideViewport)
+    wideMql = null
   })
 
   return { manualTvAssist, isSilkTvUa, isTvLayout }

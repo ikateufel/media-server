@@ -11,6 +11,8 @@ import { resolvePreviewTrailerRel } from './previewTrailer'
 import { findMainFileInSessionRootSync, trailerToMainFilename } from './trailerNames'
 import { transferTitleBetweenSessions } from './videoTagsDb'
 import { resolveSafeUnderRoot } from './videoPaths'
+import type { VideoMenuItem } from './videoMenu'
+import { isTrashLibrarySession } from './trashLibrary'
 
 async function isExistingFile(p: string): Promise<boolean> {
   try {
@@ -46,8 +48,9 @@ export async function moveTitleBetweenVideoRoots(opts: {
   fromSession: number
   toSession: number
   trailerRelRaw: string
+  menu: VideoMenuItem[]
 }): Promise<{ mainRel: string; trailerRel: string; movedFiles: number; movedThumbs: number }> {
-  const { roots, fromSession, toSession, trailerRelRaw } = opts
+  const { roots, fromSession, toSession, trailerRelRaw, menu } = opts
   if (!Number.isFinite(fromSession) || !Number.isFinite(toSession)) {
     throw createError({ statusCode: 400, statusMessage: 'Sessões inválidas.' })
   }
@@ -172,7 +175,9 @@ export async function moveTitleBetweenVideoRoots(opts: {
   }
 
   transferTitleBetweenSessions(fromI, toI, trailerRel, mainRel)
-  await moveTitleLibraryState(fromI, toI, trailerRel, mainRel)
+  await moveTitleLibraryState(fromI, toI, trailerRel, mainRel, {
+    toIsTrash: isTrashLibrarySession(toI, menu),
+  })
 
   return {
     mainRel,

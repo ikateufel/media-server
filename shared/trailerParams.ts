@@ -38,6 +38,8 @@ export const TRAILER_BAT_PARAMS_DEFAULT: TrailerBatParams = {
   nvencPreset: 'p4',
 }
 
+export const TRAILER_SPEED_OPTIONS = [1, 1.25, 1.5, 2, 2.5, 3] as const
+
 const COLLECT_MODES = new Set<TrailerCollectMode>([
   'padrao',
   'minuto10',
@@ -98,7 +100,19 @@ function readSpeedFromInput(src: Partial<Record<string, unknown>>, fallback: num
  * speed 3 → atempo 3, frames 0,333…
  */
 export function trailerSpeedToVelPts(speed: number): { vel: number; pts: number } {
-  const vel = clampFloat(speed, 0.5, 4)
+  let vel = clampFloat(speed, 0.5, 4)
+  if (!(TRAILER_SPEED_OPTIONS as readonly number[]).includes(vel)) {
+    let best = TRAILER_SPEED_OPTIONS[0]!
+    let bestDist = Math.abs(vel - best)
+    for (const opt of TRAILER_SPEED_OPTIONS) {
+      const d = Math.abs(vel - opt)
+      if (d < bestDist) {
+        best = opt
+        bestDist = d
+      }
+    }
+    vel = best
+  }
   const pts = clampFloat(1 / vel, 0.25, 2, 4)
   return { vel, pts }
 }

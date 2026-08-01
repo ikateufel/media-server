@@ -1,7 +1,9 @@
+import { requireCatalogUnlock } from '../../utils/catalogAccess'
 import { createError, readBody } from 'h3'
 import { clearFullProgress, setFullProgress } from '../../utils/libraryState'
 
 export default defineEventHandler(async (event) => {
+  requireCatalogUnlock(event)
   const body = (await readBody(event)) as {
     session?: unknown
     mainRel?: unknown

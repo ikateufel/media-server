@@ -1,10 +1,7 @@
 import { createError, readBody } from 'h3'
-import { requireAdminToken } from '../../utils/requireAdmin'
 import { cancelEditorJob, getEditorJobSnapshot } from '../../utils/editorJobs'
 
 export default defineEventHandler(async (event) => {
-  requireAdminToken(event)
-
   const body = (await readBody(event).catch(() => null)) as { jobId?: unknown } | null
   const jobId = typeof body?.jobId === 'string' ? body.jobId.trim() : ''
   if (!jobId) {

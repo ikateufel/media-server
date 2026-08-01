@@ -23,7 +23,6 @@ export interface RecentsCatalogPage {
   originCounts?: RecentsOriginCount[]
   tagSuggestions?: string[]
   serverPlatform?: string
-  adminRevealExplorer?: boolean
   catalogMode?: 'trailers' | 'main-only'
   fastPlay?: {
     rate?: number

@@ -6,6 +6,12 @@ export const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] as const
  * Não corresponde a uma entrada em `VIDEO_ROOT`; o catálogo vem de `GET /api/trailers/recent`.
  */
 export const RECENTS_SESSION_ID = -1
+/** Índice reservado: aba «Surpresa» — 5 aleatórios não vistos por pasta. */
+export const SURPRESA_SESSION_ID = -3
+/** Índice reservado: aba «Últimos vistos» — últimos trailers reproduzidos (mesmo que pouco). */
+export const LAST_VIEWED_SESSION_ID = -4
+/** Quantos títulos cabem na lista «Últimos vistos». */
+export const LAST_VIEWED_LIMIT = 50
 /** Índice reservado no menu de bibliotecas: aba «Busca» (resultados globais em todas as pastas). */
 export const SEARCH_SESSION_ID = -2
 

@@ -21,7 +21,7 @@ function dbFilePath() {
 }
 
 export function runVideoTagsTxn(d: DatabaseSync, fn: () => void) {
-  d.exec('BEGIN')
+  d.exec('BEGIN IMMEDIATE')
   try {
     fn()
     d.exec('COMMIT')
@@ -101,6 +101,8 @@ function openDb(): DatabaseSync {
   const DatabaseSync = getDatabaseSyncCtor()
   const d = new DatabaseSync(path)
   d.exec('PRAGMA journal_mode = WAL')
+  d.exec('PRAGMA busy_timeout = 30000')
+  d.exec('PRAGMA synchronous = NORMAL')
   d.exec('PRAGMA foreign_keys = ON')
   d.exec(`
     CREATE TABLE IF NOT EXISTS tags (
@@ -261,25 +263,46 @@ export function addTagToVideo(
   rawName: string,
   isManual = false,
 ): string[] {
-  const name = normalizeTagInput(rawName)
-  if (!name) return getTagsForVideo(session, trailerRel)
+  return addTagsToVideo(session, trailerRel, [rawName], isManual)
+}
+
+/** Insere várias tags numa única transacção (import auto-tags / bulk). */
+export function addTagsToVideo(
+  session: number,
+  trailerRel: string,
+  rawNames: string[],
+  isManual = false,
+): string[] {
+  const rel = trailerRel.replace(/\\/g, '/').trim()
+  const names = [
+    ...new Set(
+      rawNames
+        .map((n) => normalizeTagInput(n))
+        .filter((n): n is string => !!n),
+    ),
+  ]
+  if (!names.length) return getTagsForVideo(session, rel)
 
   const manualFlag = isManual ? 1 : 0
-
   const d = getVideoTagsDb()
   runInTransaction(d, () => {
-    d.prepare('INSERT OR IGNORE INTO tags (name) VALUES (?)').run(name)
-    const row = d.prepare('SELECT id FROM tags WHERE name = ?').get(name) as { id: number } | undefined
-    if (!row) return
-    d.prepare(
+    const insTag = d.prepare('INSERT OR IGNORE INTO tags (name) VALUES (?)')
+    const selId = d.prepare('SELECT id FROM tags WHERE name = ? COLLATE NOCASE')
+    const link = d.prepare(
       `INSERT INTO video_tags (session, trailer_rel, tag_id, is_manual)
        VALUES (?, ?, ?, ?)
        ON CONFLICT(session, trailer_rel, tag_id) DO UPDATE SET
          is_manual = MAX(video_tags.is_manual, excluded.is_manual)`,
-    ).run(session, trailerRel, row.id, manualFlag)
+    )
+    for (const name of names) {
+      insTag.run(name)
+      const row = selId.get(name) as { id: number } | undefined
+      if (!row) continue
+      link.run(session, rel, row.id, manualFlag)
+    }
   })
 
-  return getTagsForVideo(session, trailerRel)
+  return getTagsForVideo(session, rel)
 }
 
 /** Marca o vídeo como concluído (tag manual `concluido`). Devolve a lista de tags resultante. */

@@ -1,9 +1,11 @@
+import { requireCatalogUnlock } from '../../utils/catalogAccess'
 import { createError, readBody } from 'h3'
 import { resolveTrailerRelForTagMutation } from '../../utils/catalogTagMutation'
 import { pushRecentPlayback } from '../../utils/recentPlaybackDb'
 import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
 
 export default defineEventHandler(async (event) => {
+  requireCatalogUnlock(event)
   const config = useRuntimeConfig(event)
   const roots = getVideoRootsFromRuntime(config)
   if (!roots.length) {
@@ -22,7 +24,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'session inválido' })
   }
 
-  const canonicalRel = await resolveTrailerRelForTagMutation(event, Math.floor(session), trailerRel)
+  let canonicalRel = trailerRel.replace(/\\/g, '/').trim()
+  try {
+    canonicalRel = await resolveTrailerRelForTagMutation(event, Math.floor(session), trailerRel)
+  } catch {
+    /* usa rel normalizado */
+  }
+  if (!canonicalRel.startsWith('trailers/')) {
+    throw createError({ statusCode: 400, statusMessage: 'trailerRel inválido' })
+  }
   pushRecentPlayback(Math.floor(session), canonicalRel)
-  return { ok: true }
+  return { ok: true, trailerRel: canonicalRel }
 })

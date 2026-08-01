@@ -1,3 +1,4 @@
+import { requireCatalogUnlock } from '../../utils/catalogAccess'
 import { createError, readBody } from 'h3'
 import { resolveTrailerRelForTagMutation } from '../../utils/catalogTagMutation'
 import {
@@ -19,6 +20,7 @@ import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
  * Resposta: { completed, completedTagName, tags }
  */
 export default defineEventHandler(async (event) => {
+  requireCatalogUnlock(event)
   const config = useRuntimeConfig(event)
   const roots = getVideoRootsFromRuntime(config)
   if (!roots.length) {

@@ -1,6 +1,7 @@
+import { requireCatalogUnlock } from '../../utils/catalogAccess'
 import { createError, readBody } from 'h3'
 import { moveTitleBetweenVideoRoots } from '../../utils/moveTitleBetweenRoots'
-import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
+import { getVideoMenuItems, getVideoRootsFromRuntime } from '../../utils/videoMenu'
 
 /**
  * Move um título completo (ficheiro na raiz + trailer + preview + JPEGs em `.thumb_cache/`)
@@ -9,6 +10,7 @@ import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
  * Body: `{ session: number, targetSession: number, trailerRel: string }`
  */
 export default defineEventHandler(async (event) => {
+  requireCatalogUnlock(event)
   const config = useRuntimeConfig(event)
   const roots = getVideoRootsFromRuntime(config)
   if (!roots.length) {
@@ -38,6 +40,7 @@ export default defineEventHandler(async (event) => {
       fromSession: session,
       toSession: targetSession,
       trailerRelRaw,
+      menu: getVideoMenuItems(config),
     })
     return { ok: true, ...out }
   } catch (e: unknown) {

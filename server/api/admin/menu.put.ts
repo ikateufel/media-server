@@ -6,20 +6,28 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
   requireAdminToken(event)
 
-  const body = (await readBody(event).catch(() => null)) as
-    | { items?: unknown; fastPlay?: unknown }
-    | null
+  const body = (await readBody(event).catch(() => null)) as {
+    items?: unknown
+    fastPlay?: unknown
+    catalogPassword?: unknown
+  } | null
 
   if (!body || typeof body !== 'object') {
     throw createError({ statusCode: 400, statusMessage: 'Corpo JSON inválido.' })
   }
 
-  const fastPlayOnly = !('items' in body) && 'fastPlay' in body
+  const hasItems = 'items' in body
+  const hasFastPlay = 'fastPlay' in body
+  const hasCatalogPassword = 'catalogPassword' in body
 
-  if (fastPlayOnly) {
+  if (!hasItems && (hasFastPlay || hasCatalogPassword)) {
     try {
       const menuItems = getVideoMenuItems(config)
-      await writeVideoMenuToDisk(menuItems, body.fastPlay)
+      await writeVideoMenuToDisk(
+        menuItems,
+        hasFastPlay ? body.fastPlay : undefined,
+        hasCatalogPassword ? body.catalogPassword : undefined,
+      )
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       throw createError({ statusCode: 400, statusMessage: msg })
@@ -33,7 +41,10 @@ export default defineEventHandler(async (event) => {
 
   const rows = body.items
   if (!Array.isArray(rows)) {
-    throw createError({ statusCode: 400, statusMessage: 'Corpo JSON inválido: esperado { "items": [ { "path", "title" }, ... ] }.' })
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Corpo JSON inválido: esperado { "items": [ { "path", "title" }, ... ] }.',
+    })
   }
 
   const items: VideoMenuItem[] = rows
@@ -45,7 +56,11 @@ export default defineEventHandler(async (event) => {
     .filter((r) => r.path)
 
   try {
-    await writeVideoMenuToDisk(items, body?.fastPlay)
+    await writeVideoMenuToDisk(
+      items,
+      hasFastPlay ? body.fastPlay : undefined,
+      hasCatalogPassword ? body.catalogPassword : undefined,
+    )
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     throw createError({ statusCode: 400, statusMessage: msg })

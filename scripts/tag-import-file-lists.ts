@@ -24,7 +24,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { basename, extname, join, resolve } from 'node:path'
 import { getVideoMenuRowsForCli } from '../server/utils/videoMenu'
 import { isCatalogTrailerRelSuffix } from '../server/utils/trailerNames'
-import { addTagToVideo, normalizeTagInput } from '../server/utils/videoTagsDb'
+import { addTagsToVideo, normalizeTagInput } from '../server/utils/videoTagsDb'
 
 function loadDotenv() {
   const p = join(process.cwd(), '.env')
@@ -76,8 +76,20 @@ function resolveTrailerRel(sessionRoot: string, firstField: string): string | nu
   const rel = (f.startsWith('trailers/') ? f : `trailers/${f}`).replace(/\\/g, '/')
   const within = rel.startsWith('trailers/') ? rel.slice('trailers/'.length) : ''
   if (!within || within.includes('..') || !isCatalogTrailerRelSuffix(within)) return null
-  const abs = join(sessionRoot, ...rel.split('/'))
-  if (existsSync(abs)) return rel
+
+  const candidates = [
+    join(sessionRoot, ...rel.split('/')),
+  ]
+  // Legado: trailers/<cena>/f.mp4 no CSV ↔ <cena>/trailers/f.mp4 no disco
+  const parts = within.split('/').filter(Boolean)
+  if (parts.length === 2) {
+    const [sub, file] = parts
+    candidates.push(join(sessionRoot, sub!, 'trailers', file!))
+  }
+
+  for (const abs of candidates) {
+    if (existsSync(abs)) return rel
+  }
   return null
 }
 
@@ -225,13 +237,14 @@ function main() {
         continue
       }
       totalLines++
-      for (const tag of tags) {
-        if (dryRun) {
+      if (dryRun) {
+        for (const tag of tags) {
           console.log(`  [dry-run] ${trailerRel} + ${tag}`)
-        } else {
-          addTagToVideo(session, trailerRel, tag)
+          totalAdds++
         }
-        totalAdds++
+      } else {
+        addTagsToVideo(session, trailerRel, tags)
+        totalAdds += tags.length
       }
     }
   }

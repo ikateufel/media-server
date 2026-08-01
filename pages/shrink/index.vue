@@ -5,6 +5,7 @@
       <div class="admin-head-links">
         <NuxtLink to="/" class="admin-back">← Reprodutor</NuxtLink>
         <NuxtLink to="/admin" class="admin-back">Admin</NuxtLink>
+        <NuxtLink to="/historico" class="admin-back">Histórico</NuxtLink>
         <NuxtLink to="/editor" class="admin-back">Editor</NuxtLink>
       </div>
     </header>
@@ -205,8 +206,16 @@
           />
         </label>
         <label class="shrink-field">
-          <span class="shrink-label">Altura máx. (px)</span>
-          <input v-model.number="height" type="number" min="144" max="4320" step="1" class="admin-input shrink-num" />
+          <span class="shrink-label">Resolução (altura)</span>
+          <select v-model.number="height" class="admin-input">
+            <option
+              v-for="h in SHRINK_IN_PLACE_HEIGHT_OPTIONS"
+              :key="h"
+              :value="h"
+            >
+              {{ SHRINK_IN_PLACE_HEIGHT_LABELS[h] ?? `${h}p` }}
+            </option>
+          </select>
         </label>
         <label class="shrink-field">
           <span class="shrink-label">Velocidade</span>
@@ -337,6 +346,10 @@ import {
   VIDEO_EXT_LABEL,
   VIDEO_FILE_INPUT_ACCEPT,
 } from '#shared/videoExtensions'
+import {
+  SHRINK_IN_PLACE_HEIGHT_LABELS,
+  SHRINK_IN_PLACE_HEIGHT_OPTIONS,
+} from '#shared/shrinkInPlaceParams'
 
 interface MenuRow {
   path: string

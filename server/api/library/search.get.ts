@@ -1,9 +1,9 @@
 import { getQuery } from 'h3'
 import type { TrailerListEntry } from '~/composables/useVideoFolder'
+import { requireCatalogUnlock } from '../../utils/catalogAccess'
 import { dedupeCatalogItemsByPhysicalVideo } from '../../utils/catalogPhysicalKey'
 import { repairSessionTrailerRelDuplicates } from '../../utils/catalogTagRepair'
 import { enrichTrailerListForSession, scanTrailersCatalogInRoot } from '../../utils/trailerCatalogScan'
-import { getResolvedAdminToken } from '../../utils/requireAdmin'
 import { getVideoMenuItems } from '../../utils/videoMenu'
 
 interface SearchRankedEntry {
@@ -75,10 +75,9 @@ function toSearchRankedEntry(
 }
 
 export default defineEventHandler(async (event) => {
+  requireCatalogUnlock(event)
   const q = normalizeSearchTerm(getQuery(event).q)
   const mode = normalizeSearchMode(getQuery(event).mode)
-  const adminToken = getResolvedAdminToken(event) ?? ''
-  const adminRevealExplorer = adminToken.length > 0
   if (q.length < 2) {
     return {
       query: q,
@@ -86,7 +85,6 @@ export default defineEventHandler(async (event) => {
       items: [] as TrailerListEntry[],
       tagSuggestions: [] as string[],
       serverPlatform: process.platform,
-      adminRevealExplorer,
     }
   }
 
@@ -137,6 +135,5 @@ export default defineEventHandler(async (event) => {
       a.localeCompare(b, undefined, { sensitivity: 'base' }),
     ),
     serverPlatform: process.platform,
-    adminRevealExplorer,
   }
 })
