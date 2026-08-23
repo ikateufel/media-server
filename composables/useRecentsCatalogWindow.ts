@@ -19,6 +19,8 @@ export interface RecentsCatalogPage {
   total: number
   hasMore: boolean
   offset: number
+  /** Posição SQLite após esta página (offset + itens da página, antes de filtros de existência). */
+  nextOffset?: number
   /** Pastas do menu com títulos em Destaques (lista completa SQLite, independente da página). */
   originCounts?: RecentsOriginCount[]
   tagSuggestions?: string[]
@@ -79,13 +81,20 @@ export function useRecentsCatalogWindow(fullEntries: Ref<TrailerListEntry[]>) {
     originCounts.value = Array.isArray(rows) ? rows : []
   }
 
-  function trimWindowFromTop(): number {
-    let removed = 0
-    while (fullEntries.value.length > RECENTS_MAX_IN_MEMORY) {
-      fullEntries.value.shift()
-      removed++
-    }
-    return removed
+  function entryDedupKey(e: TrailerListEntry): string {
+    return `${e.librarySession ?? ''}:${e.trailerRel}`
+  }
+
+  function appendDeduped(items: TrailerListEntry[]) {
+    const seen = new Set(fullEntries.value.map(entryDedupKey))
+    const toAppend = items.filter((e) => {
+      const key = entryDedupKey(e)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    fullEntries.value = [...fullEntries.value, ...toAppend]
+    return toAppend.length
   }
 
   function appendLibrarySessionParam(params: URLSearchParams) {
@@ -110,8 +119,10 @@ export function useRecentsCatalogWindow(fullEntries: Ref<TrailerListEntry[]>) {
     return await $fetch<RecentsCatalogPage>(`/api/trailers/recent${qs ? `?${qs}` : ''}`)
   }
 
-  function applyMeta(data: RecentsCatalogPage) {
+  function applyMeta(data: RecentsCatalogPage, requestedLimit: number) {
     total.value = data.total
+    fetchOffset.value =
+      typeof data.nextOffset === 'number' ? data.nextOffset : fetchOffset.value + requestedLimit
     hasMore.value = data.hasMore
   }
 
@@ -122,8 +133,7 @@ export function useRecentsCatalogWindow(fullEntries: Ref<TrailerListEntry[]>) {
     logRecentsCatalog(`carga inicial: a pedir ${RECENTS_PAGE_INITIAL}…`, loadStatusLine)
     const data = await fetchPage(0, RECENTS_PAGE_INITIAL)
     fullEntries.value = data.items.map(normalizeRecentsEntry)
-    fetchOffset.value = data.items.length
-    applyMeta(data)
+    applyMeta(data, RECENTS_PAGE_INITIAL)
     applyOriginCounts(data.originCounts)
     logRecentsCatalog(
       `carga inicial OK: ${data.items.length} itens (total ${data.total}), em memória ${fullEntries.value.length}, hasMore=${data.hasMore}`,
@@ -153,9 +163,7 @@ export function useRecentsCatalogWindow(fullEntries: Ref<TrailerListEntry[]>) {
   }
 
   /** Carrega mais itens (mais antigos). Mantém ordem global (mais recente primeiro). */
-  async function loadMore(
-    trigger: string,
-  ): Promise<{ data: RecentsCatalogPage; trimmedFromTop: number } | null> {
+  async function loadMore(trigger: string): Promise<{ data: RecentsCatalogPage } | null> {
     if (!paginationEnabled.value) {
       logRecentsCatalog(`[${trigger}] ignorado: paginação desactivada`, loadStatusLine)
       return null
@@ -166,6 +174,14 @@ export function useRecentsCatalogWindow(fullEntries: Ref<TrailerListEntry[]>) {
     }
     if (loadingMore.value) {
       logRecentsCatalog(`[${trigger}] ignorado: já a carregar`, loadStatusLine)
+      return null
+    }
+    if (fullEntries.value.length >= RECENTS_MAX_IN_MEMORY) {
+      hasMore.value = false
+      logRecentsCatalog(
+        `[${trigger}] ignorado: limite de memória atingido (${RECENTS_MAX_IN_MEMORY})`,
+        loadStatusLine,
+      )
       return null
     }
     loadingMore.value = true
@@ -182,17 +198,13 @@ export function useRecentsCatalogWindow(fullEntries: Ref<TrailerListEntry[]>) {
         logRecentsCatalog(`[${trigger}] API devolveu 0 itens — fim da lista`, loadStatusLine)
         return null
       }
-      fullEntries.value = [...fullEntries.value, ...data.items.map(normalizeRecentsEntry)]
-      fetchOffset.value += data.items.length
-      applyMeta(data)
-      const trimmedFromTop = trimWindowFromTop()
-      const trimNote =
-        trimmedFromTop > 0 ? `, removidos ${trimmedFromTop} do topo (máx ${RECENTS_MAX_IN_MEMORY})` : ''
+      const added = appendDeduped(data.items.map(normalizeRecentsEntry))
+      applyMeta(data, RECENTS_PAGE_MORE)
       logRecentsCatalog(
-        `[${trigger}] OK: +${data.items.length} (offset ${offsetBefore}→${fetchOffset.value}), em memória ${fullEntries.value.length}${trimNote}, hasMore=${data.hasMore}`,
+        `[${trigger}] OK: +${added} (offset ${offsetBefore}→${fetchOffset.value}), em memória ${fullEntries.value.length}, hasMore=${data.hasMore}`,
         loadStatusLine,
       )
-      return { data, trimmedFromTop }
+      return { data }
     } catch (err: unknown) {
       const ex = err as { message?: string }
       logRecentsCatalog(`[${trigger}] ERRO: ${ex?.message ?? 'falha no fetch'}`, loadStatusLine)

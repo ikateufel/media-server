@@ -122,18 +122,28 @@ export async function repairSessionTrailerRelDuplicates(
   return { groupsMerged, aliasesRemoved }
 }
 
-const repairedSessionRoots = new Set<string>()
+const repairedSessionRoots = new Map<string, Set<string>>()
 
-/** Repara SQLite uma vez por par sessão+raiz (evita trabalho repetido em cada GET). */
+/**
+ * Repara SQLite uma vez por par sessão+raiz (evita trabalho repetido em cada GET).
+ * Só repete quando aparecem `trailerRel` novos (ex.: ficheiro novo na pasta) — passar
+ * a lista completa do catálogo em todas as chamadas não deve forçar reparação repetida.
+ */
 export async function ensureSessionCatalogTagRepair(
   session: number,
   root: string,
   extraTrailerRels: string[] = [],
 ): Promise<void> {
   const key = `${Math.max(0, Math.floor(session))}:${root.trim()}`
-  if (repairedSessionRoots.has(key) && extraTrailerRels.length === 0) return
+  const seen = repairedSessionRoots.get(key)
+  if (seen) {
+    const hasNew = extraTrailerRels.some((rel) => !seen.has(normalizeTrailerRel(rel)))
+    if (!hasNew) return
+  }
   await repairSessionTrailerRelDuplicates(session, root.trim(), extraTrailerRels)
-  repairedSessionRoots.add(key)
+  const next = seen ?? new Set<string>()
+  for (const rel of extraTrailerRels) next.add(normalizeTrailerRel(rel))
+  repairedSessionRoots.set(key, next)
 }
 
 /**

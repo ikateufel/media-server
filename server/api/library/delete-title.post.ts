@@ -18,11 +18,42 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 503, statusMessage: 'VIDEO_ROOT não configurado' })
   }
 
-  const body = (await readBody(event)) as { session?: unknown; trailerRel?: unknown }
-  const session = typeof body.session === 'number' ? body.session : Number(body.session)
-  const trailerRelRaw = typeof body.trailerRel === 'string' ? body.trailerRel.trim() : ''
-  if (!Number.isFinite(session) || session < 0 || session >= roots.length || !trailerRelRaw) {
-    throw createError({ statusCode: 400, statusMessage: 'session e trailerRel são obrigatórios.' })
+  const raw = await readBody(event).catch(() => null)
+  let body: { session?: unknown; trailerRel?: unknown } | null = null
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    body = raw as { session?: unknown; trailerRel?: unknown }
+  } else if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        body = parsed as { session?: unknown; trailerRel?: unknown }
+      }
+    } catch {
+      body = null
+    }
+  }
+  const session =
+    typeof body?.session === 'number' ? body.session : Number(body?.session)
+  const trailerRelRaw =
+    typeof body?.trailerRel === 'string'
+      ? body.trailerRel.trim()
+      : body?.trailerRel == null
+        ? ''
+        : String(body.trailerRel).trim()
+  if (!body) {
+    throw createError({ statusCode: 400, statusMessage: 'Corpo JSON em falta ou inválido.' })
+  }
+  if (!trailerRelRaw) {
+    throw createError({ statusCode: 400, statusMessage: 'trailerRel em falta.' })
+  }
+  if (!Number.isFinite(session) || session < 0) {
+    throw createError({ statusCode: 400, statusMessage: 'session inválida.' })
+  }
+  if (session >= roots.length) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `session ${Math.floor(session)} fora do menu (0..${roots.length - 1}).`,
+    })
   }
 
   const root = roots[Math.floor(session)]!.trim()

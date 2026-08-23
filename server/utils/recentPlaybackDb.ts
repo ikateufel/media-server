@@ -35,7 +35,7 @@ export function readRecentPlaybackList(): RecentPlaybackRow[] {
     .prepare(
       `SELECT session, trailer_rel AS trailerRel, touched_at AS touchedAt
        FROM recent_playback
-       ORDER BY touched_at DESC`,
+       ORDER BY touched_at DESC, session ASC, trailer_rel ASC`,
     )
     .all() as RecentPlaybackRow[]
   return rows
@@ -48,6 +48,16 @@ export function purgeRecentPlaybackTitle(session: number, trailerRel: string): v
     Math.max(0, Math.floor(session)),
     relN,
   )
+}
+
+export function isInRecentPlayback(session: number, trailerRel: string): boolean {
+  const rel = normalizeTrailerRel(trailerRel)
+  if (!rel) return false
+  const d = getVideoTagsDb()
+  const row = d
+    .prepare('SELECT 1 AS ok FROM recent_playback WHERE session = ? AND trailer_rel = ? LIMIT 1')
+    .get(Math.max(0, Math.floor(session)), rel) as { ok: number } | undefined
+  return !!row
 }
 
 /** Unifica entrada em Destaques quando dois `trailer_rel` são o mesmo vídeo. */

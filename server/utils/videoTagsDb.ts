@@ -1,4 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { resolveCatalogRelAbsoluteCandidates } from './trailerNames'
+import { resolveSafeUnderRoot } from './videoPaths'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 
@@ -94,6 +96,35 @@ function ensureVideoTagsIsManualColumn(d: DatabaseSync) {
   }
 }
 
+function ensureDuplicateSchema(d: DatabaseSync) {
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS duplicate_verdicts (
+      pair_key TEXT PRIMARY KEY NOT NULL,
+      a_session INTEGER NOT NULL,
+      a_trailer_rel TEXT NOT NULL,
+      b_session INTEGER NOT NULL,
+      b_trailer_rel TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS duplicate_scan (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      saved_at TEXT NOT NULL,
+      scanned_videos INTEGER NOT NULL,
+      candidate_pairs INTEGER NOT NULL,
+      matched_pairs INTEGER NOT NULL,
+      min_score REAL NOT NULL,
+      min_shared_tags INTEGER NOT NULL,
+      ms INTEGER NOT NULL,
+      opt_min_score REAL NOT NULL,
+      opt_min_shared_tags INTEGER NOT NULL,
+      opt_session INTEGER,
+      opt_max_groups INTEGER NOT NULL,
+      groups_json TEXT NOT NULL
+    );
+  `)
+}
+
 function openDb(): DatabaseSync {
   const path = dbFilePath()
   const dir = dirname(path)
@@ -134,6 +165,7 @@ function openDb(): DatabaseSync {
     );
     CREATE INDEX IF NOT EXISTS idx_recent_playback_touched ON recent_playback(touched_at);
   `)
+  ensureDuplicateSchema(d)
   ensureVideoTagsIsManualColumn(d)
   migrateLegacyRecentPlaybackFromJson(d)
   return d
@@ -141,6 +173,7 @@ function openDb(): DatabaseSync {
 
 export function getVideoTagsDb(): DatabaseSync {
   if (!db) db = openDb()
+  else ensureDuplicateSchema(db)
   return db
 }
 
@@ -202,6 +235,99 @@ export function getTagsForVideo(session: number, trailerRel: string): string[] {
   return rows.map((r) => r.name)
 }
 
+export type TaggedVideoRow = {
+  session: number
+  trailerRel: string
+  tags: string[]
+}
+
+/** Todos os vídeos com tags na SQLite (base para scan de duplicados). */
+export function listTaggedVideosForDuplicateScan(sessionFilter?: number | null): TaggedVideoRow[] {
+  const d = getVideoTagsDb()
+  const hasSession =
+    typeof sessionFilter === 'number' && Number.isFinite(sessionFilter) && sessionFilter >= 0
+  const rows = (
+    hasSession
+      ? d
+          .prepare(
+            `SELECT vt.session, vt.trailer_rel, t.name
+             FROM video_tags vt
+             JOIN tags t ON t.id = vt.tag_id
+             WHERE vt.session = ?
+             ORDER BY vt.session, vt.trailer_rel, t.name COLLATE NOCASE`,
+          )
+          .all(Math.floor(sessionFilter as number))
+      : d
+          .prepare(
+            `SELECT vt.session, vt.trailer_rel, t.name
+             FROM video_tags vt
+             JOIN tags t ON t.id = vt.tag_id
+             ORDER BY vt.session, vt.trailer_rel, t.name COLLATE NOCASE`,
+          )
+          .all()
+  ) as { session: number; trailer_rel: string; name: string }[]
+
+  const map = new Map<string, TaggedVideoRow>()
+  for (const r of rows) {
+    const trailerRel = String(r.trailer_rel || '').replace(/\\/g, '/').trim()
+    if (!trailerRel) continue
+    const session = Math.floor(Number(r.session))
+    if (!Number.isFinite(session) || session < 0) continue
+    const key = `${session}\0${trailerRel}`
+    let row = map.get(key)
+    if (!row) {
+      row = { session, trailerRel, tags: [] }
+      map.set(key, row)
+    }
+    const name = String(r.name || '').trim()
+    if (name) row.tags.push(name)
+  }
+  return [...map.values()]
+}
+
+/** Trailer (ou candidato legado) existe na raiz da sessão. */
+export function catalogTrailerExistsOnDisk(root: string, trailerRel: string): boolean {
+  const rel = String(trailerRel || '').replace(/\\/g, '/').trim()
+  if (!rel || !root?.trim()) return false
+  for (const p of resolveCatalogRelAbsoluteCandidates(root.trim(), rel)) {
+    if (existsSync(p)) return true
+  }
+  try {
+    if (existsSync(resolveSafeUnderRoot(root.trim(), rel))) return true
+  } catch {
+    /* */
+  }
+  return false
+}
+
+/**
+ * Apaga tags cujo trailer já não existe no disco (ex.: sessão apontava para pasta errada).
+ * `roots` = menu na mesma ordem das sessions.
+ */
+export function purgeOrphanVideoTags(roots: string[]): { checked: number; purged: number } {
+  const rows = listTaggedVideosForDuplicateScan()
+  let purged = 0
+  for (const row of rows) {
+    const root = roots[row.session]
+    if (!root?.trim() || !catalogTrailerExistsOnDisk(root, row.trailerRel)) {
+      purgeVideoTags(row.session, row.trailerRel)
+      purged++
+    }
+  }
+  return { checked: rows.length, purged }
+}
+
+/** Filtra linhas de scan: só títulos com ficheiro de trailer na pasta da sessão. */
+export function filterTaggedVideosExistingOnDisk(
+  rows: TaggedVideoRow[],
+  roots: string[],
+): TaggedVideoRow[] {
+  return rows.filter((row) => {
+    const root = roots[row.session]
+    return !!root?.trim() && catalogTrailerExistsOnDisk(root, row.trailerRel)
+  })
+}
+
 /** Nomes de tags já usados nesta sessão (autocompletar). */
 export function listTagNamesForSession(session: number): string[] {
   const d = getVideoTagsDb()
@@ -233,6 +359,26 @@ export function listTopTagNamesForSession(session: number, limit = 5): string[] 
     )
     .all(session, n) as { name: string; qty: number }[]
   return rows.map((r) => r.name)
+}
+
+export type TagCountRow = { name: string; count: number }
+
+/** Contagem global de tags (todas as sessões) — ecrã Busca. */
+export function listTagCountsGlobal(): TagCountRow[] {
+  const d = getVideoTagsDb()
+  const rows = d
+    .prepare(
+      `SELECT t.name AS name, COUNT(*) AS count
+       FROM video_tags vt
+       JOIN tags t ON t.id = vt.tag_id
+       GROUP BY t.id, t.name
+       ORDER BY count DESC, t.name COLLATE NOCASE`,
+    )
+    .all() as { name: string; count: number }[]
+  return rows.map((r) => ({
+    name: String(r.name ?? '').trim(),
+    count: Math.max(0, Math.floor(Number(r.count) || 0)),
+  })).filter((r) => r.name)
 }
 
 export function getTagsMapForSession(session: number, trailerRels: string[]): Map<string, string[]> {

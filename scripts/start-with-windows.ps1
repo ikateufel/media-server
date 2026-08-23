@@ -207,6 +207,12 @@ if ($needsBuild) {
   $running = @()
 } elseif ($wasRunning) {
   Write-StartupLog 'sem alteracoes relevantes - servidor ja activo; nada a fazer'
+  try {
+    Start-OutputWatchProcess $root $PSScriptRoot
+    Write-StartupLog 'watch .output activo (reinicia sozinho apos npm run build)'
+  } catch {
+    Write-StartupLog ("AVISO - falha a arrancar watch .output: " + $_.Exception.Message)
+  }
   exit 0
 } else {
   Write-StartupLog 'build actualizado; servidor parado - a iniciar'
@@ -238,6 +244,12 @@ for ($i = 0; $i -lt 25; $i++) {
 
 if ($up -and $up.Count) {
   Write-StartupLog ("OK - servidor activo (PID " + $up[0].ProcessId + ")")
+  try {
+    Start-OutputWatchProcess $root $PSScriptRoot
+    Write-StartupLog 'watch .output activo (reinicia sozinho apos npm run build)'
+  } catch {
+    Write-StartupLog ("AVISO - falha a arrancar watch .output: " + $_.Exception.Message)
+  }
   exit 0
 }
 

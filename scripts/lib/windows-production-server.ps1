@@ -77,3 +77,42 @@ function Get-ProductionServerLogDir([string]$root) {
   }
   return $logDir
 }
+
+function Stop-OutputWatchProcess([string]$root) {
+  $logDir = Get-ProductionServerLogDir $root
+  $pidPath = Join-Path $logDir 'output-watch.pid'
+  if (Test-Path -LiteralPath $pidPath -PathType Leaf) {
+    $raw = (Get-Content -LiteralPath $pidPath -Raw -ErrorAction SilentlyContinue)
+    $oldPid = 0
+    if ($raw -and [int]::TryParse($raw.Trim(), [ref]$oldPid) -and $oldPid -gt 0) {
+      try {
+        $p = Get-Process -Id $oldPid -ErrorAction SilentlyContinue
+        if ($p -and $p.ProcessName -match 'powershell|pwsh') {
+          Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue
+        }
+      } catch {}
+    }
+    Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
+  }
+  Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -and $_.CommandLine -match 'watch-output-restart\.ps1' } |
+    ForEach-Object {
+      Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Start-OutputWatchProcess([string]$root, [string]$scriptsDir) {
+  Stop-OutputWatchProcess $root
+  $watchPs1 = Join-Path $scriptsDir 'watch-output-restart.ps1'
+  if (-not (Test-Path -LiteralPath $watchPs1 -PathType Leaf)) { return }
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe')
+  if (-not (Test-Path -LiteralPath $psi.FileName -PathType Leaf)) {
+    $psi.FileName = 'powershell.exe'
+  }
+  $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$watchPs1`""
+  $psi.WorkingDirectory = $root
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $true
+  [void][System.Diagnostics.Process]::Start($psi)
+}

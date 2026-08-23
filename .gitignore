@@ -11,6 +11,7 @@ dist
 
 # Estado local (favoritos + posição do vídeo completo)
 /data/library-state.json
+/data/tag-lists.json
 /data/library-tags.sqlite
 /data/library-tags.sqlite-shm
 /data/library-tags.sqlite-wal
@@ -30,6 +31,10 @@ dist
 
 # Últimos [ERRO] dos jobs trailers.bat / preview.bat (Admin)
 /data/sync-last-failures.json
+
+# Lista gravada do scan de possíveis duplicados (legado; agora em library-tags.sqlite)
+/data/duplicate-candidates.json
+/data/duplicate-verdicts.json
 
 # Log append ( trailer / preview: uma linha por ficheiro em processamento = caminho absoluto .mp4/.mkv/. )
 /data/sync-bat-processing.log

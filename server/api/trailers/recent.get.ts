@@ -122,6 +122,7 @@ export default defineEventHandler(async (event) => {
     items,
     total,
     offset,
+    nextOffset: pageEnd,
     hasMore: pageEnd < total,
     originCounts,
     tagSuggestions: [...tagSuggestions].sort((a, b) =>

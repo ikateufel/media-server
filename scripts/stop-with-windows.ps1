@@ -17,6 +17,7 @@ function Write-StopLog([string]$msg) {
 }
 
 $result = Stop-ProductionVideoServer
+Stop-OutputWatchProcess $root
 
 if ($result.Stopped -eq 0) {
   Write-StopLog 'stop: nenhum node com .output/server/index.mjs encontrado'

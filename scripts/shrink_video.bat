@@ -43,10 +43,11 @@ echo [ERRO] ffmpeg-on-path.bat nao encontrado.
 echo.
 echo Corra o script a partir do repo ^(recomendado^):
 echo   cd H:\temp\note_h\downloaded
-echo   G:\User\Projetos\video_player\scripts\shrink_video.bat "filme.mkv"
+echo   "%%~dp0shrink_video.bat" "filme.mkv"
+echo   ^(ou caminho absoluto da pasta scripts deste projecto^)
 echo.
 echo Ou defina VIDEO_PLAYER_ROOT ^(variavel de ambiente^) ou crie shrink_video.env.bat:
-echo   set "VIDEO_PLAYER_ROOT=G:\User\Projetos\video_player"
+echo   set "VIDEO_PLAYER_ROOT=E:\User\Projetos\video_player"
 echo ^(ver scripts\shrink_video.env.example.bat^)
 exit /b 1
 
@@ -1085,7 +1086,7 @@ echo.
 echo shrink_video.bat — um video completo acelerado, sem cortes
 echo.
 echo Correr na pasta da biblioteca ^(videos na raiz^), apontando para o .bat do repo:
-echo   G:\User\Projetos\video_player\scripts\shrink_video.bat "filme.mkv" [opcoes]
+echo   E:\User\Projetos\video_player\scripts\shrink_video.bat "filme.mkv" [opcoes]
 echo.
 echo   shrink_video.bat "filme.mkv"
 echo   shrink_video.bat "filme.mkv" 480

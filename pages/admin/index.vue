@@ -5,6 +5,7 @@
       <div class="admin-head-links">
         <NuxtLink to="/" class="admin-back">← Reprodutor</NuxtLink>
         <NuxtLink to="/historico" class="admin-back">Histórico</NuxtLink>
+        <NuxtLink to="/duplicados" class="admin-back">Duplicados</NuxtLink>
         <NuxtLink to="/shrink" class="admin-back">Shrink</NuxtLink>
         <NuxtLink to="/editor" class="admin-back">Editor</NuxtLink>
       </div>
@@ -27,6 +28,7 @@
         <NuxtLink to="/shrink" class="admin-tool-link">Shrink</NuxtLink>
         <NuxtLink to="/editor" class="admin-tool-link">Editor</NuxtLink>
         <NuxtLink to="/historico" class="admin-tool-link">Histórico</NuxtLink>
+        <NuxtLink to="/duplicados" class="admin-tool-link">Duplicados</NuxtLink>
       </div>
     </section>
 
@@ -374,6 +376,18 @@
       <p v-if="saveMsg" class="admin-ok">{{ saveMsg }}</p>
       <p v-if="saveErr" class="admin-err">{{ saveErr }}</p>
       <p v-if="statsErr" class="admin-err">{{ statsErr }}</p>
+    </section>
+
+    <section class="admin-card">
+      <h2 class="admin-h2">Possíveis duplicados</h2>
+      <p class="admin-muted">
+        O scan e os veredictos ficam em <code class="admin-code">library-tags.sqlite</code>. A lista fica em
+        <NuxtLink to="/duplicados" class="admin-tool-link">/duplicados</NuxtLink>
+        sem token e sem reprocessar ao abrir.
+      </p>
+      <div class="admin-row admin-tools-links">
+        <NuxtLink to="/duplicados" class="admin-tool-link">Abrir lista de duplicados</NuxtLink>
+      </div>
     </section>
 
     <section class="admin-card">
@@ -1982,6 +1996,91 @@ async function checkFolderStatsAll(mode: 'counts' | 'pairing') {
 
 .admin-table--compact tbody td {
   background-color: #17181e;
+}
+
+.dup-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.75rem;
+  max-height: min(70vh, 720px);
+  overflow: auto;
+}
+
+.dup-group {
+  border: 1px solid #2d333b;
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  background: #12141a;
+}
+
+.dup-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.dup-video-list,
+.dup-pair-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.dup-video,
+.dup-pair-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 0.35rem 0.55rem;
+  align-items: baseline;
+  font-size: 0.82rem;
+}
+
+.dup-sess {
+  color: #8ab4f8;
+  font-weight: 600;
+}
+
+.dup-name,
+.dup-pair-names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e8eaed;
+}
+
+.dup-tags,
+.dup-shared {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #9aa0a6;
+  font-size: 0.76rem;
+}
+
+.dup-pct {
+  color: #fdd663;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dup-pairs {
+  margin-top: 0.45rem;
+  color: #bdc1c6;
+  font-size: 0.8rem;
+}
+
+.dup-pairs summary {
+  cursor: pointer;
+  user-select: none;
 }
 
 .failures-head {

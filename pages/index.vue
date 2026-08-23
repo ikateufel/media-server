@@ -252,6 +252,7 @@
       :style="mainStackGridStyle"
     >
       <section class="media-card">
+        <div class="media-card-pin">
         <div class="media-card-top">
           <button
             v-if="sessions.length"
@@ -551,6 +552,7 @@
           <div v-else class="preview-placeholder">Escolha um título na lista.</div>
         </div>
 
+        <div class="media-card-chrome">
         <div
           v-if="shrinkInPlacePanelVisible"
           class="job-progress-panel"
@@ -639,6 +641,20 @@
 
         <div v-if="!playerUrl && previewUrl" class="toolbar toolbar--trailer toolbar--trailer-compact">
           <div class="toolbar-trailer-icons">
+            <button
+              type="button"
+              class="icon-tool icon-tool--chrome-toggle"
+              :class="{ 'icon-tool--on': trailerControlsCollapsed }"
+              :title="trailerControlsCollapsed ? 'Mostrar controlos e nome' : 'Recolher controlos e nome'"
+              :aria-pressed="trailerControlsCollapsed"
+              :aria-label="trailerControlsCollapsed ? 'Mostrar controlos e nome' : 'Recolher controlos e nome'"
+              @click="trailerControlsCollapsed = !trailerControlsCollapsed"
+            >
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path :d="trailerControlsCollapsed ? 'm6 9 6 6 6-6' : 'm18 15-6-6-6 6'" />
+              </svg>
+            </button>
+            <div v-show="!trailerControlsCollapsed" class="toolbar-trailer-icons-main">
             <button
               type="button"
               class="icon-tool icon-tool--theater"
@@ -759,7 +775,7 @@
               </svg>
             </button>
             <button
-              v-if="moveTitleDesktopEligible && focusedIndex !== null && selectedEntry"
+              v-if="moveTitleDesktopEligible && focusedIndex !== null && selectedEntry && !fromDuplicatesLite"
               type="button"
               class="icon-tool icon-tool--move-library"
               title="Mover vídeo completo, trailer, preview e miniaturas para outra biblioteca de pastas"
@@ -772,7 +788,7 @@
               </svg>
             </button>
             <button
-              v-if="editorDesktopEligible && editorOpenEntry"
+              v-if="editorDesktopEligible && editorOpenEntry && !fromDuplicatesLite"
               type="button"
               class="icon-tool icon-tool--editor"
               title="Editar vídeo completo (abre o editor — backup e substitui o original)"
@@ -785,7 +801,7 @@
               </svg>
             </button>
             <button
-              v-if="trailerReprocessEligible && editorOpenEntry"
+              v-if="trailerReprocessEligible && editorOpenEntry && !fromDuplicatesLite"
               type="button"
               class="icon-tool icon-tool--trailer-redo"
               :class="{ 'icon-tool--busy': trailerReprocessBusy }"
@@ -802,7 +818,7 @@
               </svg>
             </button>
             <button
-              v-if="shrinkInPlaceEligible && editorOpenEntry"
+              v-if="shrinkInPlaceEligible && editorOpenEntry && !fromDuplicatesLite"
               type="button"
               class="icon-tool icon-tool--shrink"
               :class="{ 'icon-tool--busy': shrinkInPlaceBusy }"
@@ -887,7 +903,7 @@
               </svg>
             </button>
             <button
-              v-if="focusedIndex !== null && selectedEntry"
+              v-if="focusedIndex !== null && selectedEntry && !fromDuplicatesLite"
               type="button"
               class="icon-tool icon-tool--danger"
               title="Mover para a Lixeira (completo, trailer, preview)"
@@ -897,12 +913,15 @@
                 <path d="M3 6h18M8 6V4h8v2m2 0v14a2 2 0 01-2 2H8a2 2 0 01-2-2V6h12M10 11v6M14 11v6" stroke-linecap="round" />
               </svg>
             </button>
+            </div>
+            <div class="toolbar-chrome-persist">
             <div class="rate-block rate-block--inline">
-              <label for="rate-select-trailer" class="rate-label rate-label--compact">Velocidade</label>
               <select
                 id="rate-select-trailer"
                 class="rate-select rate-select--compact"
                 :value="playbackRate"
+                title="Velocidade"
+                aria-label="Velocidade"
                 @change="setPlaybackRate(Number(($event.target as HTMLSelectElement).value))"
               >
                 <option v-for="r in PLAYBACK_RATES" :key="r" :value="r">
@@ -910,9 +929,10 @@
                 </option>
               </select>
             </div>
+            </div>
           </div>
           <div
-            v-if="!playerUrl && previewUrl && selectedEntry"
+            v-if="!playerUrl && previewUrl && selectedEntry && !trailerControlsCollapsed"
             class="media-card-playback-name-row"
           >
             <button
@@ -992,6 +1012,20 @@
 
         <div v-else-if="playerUrl" class="toolbar toolbar--full toolbar--full-main">
           <div class="toolbar-full-main-row">
+            <button
+              type="button"
+              class="icon-tool icon-tool--chrome-toggle"
+              :class="{ 'icon-tool--on': trailerControlsCollapsed }"
+              :title="trailerControlsCollapsed ? 'Mostrar controlos e nome' : 'Recolher controlos e nome'"
+              :aria-pressed="trailerControlsCollapsed"
+              :aria-label="trailerControlsCollapsed ? 'Mostrar controlos e nome' : 'Recolher controlos e nome'"
+              @click="trailerControlsCollapsed = !trailerControlsCollapsed"
+            >
+              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path :d="trailerControlsCollapsed ? 'm6 9 6 6 6-6' : 'm18 15-6-6-6 6'" />
+              </svg>
+            </button>
+            <div v-show="!trailerControlsCollapsed" class="toolbar-full-icons-main">
             <button type="button" class="icon-tool" title="Voltar ao trailer" @click="closeFullVideo">
               <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round" />
@@ -1093,7 +1127,7 @@
               </svg>
             </button>
             <button
-              v-if="moveTitleDesktopEligible && activeIndex !== null && mainVideoEntry"
+              v-if="moveTitleDesktopEligible && activeIndex !== null && mainVideoEntry && !fromDuplicatesLite"
               type="button"
               class="icon-tool icon-tool--move-library"
               title="Mover vídeo completo, trailer, preview e miniaturas para outra biblioteca de pastas"
@@ -1106,7 +1140,7 @@
               </svg>
             </button>
             <button
-              v-if="editorDesktopEligible && editorOpenEntry"
+              v-if="editorDesktopEligible && editorOpenEntry && !fromDuplicatesLite"
               type="button"
               class="icon-tool icon-tool--editor"
               title="Editar vídeo completo (abre o editor — backup e substitui o original)"
@@ -1119,7 +1153,7 @@
               </svg>
             </button>
             <button
-              v-if="trailerReprocessEligible && editorOpenEntry"
+              v-if="trailerReprocessEligible && editorOpenEntry && !fromDuplicatesLite"
               type="button"
               class="icon-tool icon-tool--trailer-redo"
               :class="{ 'icon-tool--busy': trailerReprocessBusy }"
@@ -1136,7 +1170,7 @@
               </svg>
             </button>
             <button
-              v-if="shrinkInPlaceEligible && editorOpenEntry"
+              v-if="shrinkInPlaceEligible && editorOpenEntry && !fromDuplicatesLite"
               type="button"
               class="icon-tool icon-tool--shrink"
               :class="{ 'icon-tool--busy': shrinkInPlaceBusy }"
@@ -1155,7 +1189,7 @@
               </svg>
             </button>
             <button
-              v-if="activeIndex !== null && mainVideoEntry"
+              v-if="activeIndex !== null && mainVideoEntry && !fromDuplicatesLite"
               type="button"
               class="icon-tool icon-tool--danger"
               title="Mover para a Lixeira (completo, trailer, preview)"
@@ -1180,12 +1214,15 @@
             >
               FAST
             </button>
+            </div>
+            <div class="toolbar-chrome-persist">
             <div class="rate-block rate-block--inline">
-              <label for="rate-select-main" class="rate-label rate-label--compact">Velocidade</label>
               <select
                 id="rate-select-main"
                 class="rate-select rate-select--compact"
                 :value="playbackRate"
+                title="Velocidade"
+                aria-label="Velocidade"
                 @change="setPlaybackRate(Number(($event.target as HTMLSelectElement).value))"
               >
                 <option v-for="r in PLAYBACK_RATES" :key="r" :value="r">
@@ -1193,8 +1230,9 @@
                 </option>
               </select>
             </div>
+            </div>
           </div>
-          <div v-if="playerUrl && mainVideoEntry" class="media-card-playback-name-row">
+          <div v-if="playerUrl && mainVideoEntry && !trailerControlsCollapsed" class="media-card-playback-name-row">
             <button
               v-if="revealExplorerEligible"
               type="button"
@@ -1214,7 +1252,7 @@
               {{ mainVideoEntry.mainFilename }}
             </p>
           </div>
-          <div v-if="mainVideoEntry" class="toolbar-full-tags">
+          <div v-if="mainVideoEntry && !trailerTagsHidden && !trailerControlsCollapsed" class="toolbar-full-tags">
             <div class="tag-input-row">
               <input
                 id="tag-input-full"
@@ -1250,6 +1288,8 @@
             </div>
           </div>
         </div>
+        </div>
+        </div>
       </section>
 
       <div
@@ -1268,8 +1308,72 @@
       />
 
       <aside class="sidebar" :class="{ 'sidebar--catalog-collapsed': catalogGridCollapsed }">
-        <div class="catalog-head">
-          <h2 class="panel-title list-heading">Catálogo</h2>
+        <div class="catalog-head" :class="{ 'catalog-head--chrome-hidden': catalogChromeHidden }">
+          <div class="catalog-head-title-row">
+            <h2 class="panel-title list-heading">Catálogo</h2>
+            <div class="catalog-head-title-actions">
+              <button
+                type="button"
+                class="catalog-grid-toggle"
+                :class="{ 'catalog-grid-toggle--collapsed': catalogGridCollapsed }"
+                :aria-expanded="!catalogGridCollapsed"
+                aria-controls="catalog-grid-panel"
+                :aria-label="catalogGridCollapsed ? 'Mostrar catálogo e grelha' : 'Recolher catálogo (mais espaço para o vídeo)'"
+                :title="
+                  catalogGridCollapsed
+                    ? 'Mostrar catálogo e grelha'
+                    : 'Recolher catálogo — esconde a grelha e liberta largura para o player'
+                "
+                @click="catalogGridCollapsed = !catalogGridCollapsed"
+              >
+                <svg
+                  v-if="catalogGridCollapsed"
+                  class="catalog-grid-toggle-svg"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect x="3" y="3" width="7" height="7" rx="1.2" />
+                  <rect x="14" y="3" width="7" height="7" rx="1.2" />
+                  <rect x="3" y="14" width="7" height="7" rx="1.2" />
+                  <rect x="14" y="14" width="7" height="7" rx="1.2" />
+                </svg>
+                <svg
+                  v-else
+                  class="catalog-grid-toggle-svg"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M9 3v18" />
+                  <path d="M14 9l3 3-3 3" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="catalog-chrome-toggle"
+                :class="{ 'catalog-chrome-toggle--on': catalogChromeHidden }"
+                :title="catalogChromeHidden ? 'Mostrar controlos do catálogo' : 'Esconder controlos do catálogo'"
+                :aria-pressed="catalogChromeHidden"
+                :aria-label="catalogChromeHidden ? 'Mostrar controlos do catálogo' : 'Esconder controlos do catálogo'"
+                @click="catalogChromeHidden = !catalogChromeHidden"
+              >
+                <svg class="catalog-chrome-toggle-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path :d="catalogChromeHidden ? 'm6 9 6 6 6-6' : 'm18 15-6-6-6 6'" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <template v-if="!catalogChromeHidden">
           <div v-if="searchSessionActive && !catalogGridCollapsed" class="catalog-search-row">
             <select
               v-model="searchSessionMode"
@@ -1288,6 +1392,26 @@
               @keydown.enter.prevent="runSearchSession"
             />
             <button type="button" class="catalog-search-btn" @click="runSearchSession">Buscar</button>
+          </div>
+          <div
+            v-if="searchSessionActive && !catalogGridCollapsed"
+            class="catalog-tag-browse"
+          >
+            <button
+              type="button"
+              class="catalog-tag-browse-btn"
+              title="Ver todas as tags, contagens e listas de categorização"
+              @click="openTagBrowseDialog"
+            >
+              <span class="catalog-tag-browse-label">Tags</span>
+              <span class="catalog-tag-browse-meta">
+                <template v-if="tagBrowseLoaded">
+                  {{ tagBrowseRows.length }} tag{{ tagBrowseRows.length === 1 ? '' : 's' }}
+                  · {{ tagBrowseLists.length }} lista{{ tagBrowseLists.length === 1 ? '' : 's' }}
+                </template>
+                <template v-else>abrir catálogo</template>
+              </span>
+            </button>
           </div>
           <div
             v-else-if="!catalogGridCollapsed && !searchSessionActive"
@@ -1322,52 +1446,6 @@
             {{ searchSessionError }}
           </div>
           <div class="catalog-head-tools">
-            <button
-              type="button"
-              class="catalog-grid-toggle"
-              :class="{ 'catalog-grid-toggle--collapsed': catalogGridCollapsed }"
-              :aria-expanded="!catalogGridCollapsed"
-              aria-controls="catalog-grid-panel"
-              :aria-label="catalogGridCollapsed ? 'Mostrar catálogo e grelha' : 'Recolher catálogo (mais espaço para o vídeo)'"
-              :title="
-                catalogGridCollapsed
-                  ? 'Mostrar catálogo e grelha'
-                  : 'Recolher catálogo — esconde a grelha e liberta largura para o player'
-              "
-              @click="catalogGridCollapsed = !catalogGridCollapsed"
-            >
-              <svg
-                v-if="catalogGridCollapsed"
-                class="catalog-grid-toggle-svg"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <rect x="3" y="3" width="7" height="7" rx="1.2" />
-                <rect x="14" y="3" width="7" height="7" rx="1.2" />
-                <rect x="3" y="14" width="7" height="7" rx="1.2" />
-                <rect x="14" y="14" width="7" height="7" rx="1.2" />
-              </svg>
-              <svg
-                v-else
-                class="catalog-grid-toggle-svg"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <path d="M9 3v18" />
-                <path d="M14 9l3 3-3 3" />
-              </svg>
-            </button>
             <button
               v-if="showTvCatalogScrollAssist && entries.length"
               type="button"
@@ -1560,6 +1638,7 @@
               </button>
             </div>
           </div>
+          </template>
         </div>
         <div v-if="catalogMode === 'main-only'" class="empty-hint">
           Esta sessão está sem catálogo em <code class="code">trailers/</code> / <code class="code">preview/</code>.
@@ -2169,6 +2248,169 @@
 
     <Teleport to="body">
       <div
+        v-show="tagBrowseDialogOpen"
+        class="move-title-backdrop"
+        @click="closeTagBrowseDialog"
+      />
+      <div
+        v-show="tagBrowseDialogOpen"
+        class="tag-browse-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tag-browse-dialog-title"
+      >
+        <div class="tag-browse-dialog-card">
+          <div class="session-menu-head">
+            <span id="tag-browse-dialog-title" class="session-menu-title">Tags · catálogo</span>
+            <button
+              type="button"
+              class="session-menu-close"
+              aria-label="Fechar"
+              @click="closeTagBrowseDialog"
+            >
+              ×
+            </button>
+          </div>
+          <p class="tag-browse-hint">
+            Contagem em todas as pastas. Clica numa tag para buscar. Usa listas para agrupar tags
+            (ex.: género, local, tipo).
+          </p>
+          <p v-if="tagBrowseError" class="tag-browse-err" role="alert">{{ tagBrowseError }}</p>
+
+          <div class="tag-browse-layout">
+            <section class="tag-browse-col tag-browse-col--tags" aria-label="Tags">
+              <div class="tag-browse-toolbar">
+                <input
+                  v-model="tagBrowseFilter"
+                  type="search"
+                  class="tag-browse-filter"
+                  placeholder="Filtrar tags…"
+                  aria-label="Filtrar tags"
+                />
+                <span class="tag-browse-count">
+                  {{ tagBrowseFilteredRows.length }}/{{ tagBrowseRows.length }}
+                </span>
+              </div>
+              <div v-if="tagBrowseLoading" class="tag-browse-empty">A carregar…</div>
+              <div v-else-if="!tagBrowseFilteredRows.length" class="tag-browse-empty">
+                Nenhuma tag{{ tagBrowseFilter.trim() ? ' neste filtro' : '' }}.
+              </div>
+              <ul v-else class="tag-browse-list" role="list">
+                <li v-for="row in tagBrowseFilteredRows" :key="row.name" class="tag-browse-row">
+                  <button
+                    type="button"
+                    class="tag-browse-tag"
+                    :title="`Buscar «${row.name}»`"
+                    @click="searchFromTagBrowse(row.name)"
+                  >
+                    <span class="tag-browse-tag-name">{{ row.name }}</span>
+                    <span class="tag-browse-tag-count">{{ row.count }}</span>
+                  </button>
+                  <button
+                    v-if="tagBrowseSelectedListId"
+                    type="button"
+                    class="tag-browse-toggle"
+                    :class="{ 'tag-browse-toggle--on': tagInSelectedList(row.name) }"
+                    :title="
+                      tagInSelectedList(row.name)
+                        ? `Tirar de «${tagBrowseSelectedList?.name}»`
+                        : `Meter em «${tagBrowseSelectedList?.name}»`
+                    "
+                    :disabled="tagBrowseListBusy"
+                    @click="toggleTagInSelectedList(row.name)"
+                  >
+                    {{ tagInSelectedList(row.name) ? '✓' : '+' }}
+                  </button>
+                </li>
+              </ul>
+            </section>
+
+            <section class="tag-browse-col tag-browse-col--lists" aria-label="Listas de tags">
+              <h3 class="tag-browse-col-title">Listas</h3>
+              <form class="tag-browse-create" @submit.prevent="createTagBrowseList">
+                <input
+                  v-model="tagBrowseNewListName"
+                  type="text"
+                  class="tag-browse-filter"
+                  maxlength="80"
+                  placeholder="Nova lista…"
+                  aria-label="Nome da nova lista"
+                />
+                <button
+                  type="submit"
+                  class="tag-browse-create-btn"
+                  :disabled="tagBrowseListBusy || !tagBrowseNewListName.trim()"
+                >
+                  Criar
+                </button>
+              </form>
+              <div v-if="!tagBrowseLists.length" class="tag-browse-empty">
+                Ainda sem listas. Cria uma para categorizar tags.
+              </div>
+              <ul v-else class="tag-browse-lists" role="list">
+                <li
+                  v-for="list in tagBrowseLists"
+                  :key="list.id"
+                  class="tag-browse-list-item"
+                  :class="{ 'tag-browse-list-item--active': tagBrowseSelectedListId === list.id }"
+                >
+                  <button
+                    type="button"
+                    class="tag-browse-list-pick"
+                    @click="tagBrowseSelectedListId = list.id"
+                  >
+                    <span class="tag-browse-list-name">{{ list.name }}</span>
+                    <span class="tag-browse-list-qty">{{ list.tags.length }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="tag-browse-list-del"
+                    title="Apagar lista"
+                    :disabled="tagBrowseListBusy"
+                    @click="deleteTagBrowseList(list.id)"
+                  >
+                    ×
+                  </button>
+                </li>
+              </ul>
+              <div v-if="tagBrowseSelectedList" class="tag-browse-selected">
+                <p class="tag-browse-selected-head">
+                  Em «{{ tagBrowseSelectedList.name }}»
+                  <span class="tag-browse-list-qty">{{ tagBrowseSelectedList.tags.length }}</span>
+                </p>
+                <p v-if="!tagBrowseSelectedList.tags.length" class="tag-browse-empty">
+                  Usa + nas tags à esquerda para adicionar.
+                </p>
+                <ul v-else class="tag-browse-selected-tags">
+                  <li v-for="t in tagBrowseSelectedList.tags" :key="t">
+                    <button
+                      type="button"
+                      class="tag-browse-chip"
+                      :title="`Buscar «${t}»`"
+                      @click="searchFromTagBrowse(t)"
+                    >
+                      {{ t }}
+                    </button>
+                    <button
+                      type="button"
+                      class="tag-browse-chip-x"
+                      title="Remover da lista"
+                      :disabled="tagBrowseListBusy"
+                      @click="toggleTagInSelectedList(t, false)"
+                    >
+                      ×
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
         v-show="trailerReprocessDialogOpen"
         class="move-title-backdrop"
         @click="trailerReprocessDialogOpen = false"
@@ -2444,11 +2686,9 @@
             <p v-if="editorOpenEntry" class="trailer-reprocess-dialog-file">
               Actual: {{ editorOpenEntry.mainFilename }}
             </p>
-            <p v-if="shrinkAlreadyDoneHint" class="shrink-already-warn" role="status">
+            <p v-if="shrinkAlreadyDoneHint" class="shrink-already-warn" role="alert">
+              <span class="shrink-already-warn-title">Já foi shrinkado</span>
               {{ shrinkAlreadyDoneHint }}
-            </p>
-            <p v-if="shrinkSizeWarnHint" class="shrink-already-warn" role="status">
-              {{ shrinkSizeWarnHint }}
             </p>
 
             <div class="trailer-reprocess-grid">
@@ -2611,6 +2851,14 @@ import {
 
 const { manualTvAssist, isTvLayout } = useSilkTvLayout()
 const catalogPrefsEnabled = computed(() => !manualTvAssist.value)
+
+/** Aberto a partir de /duplicados (`?dup=1`) — esconde excluir / mover / editor / shrink. */
+const fromDuplicatesLite = computed(() => {
+  const v = route.query.dup
+  const raw = Array.isArray(v) ? v[0] : v
+  const n = String(raw ?? '').toLowerCase()
+  return n === '1' || n === 'true' || n === 'yes'
+})
 
 const videoPreloadAttr = computed<'auto' | 'metadata'>(() => {
   if (!import.meta.client) return 'metadata'
@@ -3004,7 +3252,10 @@ const recentsWithinFolderSort = (a: TrailerListEntry, b: TrailerListEntry) => {
   const ta = a.highlightedAtMs ?? 0
   const tb = b.highlightedAtMs ?? 0
   if (ta !== tb) return tb - ta
-  return a.mainRel.localeCompare(b.mainRel, undefined, { sensitivity: 'base' })
+  const sa = libSession(a)
+  const sb = libSession(b)
+  if (sa !== sb) return sa - sb
+  return a.trailerRel.localeCompare(b.trailerRel, undefined, { sensitivity: 'base' })
 }
 
 const surpriseWithinFolderSort = (a: TrailerListEntry, b: TrailerListEntry) => {
@@ -3230,6 +3481,9 @@ function removeFocusedFromRecents() {
   if (i === null) return
   void removeFromRecentsAtIndex(i)
 }
+
+/** Descarta respostas de loadTrailers fora de ordem (evita reload lento sobrepor-se a um mais recente). */
+let catalogLoadToken = 0
 
 /** Evita `router.replace` a disparar o watcher da rota em loop. */
 let ignoreNextRouteQueryWatch = false
@@ -4071,6 +4325,35 @@ const theaterMode = ref(false)
 const sessionMenuOpen = ref(false)
 const trailerTagPanelOpen = ref(false)
 const trailerTagsHidden = ref(false)
+const trailerControlsCollapsed = ref(false)
+const catalogChromeHidden = ref(false)
+
+const UI_CHROME_CONTROLS_COLLAPSED_KEY = 'video-player-ui-controls-collapsed'
+const UI_CHROME_NAME_HIDDEN_KEY = 'video-player-ui-name-hidden'
+const UI_CHROME_TAGS_HIDDEN_KEY = 'video-player-ui-tags-hidden'
+const UI_CHROME_CATALOG_HIDDEN_KEY = 'video-player-ui-catalog-chrome-hidden'
+
+function readSessionFlag(key: string): boolean {
+  if (typeof sessionStorage === 'undefined') return false
+  try {
+    return sessionStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeSessionFlag(key: string, on: boolean) {
+  if (typeof sessionStorage === 'undefined') return
+  try {
+    sessionStorage.setItem(key, on ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
+
+watch(trailerControlsCollapsed, (v) => writeSessionFlag(UI_CHROME_CONTROLS_COLLAPSED_KEY, v))
+watch(trailerTagsHidden, (v) => writeSessionFlag(UI_CHROME_TAGS_HIDDEN_KEY, v))
+watch(catalogChromeHidden, (v) => writeSessionFlag(UI_CHROME_CATALOG_HIDDEN_KEY, v))
 
 function showTrailerTagsAndToggleInput() {
   if (trailerTagsHidden.value) {
@@ -4094,6 +4377,170 @@ const searchSessionInput = ref('')
 const searchSessionQuery = ref('')
 const searchSessionError = ref('')
 const searchSessionMode = ref<'files' | 'tags'>('tags')
+
+interface TagBrowseRow {
+  name: string
+  count: number
+}
+interface TagBrowseList {
+  id: string
+  name: string
+  tags: string[]
+  updatedAt?: string
+}
+
+const tagBrowseDialogOpen = ref(false)
+const tagBrowseLoading = ref(false)
+const tagBrowseLoaded = ref(false)
+const tagBrowseError = ref('')
+const tagBrowseFilter = ref('')
+const tagBrowseRows = ref<TagBrowseRow[]>([])
+const tagBrowseLists = ref<TagBrowseList[]>([])
+const tagBrowseSelectedListId = ref<string | null>(null)
+const tagBrowseNewListName = ref('')
+const tagBrowseListBusy = ref(false)
+
+const tagBrowseFilteredRows = computed(() => {
+  const q = tagBrowseFilter.value.trim().toLowerCase()
+  if (!q) return tagBrowseRows.value
+  return tagBrowseRows.value.filter((r) => r.name.toLowerCase().includes(q))
+})
+
+const tagBrowseSelectedList = computed(() => {
+  const id = tagBrowseSelectedListId.value
+  if (!id) return null
+  return tagBrowseLists.value.find((l) => l.id === id) ?? null
+})
+
+function tagInSelectedList(tag: string): boolean {
+  const list = tagBrowseSelectedList.value
+  if (!list) return false
+  const key = tag.trim().toLowerCase()
+  return list.tags.some((t) => t.toLowerCase() === key)
+}
+
+async function refreshTagBrowseData() {
+  tagBrowseLoading.value = true
+  tagBrowseError.value = ''
+  try {
+    const [stats, lists] = await Promise.all([
+      $fetch<{ tags?: TagBrowseRow[] }>('/api/library/tag-stats'),
+      $fetch<{ lists?: TagBrowseList[] }>('/api/library/tag-lists'),
+    ])
+    tagBrowseRows.value = Array.isArray(stats.tags) ? stats.tags : []
+    tagBrowseLists.value = Array.isArray(lists.lists) ? lists.lists : []
+    tagBrowseLoaded.value = true
+    if (
+      tagBrowseSelectedListId.value &&
+      !tagBrowseLists.value.some((l) => l.id === tagBrowseSelectedListId.value)
+    ) {
+      tagBrowseSelectedListId.value = null
+    }
+  } catch (e: unknown) {
+    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    tagBrowseError.value =
+      ex?.data?.statusMessage || ex?.message || 'Falha ao carregar tags.'
+  } finally {
+    tagBrowseLoading.value = false
+  }
+}
+
+async function openTagBrowseDialog() {
+  tagBrowseDialogOpen.value = true
+  tagBrowseFilter.value = ''
+  await refreshTagBrowseData()
+}
+
+function closeTagBrowseDialog() {
+  tagBrowseDialogOpen.value = false
+}
+
+async function searchFromTagBrowse(tag: string) {
+  const t = tag.trim()
+  if (!t) return
+  closeTagBrowseDialog()
+  searchSessionMode.value = 'tags'
+  searchSessionInput.value = t
+  await runSearchSession()
+}
+
+async function createTagBrowseList() {
+  const name = tagBrowseNewListName.value.trim()
+  if (!name || tagBrowseListBusy.value) return
+  tagBrowseListBusy.value = true
+  tagBrowseError.value = ''
+  try {
+    const res = await $fetch<{ lists?: TagBrowseList[] }>('/api/library/tag-lists', {
+      method: 'POST',
+      body: { action: 'create', name },
+    })
+    tagBrowseLists.value = Array.isArray(res.lists) ? res.lists : []
+    tagBrowseNewListName.value = ''
+    const created = tagBrowseLists.value.find(
+      (l) => l.name.toLowerCase() === name.toLowerCase(),
+    )
+    if (created) tagBrowseSelectedListId.value = created.id
+  } catch (e: unknown) {
+    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    tagBrowseError.value =
+      ex?.data?.statusMessage || ex?.message || 'Falha ao criar lista.'
+  } finally {
+    tagBrowseListBusy.value = false
+  }
+}
+
+async function deleteTagBrowseList(id: string) {
+  if (!id || tagBrowseListBusy.value) return
+  const list = tagBrowseLists.value.find((l) => l.id === id)
+  if (!confirm(`Apagar a lista «${list?.name || id}»?`)) return
+  tagBrowseListBusy.value = true
+  tagBrowseError.value = ''
+  try {
+    const res = await $fetch<{ lists?: TagBrowseList[] }>('/api/library/tag-lists', {
+      method: 'POST',
+      body: { action: 'delete', id },
+    })
+    tagBrowseLists.value = Array.isArray(res.lists) ? res.lists : []
+    if (tagBrowseSelectedListId.value === id) tagBrowseSelectedListId.value = null
+  } catch (e: unknown) {
+    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    tagBrowseError.value =
+      ex?.data?.statusMessage || ex?.message || 'Falha ao apagar lista.'
+  } finally {
+    tagBrowseListBusy.value = false
+  }
+}
+
+async function toggleTagInSelectedList(tag: string, wantIn?: boolean) {
+  const listId = tagBrowseSelectedListId.value
+  if (!listId || tagBrowseListBusy.value) return
+  tagBrowseListBusy.value = true
+  tagBrowseError.value = ''
+  try {
+    const body: { action: string; id: string; tag: string; inList?: boolean } = {
+      action: 'toggle-tag',
+      id: listId,
+      tag,
+    }
+    if (wantIn !== undefined) body.inList = wantIn
+    const res = await $fetch<{ lists?: TagBrowseList[] }>('/api/library/tag-lists', {
+      method: 'POST',
+      body,
+    })
+    tagBrowseLists.value = Array.isArray(res.lists) ? res.lists : []
+  } catch (e: unknown) {
+    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    tagBrowseError.value =
+      ex?.data?.statusMessage || ex?.message || 'Falha ao actualizar lista.'
+  } finally {
+    tagBrowseListBusy.value = false
+  }
+}
+
+watch(searchSessionActive, (on) => {
+  if (on && !tagBrowseLoaded.value) void refreshTagBrowseData()
+})
+
 
 let suppressCatalogPrefsPersist = false
 
@@ -5397,22 +5844,31 @@ async function closeFullVideo() {
 }
 
 function openFullFromPreview() {
+  const fromPlayback = selectedEntry.value ?? resolvePlaybackEntryFromUrls()
+  if (fromPlayback) {
+    void openVideoFromEntry(fromPlayback)
+    return
+  }
   const i = focusedIndex.value
   if (i === null) return
   void openVideo(i)
 }
 
 async function openVideo(i: number) {
-  stopFastPlay(false)
-  clearPinnedTrailers()
-  gridInlinePreviewIndex.value = null
-  catalogGalleryIndex.value = null
-  sessionMenuOpen.value = false
   const entry = entries.value[i]
   if (!entry) {
     activeIndex.value = null
     return
   }
+  await openVideoFromEntry(entry)
+}
+
+async function openVideoFromEntry(entry: TrailerListEntry) {
+  stopFastPlay(false)
+  clearPinnedTrailers()
+  gridInlinePreviewIndex.value = null
+  catalogGalleryIndex.value = null
+  sessionMenuOpen.value = false
   if (!entry.hasMain) {
     activeIndex.value = null
     errorMsg.value = `Vídeo completo não encontrado na raiz: ${entry.mainFilename}`
@@ -5432,7 +5888,8 @@ async function openVideo(i: number) {
     /* */
   }
   fullVideoResumeAt.value = resumeAt
-  activeIndex.value = i
+  const gridIdx = findEntryIndexInEntries(entry.trailerRel, libSession(entry))
+  activeIndex.value = gridIdx >= 0 ? gridIdx : null
   if (isTvLayout.value) releaseVideoElement(tvMinimalVideoRef.value)
   playerUrl.value = apiVideoUrl(entry.mainRel, libSession(entry))
   nextTick(() => {
@@ -5445,6 +5902,7 @@ async function openVideo(i: number) {
 }
 
 function mainProgressStorageRel(): string | null {
+  if (mainVideoEntry.value?.mainRel) return mainVideoEntry.value.mainRel
   const i = activeIndex.value
   if (i === null || !entries.value[i]) return null
   return entries.value[i].mainRel
@@ -5460,8 +5918,7 @@ async function persistMainProgress(force: boolean) {
   lastMainProgressSave = now
   const seconds = v.currentTime
   const duration = Number.isFinite(v.duration) ? v.duration : undefined
-  const act = activeIndex.value
-  const ent = act !== null ? entries.value[act] : undefined
+  const ent = mainVideoEntry.value ?? (activeIndex.value !== null ? entries.value[activeIndex.value] : undefined)
   try {
     await $fetch('/api/library/full-progress', {
       method: 'POST',
@@ -6492,14 +6949,18 @@ async function enqueueCurrentShrinkInPlace() {
     const when = shrinkAlreadyDoneAt.value
       ? new Date(shrinkAlreadyDoneAt.value).toLocaleString()
       : null
-    const ok = confirm(
-      when
-        ? `Este vídeo já foi shrinkado pelo grid (${when}).\n\nEnfileirar outra vez? O ficheiro actual será processado e substituído de novo.`
-        : `Este vídeo já foi shrinkado pelo grid.\n\nEnfileirar outra vez? O ficheiro actual será processado e substituído de novo.`,
-    )
-    if (!ok) return
+    const msg1 = when
+      ? `Este vídeo já foi shrinkado pelo grid (${when}).\n\nEnfileirar outra vez? O ficheiro actual será processado e substituído de novo.`
+      : `Este vídeo já foi shrinkado pelo grid.\n\nEnfileirar outra vez? O ficheiro actual será processado e substituído de novo.`
+    if (!confirm(msg1)) return
+    if (
+      !confirm(
+        'Confirma outra vez: este vídeo já tem histórico de shrink.\n\nTens a certeza que queres enfileirar e substituir o ficheiro de novo?',
+      )
+    ) {
+      return
+    }
   }
-  if (!confirmShrinkSizeWarnings(entry.mainSizeBytes ?? 0)) return
   const params = normalizeShrinkInPlaceParams(shrinkInPlaceForm.value)
   shrinkInPlaceForm.value = params
   saveShrinkInPlaceParamsToStorage(params)
@@ -6575,52 +7036,17 @@ async function clearFinishedShrinkQueue() {
 
 const shrinkAlreadyDoneAt = ref<number | null>(null)
 const shrinkAlreadyDone = ref(false)
-const SHRINK_WARN_BELOW_1GB = 1024 * 1024 * 1024
-const SHRINK_WARN_BELOW_500MB = 500 * 1024 * 1024
 const shrinkAlreadyDoneHint = computed(() => {
   if (!shrinkAlreadyDone.value) return ''
   if (shrinkAlreadyDoneAt.value) {
     try {
-      return `Já shrinkado pelo grid em ${new Date(shrinkAlreadyDoneAt.value).toLocaleString()}. Enfileirar outra vez substitui o ficheiro de novo.`
+      return `Histórico: shrink pelo grid em ${new Date(shrinkAlreadyDoneAt.value).toLocaleString()}. Enfileirar outra vez substitui o ficheiro de novo — vais precisar de confirmar duas vezes.`
     } catch {
       /* */
     }
   }
-  return 'Este vídeo já foi shrinkado pelo grid. Enfileirar outra vez substitui o ficheiro de novo.'
+  return 'Histórico: este vídeo já foi shrinkado pelo grid. Enfileirar outra vez substitui o ficheiro de novo — vais precisar de confirmar duas vezes.'
 })
-const shrinkSizeWarnHint = computed(() => {
-  const bytes = editorOpenEntry.value?.mainSizeBytes ?? 0
-  if (!Number.isFinite(bytes) || bytes <= 0) return ''
-  const label = formatGB(bytes) || formatSize(bytes)
-  if (bytes < SHRINK_WARN_BELOW_500MB) {
-    return `Ficheiro pequeno (${label}): abaixo de 500 MB — shrink costuma valer pouco; confirma duas vezes ao enfileirar.`
-  }
-  if (bytes < SHRINK_WARN_BELOW_1GB) {
-    return `Ficheiro abaixo de 1 GB (${label}): confirma ao enfileirar se quiseres shrinkar na mesma.`
-  }
-  return ''
-})
-
-function confirmShrinkSizeWarnings(bytes: number): boolean {
-  if (!Number.isFinite(bytes) || bytes <= 0) return true
-  const label = formatGB(bytes) || formatSize(bytes)
-  if (bytes < SHRINK_WARN_BELOW_500MB) {
-    const ok1 = confirm(
-      `Este vídeo tem só ${label} (abaixo de 500 MB).\n\nShrink em ficheiros tão pequenos costuma poupar pouco espaço e gasta tempo/CPU.\n\nQueres continuar na mesma?`,
-    )
-    if (!ok1) return false
-    const ok2 = confirm(
-      `Confirma outra vez: ${label} é abaixo de 500 MB.\n\nTens a certeza que queres enfileirar o shrink?`,
-    )
-    return ok2
-  }
-  if (bytes < SHRINK_WARN_BELOW_1GB) {
-    return confirm(
-      `Este vídeo tem ${label} (abaixo de 1 GB).\n\nO ganho de espaço pode ser pequeno. Enfileirar shrink na mesma?`,
-    )
-  }
-  return true
-}
 
 async function refreshShrinkAlreadyDoneHint() {
   shrinkAlreadyDoneAt.value = null
@@ -7088,6 +7514,7 @@ async function tryLoadRecentsMore(trigger: 'sentinel' | 'focus' | 'scroll') {
 }
 
 async function loadRecentsTrailers(opts?: CatalogLoadOpts) {
+  const myToken = ++catalogLoadToken
   syncRecentsOriginApiFilter()
   teardownRecentsLoadObserver()
   errorMsg.value = ''
@@ -7107,6 +7534,7 @@ async function loadRecentsTrailers(opts?: CatalogLoadOpts) {
     const data = recentsPaginationEnabled.value
       ? await recentsCatalog.loadInitial()
       : await recentsCatalog.loadFull()
+    if (myToken !== catalogLoadToken) return
     applyServerCatalogPayload(data)
     tagSuggestions.value = Array.isArray(data.tagSuggestions) ? data.tagSuggestions : []
     await nextTick()
@@ -7124,6 +7552,7 @@ async function loadRecentsTrailers(opts?: CatalogLoadOpts) {
       teardownRecentsLoadObserver()
     }
   } catch (e: unknown) {
+    if (myToken !== catalogLoadToken) return
     const err = e as { data?: { statusMessage?: string }; message?: string }
     fullEntries.value = []
     tagSuggestions.value = []
@@ -7131,7 +7560,7 @@ async function loadRecentsTrailers(opts?: CatalogLoadOpts) {
     errorMsg.value =
       err?.data?.statusMessage || err?.message || 'Não foi possível carregar Destaques.'
   } finally {
-    loading.value = false
+    if (myToken === catalogLoadToken) loading.value = false
   }
 }
 
@@ -7151,6 +7580,7 @@ async function loadTrailers(opts?: {
     recentPlaybackKeyList.value = []
     return
   }
+  const myToken = ++catalogLoadToken
   errorMsg.value = ''
   searchSessionError.value = ''
   loading.value = true
@@ -7164,7 +7594,12 @@ async function loadTrailers(opts?: {
       playingTrailerRel &&
       trailerRelMatchesFocus(playingTrailerRel, preserveRel),
   )
-  if (sessionIndex.value === RECENTS_SESSION_ID && isTvLayout.value) {
+  if (sessionIndex.value === RECENTS_SESSION_ID) {
+    if (isTvLayout.value && !catalogOriginFilter.value) {
+      recentsCatalog.setPaginationEnabled(true)
+    } else {
+      recentsCatalog.setPaginationEnabled(false)
+    }
     await loadRecentsTrailers(opts)
     return
   }
@@ -7179,14 +7614,7 @@ async function loadTrailers(opts?: {
       ? '/api/trailers/surprise'
       : sessionIndex.value === LAST_VIEWED_SESSION_ID
         ? '/api/trailers/last-viewed'
-        : sessionIndex.value === RECENTS_SESSION_ID
-          ? (() => {
-              const sid = recentsLibrarySessionFilter()
-              return sid !== null
-                ? `/api/trailers/recent?librarySession=${sid}`
-                : '/api/trailers/recent'
-            })()
-          : `/api/trailers?session=${sessionIndex.value}`
+        : `/api/trailers?session=${sessionIndex.value}`
   if (!trailerUrl) {
     fullEntries.value = []
     tagSuggestions.value = []
@@ -7213,6 +7641,7 @@ async function loadTrailers(opts?: {
         fullscreenOnFastPlay?: boolean
       }
     }>(trailerUrl)
+    if (myToken !== catalogLoadToken) return
     applyServerCatalogPayload(data)
     if (sessionIndex.value === RECENTS_SESSION_ID) {
       recentsCatalog.applyOriginCounts(data.originCounts)
@@ -7235,6 +7664,7 @@ async function loadTrailers(opts?: {
     )
     await refreshRecentPlaybackKeys()
   } catch (e: unknown) {
+    if (myToken !== catalogLoadToken) return
     const err = e as { data?: { statusMessage?: string }; message?: string }
     fullEntries.value = []
     tagSuggestions.value = []
@@ -7246,7 +7676,7 @@ async function loadTrailers(opts?: {
         err?.data?.statusMessage || err?.message || 'Não foi possível carregar a lista de trailers.'
     }
   } finally {
-    loading.value = false
+    if (myToken === catalogLoadToken) loading.value = false
   }
 }
 
@@ -7379,14 +7809,18 @@ function buildDesiredShareQuery(justClosedFull: boolean): Record<string, string>
     const out: Record<string, string> = { session: sessionStr, ...filterQuery }
     const existingRel = normalizeShareRelQuery(route.query.rel)
     if (existingRel) out.rel = existingRel
+    if (fromDuplicatesLite.value) out.dup = '1'
     return out
   }
 
   if (justClosedFull) {
-    return { session: sessionStr, ...filterQuery }
+    const closed: Record<string, string> = { session: sessionStr, ...filterQuery }
+    if (fromDuplicatesLite.value) closed.dup = '1'
+    return closed
   }
 
   const out: Record<string, string> = { session: sessionStr, ...filterQuery }
+  if (fromDuplicatesLite.value) out.dup = '1'
   const pending = peekPendingCatalogOpen()
   const rr = pending.rel || normalizeShareRelQuery(route.query.rel)
   const mm = pending.file || readShareFileFromRoute()
@@ -7733,6 +8167,10 @@ async function bootstrapPlayerChrome() {
   } catch {
     /* ignore */
   }
+  trailerControlsCollapsed.value =
+    readSessionFlag(UI_CHROME_CONTROLS_COLLAPSED_KEY) || readSessionFlag(UI_CHROME_NAME_HIDDEN_KEY)
+  trailerTagsHidden.value = readSessionFlag(UI_CHROME_TAGS_HIDDEN_KEY)
+  catalogChromeHidden.value = readSessionFlag(UI_CHROME_CATALOG_HIDDEN_KEY)
   try {
     const raw = sessionStorage.getItem(CATALOG_PANE_WIDTH_KEY)
     if (raw) {
@@ -8195,6 +8633,92 @@ onUnmounted(() => {
 }
 
 @media (max-width: 959px) {
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .main-stack {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .media-card {
+    display: contents;
+  }
+
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .media-card-pin {
+    position: sticky;
+    top: 0;
+    z-index: 45;
+    order: 1;
+    max-height: min(78dvh, 100%);
+    overflow: hidden;
+    background: #0d0e10;
+    border: 1px solid #2d333b;
+    border-radius: 12px;
+    padding: clamp(0.45rem, 1.2vw, 0.7rem) clamp(0.45rem, 1.4vw, 0.85rem) 0.55rem;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.45);
+  }
+
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .media-card-chrome {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .media-card-chrome:empty {
+    display: none;
+  }
+
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .toolbar--full,
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .toolbar--full-main,
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .toolbar-full-main-row,
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .toolbar-chrome-persist,
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .toolbar-chrome-persist .rate-block {
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .toolbar--full {
+    border: none;
+    border-radius: 0;
+    padding: 0;
+  }
+
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .toolbar-full-main-row {
+    overflow: visible;
+  }
+
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .toolbar-full-icons-main {
+    overflow-x: auto;
+    min-width: 0;
+  }
+
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .catalog-pane-splitter {
+    display: none;
+  }
+
+  .layout:not(.layout--tv-silk):not(.layout--tv-minimal) .sidebar {
+    order: 2;
+    position: relative;
+    z-index: 1;
+    min-height: clamp(220px, 38vh, 520px);
+    max-height: none;
+  }
+
   .sidebar {
     min-height: clamp(220px, 38vh, 520px);
     max-height: min(72vh, 960px);
@@ -8209,6 +8733,66 @@ onUnmounted(() => {
   gap: 0.45rem 0.65rem;
   flex-shrink: 0;
   padding: 0.5rem 0.75rem 0.35rem;
+}
+
+.catalog-head-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.catalog-head-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.catalog-head--chrome-hidden {
+  padding-bottom: 0.35rem;
+}
+
+.catalog-chrome-toggle {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid #454a53;
+  background: #252a32;
+  color: #e8eaed;
+  cursor: pointer;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.catalog-chrome-toggle:hover {
+  background: #2d333b;
+  border-color: #5f6368;
+}
+
+.catalog-chrome-toggle--on {
+  border-color: #5f9dee;
+  background: #2a3f5f;
+}
+
+.catalog-chrome-toggle-svg {
+  width: 18px;
+  height: 18px;
+}
+
+.sidebar--catalog-collapsed .catalog-head-title-row {
+  flex-direction: column;
+  align-items: center;
+}
+
+.sidebar--catalog-collapsed .catalog-head-title-actions {
+  flex-direction: column;
 }
 
 .catalog-search-row {
@@ -8269,6 +8853,390 @@ onUnmounted(() => {
   width: 100%;
   font-size: 0.78rem;
   color: #f8b4b0;
+}
+
+.catalog-tag-browse {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  margin-top: 0.15rem;
+}
+
+.catalog-tag-browse-btn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  border: 1px solid #2d3a4a;
+  background: #151a22;
+  color: #c5ddf5;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+}
+
+.catalog-tag-browse-btn:hover {
+  border-color: #5f9dee;
+  background: #1a2433;
+}
+
+.catalog-tag-browse-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #7aa9e8;
+  font-size: 0.72rem;
+}
+
+.catalog-tag-browse-meta {
+  color: #9aa0a6;
+  font-weight: 500;
+  font-size: 0.78rem;
+}
+
+.tag-browse-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 244;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  pointer-events: none;
+}
+
+.tag-browse-dialog-card {
+  pointer-events: auto;
+  width: min(920px, 96vw);
+  max-height: min(86vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: #1a1d22;
+  border: 1px solid #2d333b;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.tag-browse-hint {
+  margin: 0;
+  padding: 0 0.85rem 0.55rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #9aa0a6;
+}
+
+.tag-browse-err {
+  margin: 0 0.85rem 0.45rem;
+  font-size: 0.8rem;
+  color: #f8b4b0;
+}
+
+.tag-browse-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.9fr);
+  gap: 0;
+  min-height: 0;
+  flex: 1;
+  border-top: 1px solid #2d333b;
+  overflow: hidden;
+}
+
+.tag-browse-col {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0.65rem 0.75rem 0.85rem;
+  overflow: hidden;
+}
+
+.tag-browse-col--tags {
+  border-right: 1px solid #2d333b;
+}
+
+.tag-browse-col-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #7aa9e8;
+}
+
+.tag-browse-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.45rem;
+}
+
+.tag-browse-filter {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #2d333b;
+  background: #12161c;
+  color: #e8eaed;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.84rem;
+  padding: 0.38rem 0.55rem;
+}
+
+.tag-browse-count {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  color: #9aa0a6;
+}
+
+.tag-browse-empty {
+  font-size: 0.8rem;
+  color: #9aa0a6;
+  padding: 0.35rem 0;
+}
+
+.tag-browse-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.tag-browse-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+
+.tag-browse-tag {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #e8eaed;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 0.84rem;
+  padding: 0.32rem 0.45rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.tag-browse-tag:hover {
+  background: #222830;
+  border-color: #2d3a4a;
+}
+
+.tag-browse-tag-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-browse-tag-count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: #fdd663;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.tag-browse-toggle {
+  flex: 0 0 2rem;
+  border: 1px solid #2d333b;
+  background: #151a22;
+  color: #9aa0a6;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.tag-browse-toggle--on {
+  border-color: #5f9dee;
+  background: #1e2a3d;
+  color: #8ab4f8;
+}
+
+.tag-browse-create {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.55rem;
+}
+
+.tag-browse-create-btn {
+  flex: 0 0 auto;
+  border: 1px solid #2d3a4a;
+  background: #234c7c;
+  color: #e8f3ff;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+}
+
+.tag-browse-create-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tag-browse-lists {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 28vh;
+  overflow: auto;
+}
+
+.tag-browse-list-item {
+  display: flex;
+  align-items: stretch;
+  gap: 0.2rem;
+  border-radius: 8px;
+}
+
+.tag-browse-list-item--active {
+  background: #1e2a3d;
+}
+
+.tag-browse-list-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  border: 0;
+  background: transparent;
+  color: #e8eaed;
+  font: inherit;
+  font-size: 0.84rem;
+  padding: 0.35rem 0.45rem;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 8px;
+}
+
+.tag-browse-list-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-browse-list-qty {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  color: #9aa0a6;
+  font-variant-numeric: tabular-nums;
+}
+
+.tag-browse-list-del {
+  flex: 0 0 1.8rem;
+  border: 0;
+  background: transparent;
+  color: #9aa0a6;
+  font: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.tag-browse-list-del:hover {
+  color: #f8b4b0;
+  background: #2a1a1a;
+}
+
+.tag-browse-selected {
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid #2d333b;
+  min-height: 0;
+  overflow: auto;
+  flex: 1;
+}
+
+.tag-browse-selected-head {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  color: #c5ddf5;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.tag-browse-selected-tags {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.tag-browse-selected-tags > li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid #2d3a4a;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #151a22;
+}
+
+.tag-browse-chip {
+  border: 0;
+  background: transparent;
+  color: #e8eaed;
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.22rem 0.45rem 0.22rem 0.55rem;
+  cursor: pointer;
+}
+
+.tag-browse-chip-x {
+  border: 0;
+  border-left: 1px solid #2d3a4a;
+  background: transparent;
+  color: #9aa0a6;
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.18rem 0.4rem;
+  cursor: pointer;
+}
+
+.tag-browse-chip-x:hover {
+  color: #f8b4b0;
+  background: #2a1a1a;
+}
+
+@media (max-width: 720px) {
+  .tag-browse-layout {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .tag-browse-col--tags {
+    border-right: 0;
+    border-bottom: 1px solid #2d333b;
+    max-height: 42vh;
+  }
+
+  .tag-browse-lists {
+    max-height: none;
+  }
 }
 
 .catalog-top-tags {
@@ -9366,6 +10334,22 @@ onUnmounted(() => {
   padding: clamp(0.55rem, 1.4vw, 0.85rem) clamp(0.55rem, 1.6vw, 1rem) 0.75rem;
 }
 
+.media-card-pin {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.5rem, 1.2vw, 0.75rem);
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.media-card-chrome {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.5rem, 1.2vw, 0.75rem);
+  min-width: 0;
+  min-height: 0;
+}
+
 .panel-title {
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -9712,14 +10696,26 @@ onUnmounted(() => {
 }
 
 .shrink-already-warn {
-  margin: 0 0 0.75rem;
-  padding: 0.55rem 0.65rem;
-  border-radius: 8px;
-  border: 1px solid #5c4a1f;
-  background: #2a2415;
-  color: #f0d78c;
-  font-size: 0.82rem;
-  line-height: 1.4;
+  margin: 0 0 0.85rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  border: 2px solid #e0aa20;
+  background: linear-gradient(180deg, #4a3210 0%, #2e1f0a 100%);
+  color: #ffe7a3;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.45;
+  box-shadow: 0 0 0 1px rgba(255, 200, 80, 0.25), 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.shrink-already-warn-title {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #ffcc66;
 }
 
 .trailer-reprocess-grid {
@@ -10717,7 +11713,8 @@ onUnmounted(() => {
   gap: 0.45rem;
 }
 
-.toolbar-trailer-icons {
+.toolbar-trailer-icons,
+.toolbar-full-main-row {
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
@@ -10725,10 +11722,46 @@ onUnmounted(() => {
   justify-content: flex-start;
   gap: 0.35rem;
   width: 100%;
+  min-width: 0;
+  overflow: visible;
+  padding-bottom: 2px;
+  background: transparent;
+}
+
+.toolbar-trailer-icons > .icon-tool--chrome-toggle,
+.toolbar-full-main-row > .icon-tool--chrome-toggle {
+  flex: 0 0 auto;
+}
+
+.toolbar-trailer-icons-main,
+.toolbar-full-icons-main {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 2px;
   scrollbar-width: thin;
+}
+
+.toolbar-chrome-persist {
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  flex: 0 0 auto;
+  align-self: center;
+  width: fit-content;
+  max-width: none;
+  margin-left: 0.15rem;
+  padding: 0;
+  background: none;
+  box-shadow: none;
 }
 
 .icon-tool {
@@ -10921,42 +11954,38 @@ onUnmounted(() => {
 }
 
 .toolbar-full-main-row {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  align-items: center;
-  justify-content: flex-start;
   gap: 0.5rem;
-  width: 100%;
-  min-width: 0;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  padding-bottom: 2px;
-  scrollbar-width: thin;
 }
 
 /* Silk/Fire TV: evita o bloco de velocidade "escapar" à direita em toolbars muito cheias. */
 .layout--tv-silk .toolbar-full-main-row {
   flex-wrap: wrap;
   row-gap: 0.35rem;
+  overflow: visible;
 }
 
-.layout--tv-silk .toolbar-full-main-row > .rate-block--inline {
-  flex: 1 1 100%;
-  width: 100%;
-  max-width: 100%;
-  justify-content: flex-start;
+.layout--tv-silk .toolbar-chrome-persist {
+  flex: 0 0 auto;
+  margin-left: 0.15rem;
+  padding: 0;
+  border-top: none;
+  background: none;
+}
+
+.layout--tv-silk .toolbar-full-main-row .rate-block--inline {
+  flex: 0 0 auto;
+  width: fit-content;
+  max-width: none;
+  justify-content: flex-end;
   gap: 0.35rem;
-  order: 100;
-  padding-top: 0.35rem;
-  margin-top: 0.05rem;
-  border-top: 1px solid #2d333b;
+  background: none;
 }
 
-.layout--tv-silk .toolbar-full-main-row > .rate-block--inline .rate-select--compact {
-  flex: 0 1 auto;
-  min-width: 3.6rem;
-  max-width: min(44vw, 7rem);
+.layout--tv-silk .toolbar-chrome-persist .rate-select.rate-select--compact {
+  flex: 0 0 auto;
+  min-width: 2.6rem;
+  width: 2.9rem;
+  max-width: 3.2rem;
 }
 
 .toolbar-full-tags {
@@ -10974,7 +12003,9 @@ onUnmounted(() => {
 
 .rate-block--inline {
   flex: 0 0 auto;
+  width: auto;
   min-width: 0;
+  max-width: max-content;
   justify-content: flex-end;
   flex-wrap: nowrap;
   gap: 0.45rem;
@@ -10987,14 +12018,23 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.rate-select--compact {
-  min-height: 36px;
-  min-width: 4.25rem;
-  max-width: 7rem;
-  padding: 0.26rem 0.42rem;
-  font-size: 0.82rem;
+.rate-select.rate-select--compact {
+  min-height: 32px;
+  min-width: 2.85rem;
+  width: 3.1rem;
+  max-width: 3.4rem;
+  padding: 0.12rem 0.2rem;
+  font-size: 0.74rem;
   font-weight: 600;
-  border-radius: 9px;
+  border-radius: 8px;
+}
+
+.toolbar-chrome-persist .rate-select.rate-select--compact {
+  min-height: 30px;
+  min-width: 2.6rem;
+  width: 2.9rem;
+  max-width: 3.2rem;
+  font-size: 0.72rem;
 }
 
 .preview-btn {
@@ -11064,11 +12104,11 @@ onUnmounted(() => {
 }
 
 .toolbar--full {
-  gap: 0.65rem;
-  background: #1a1d24;
-  border: 1px solid #2d333b;
-  border-radius: 10px;
-  padding: 0.65rem 0.75rem;
+  gap: 0.5rem;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
 }
 
 .rate-block {
@@ -11117,63 +12157,19 @@ onUnmounted(() => {
 }
 
 @media (max-width: 899px) {
-  .toolbar-trailer-icons {
-    flex-wrap: wrap;
-    row-gap: 0.35rem;
-    overflow-x: visible;
+  .toolbar-chrome-persist .rate-block--inline {
+    flex: 0 0 auto;
+    gap: 0.25rem;
   }
 
-  .toolbar-trailer-icons > .rate-block--inline {
-    flex: 1 1 100%;
-    width: 100%;
-    max-width: 100%;
-    justify-content: flex-start;
-    align-items: center;
-    gap: 0.35rem;
-    order: 100;
-    padding-top: 0.35rem;
-    margin-top: 0.05rem;
-    border-top: 1px solid #2d333b;
-  }
-
-  .toolbar-trailer-icons > .rate-block--inline .rate-select--compact {
-    flex: 0 1 auto;
-    min-width: 3.5rem;
-    max-width: min(34vw, 6.25rem);
-    min-height: 32px;
-    padding: 0.15rem 0.3rem;
-    font-size: 0.76rem;
-  }
-
-  .toolbar-full-main-row {
-    flex-wrap: wrap;
-    row-gap: 0.35rem;
-    overflow-x: visible;
-  }
-
-  .toolbar-full-main-row > .rate-block--inline {
-    flex: 1 1 100%;
-    width: 100%;
-    max-width: 100%;
-    justify-content: flex-start;
-    gap: 0.35rem;
-    order: 100;
-    padding-top: 0.35rem;
-    margin-top: 0.05rem;
-    border-top: 1px solid #2d333b;
-  }
-
-  .toolbar-full-main-row > .rate-block--inline .rate-select--compact {
-    flex: 0 1 auto;
-    min-width: 3.5rem;
-    max-width: min(34vw, 6.25rem);
-    min-height: 32px;
-    padding: 0.15rem 0.3rem;
-    font-size: 0.76rem;
-  }
-
-  .rate-label--compact {
-    font-size: 0.72rem;
+  .toolbar-chrome-persist .rate-select.rate-select--compact {
+    flex: 0 0 auto;
+    min-width: 2.5rem;
+    width: 2.75rem;
+    max-width: 3rem;
+    min-height: 30px;
+    padding: 0.1rem 0.18rem;
+    font-size: 0.7rem;
   }
 
   .icon-tool {
@@ -11199,19 +12195,6 @@ onUnmounted(() => {
 }
 
 @media (min-width: 600px) {
-  .toolbar--full:not(.toolbar--full-compact) {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-  }
-
-  .toolbar--full:not(.toolbar--full-compact) .rate-block {
-    flex: 1;
-    justify-content: flex-end;
-    min-width: 220px;
-  }
-
   .rate-select--prominent {
     flex: 0 1 auto;
     max-width: 14rem;
