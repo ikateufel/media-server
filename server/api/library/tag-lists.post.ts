@@ -3,6 +3,7 @@ import { requireCatalogUnlock } from '../../utils/catalogAccess'
 import {
   createTagList,
   deleteTagList,
+  renameTagInList,
   renameTagList,
   setTagListTags,
   toggleTagInList,
@@ -10,7 +11,7 @@ import {
 
 /**
  * POST /api/library/tag-lists
- * body.action: create | rename | delete | set-tags | toggle-tag
+ * body.action: create | rename | delete | set-tags | toggle-tag | rename-tag
  */
 export default defineEventHandler(async (event) => {
   requireCatalogUnlock(event)
@@ -20,6 +21,8 @@ export default defineEventHandler(async (event) => {
     name?: unknown
     tags?: unknown
     tag?: unknown
+    from?: unknown
+    to?: unknown
     inList?: unknown
   } | null
 
@@ -45,6 +48,9 @@ export default defineEventHandler(async (event) => {
           : Boolean(body.inList)
       return await toggleTagInList(body?.id, body?.tag, want)
     }
+    if (action === 'rename-tag') {
+      return await renameTagInList(body?.id, body?.from ?? body?.tag, body?.to ?? body?.name)
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     throw createError({
@@ -55,6 +61,7 @@ export default defineEventHandler(async (event) => {
 
   throw createError({
     statusCode: 400,
-    statusMessage: 'action inválida (create | rename | delete | set-tags | toggle-tag).',
+    statusMessage:
+      'action inválida (create | rename | delete | set-tags | toggle-tag | rename-tag).',
   })
 })

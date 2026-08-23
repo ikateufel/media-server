@@ -1,6 +1,7 @@
 /**
  * Pipeline completo de tags automáticas:
  * 1. Limpa tags automáticas na SQLite (preserva manuais; use --all para apagar tudo).
+ *    Omitido com --new-only / --dry-run.
  * 2. Exporta CSV de nomes na raiz de cada sessão (data/file-lists/<título>.csv).
  * 3. Gera data/file-lists/tags_<rótulo>.csv via tag-from-names.py (trailers/).
  * 4. Importa tags_* para data/library-tags.sqlite.
@@ -10,6 +11,8 @@
  *      npm run auto-tags -- --dry-run
  *      npm run auto-tags -- --session=0
  *      npm run auto-tags -- --all
+ *      npm run auto-tags -- --new-only
+ *      npm run auto-tags -- --new-only --session=0
  */
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -53,8 +56,10 @@ function runStep(title: string, scriptRel: string, args: string[]): void {
 
 function parsePipelineArgs(argv: string[]) {
   let dryRun = false
+  let newOnly = false
   const clearExtra: string[] = []
   const exportExtra: string[] = []
+  const pythonExtra: string[] = []
   const importExtra: string[] = []
 
   for (const a of argv) {
@@ -64,8 +69,9 @@ npm run auto-tags — pipeline: limpar auto → CSV nomes → CSV tags (Python) 
 
 Flags (reencaminhadas):
   --dry-run, -n     Não grava na base; não executa o passo «limpar» (simula import).
+  --new-only        Não limpa tags; no import só adiciona a vídeos sem nenhuma tag.
   --all             Limpar TUDO na SQLite, incluindo tags manuais (passado ao clear-tags).
-  --session=N       Só essa sessão no export de nomes (passado a tag-export-root-filenames.ts).
+  --session=N       Só essa sessão (export, Python e import).
   --out=DIR         Pasta dos CSV de nomes (default do script; passado ao export).
   --dir=DIR         Pasta dos tags_*.csv a importar (default data/file-lists).
 
@@ -82,6 +88,11 @@ Também podes correr cada passo à mão:
       importExtra.push(a)
       continue
     }
+    if (a === '--new-only') {
+      newOnly = true
+      importExtra.push(a)
+      continue
+    }
     if (a === '--all') {
       clearExtra.push(a)
       continue
@@ -94,6 +105,8 @@ Também podes correr cada passo à mão:
     const ms = a.match(/^--session=(\d+)$/)
     if (ms) {
       exportExtra.push(a)
+      pythonExtra.push(a)
+      importExtra.push(a)
       continue
     }
     const md = a.match(/^--dir=(.+)$/)
@@ -104,24 +117,38 @@ Também podes correr cada passo à mão:
     console.error(`Flag desconhecida (ignorada): ${a}`)
   }
 
-  return { dryRun, clearExtra, exportExtra, importExtra }
+  return { dryRun, newOnly, clearExtra, exportExtra, pythonExtra, importExtra }
 }
 
 function main() {
   const argv = process.argv.slice(2)
-  const { dryRun, clearExtra, exportExtra, importExtra } = parsePipelineArgs(argv)
+  const { dryRun, newOnly, clearExtra, exportExtra, pythonExtra, importExtra } =
+    parsePipelineArgs(argv)
 
-  if (!dryRun) {
-    runStep('1/4 Limpar tags automáticas na SQLite', 'scripts/tag-clear-sqlite.ts', clearExtra)
+  if (newOnly && clearExtra.includes('--all')) {
+    console.error('[auto-tags] --new-only e --all (limpar manuais) são incompatíveis.')
+    process.exit(1)
+  }
+
+  if (dryRun || newOnly) {
+    console.error(
+      newOnly
+        ? '\n=== 1/4 Limpar tags — omitido (--new-only; preserva tags existentes) ===\n'
+        : '\n=== 1/4 Limpar tags — omitido (--dry-run) ===\n',
+    )
   } else {
-    console.error('\n=== 1/4 Limpar tags — omitido (--dry-run) ===\n')
+    runStep('1/4 Limpar tags automáticas na SQLite', 'scripts/tag-clear-sqlite.ts', clearExtra)
   }
 
   runStep('2/4 Exportar CSV de nomes (raiz de cada sessão)', 'scripts/tag-export-root-filenames.ts', exportExtra)
-  runStep('3/4 Gerar tags_*.csv a partir dos nomes em trailers/', 'scripts/tag-run-from-names-all.ts', [])
+  runStep('3/4 Gerar tags_*.csv a partir dos nomes em trailers/', 'scripts/tag-run-from-names-all.ts', pythonExtra)
   runStep('4/4 Importar tags_* para SQLite', 'scripts/tag-import-file-lists.ts', importExtra)
 
-  console.error('\n[auto-tags] Pipeline concluído.')
+  console.error(
+    newOnly
+      ? '\n[auto-tags] Pipeline concluído (--new-only: só vídeos sem tags).'
+      : '\n[auto-tags] Pipeline concluído.',
+  )
 }
 
 main()

@@ -1,5 +1,5 @@
 export default defineNuxtConfig({
-  css: ['~/assets/css/main.css'],
+  css: ['~/assets/css/main.css', '~/assets/css/player-chrome.css'],
   app: {
     head: {
       title: 'Local Media Center',

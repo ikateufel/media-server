@@ -1,0 +1,408 @@
+/* Barra de controlos do player (partilhada: reprodutor + duplicados). */
+
+.player-chrome.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  flex-shrink: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.player-chrome.toolbar--trailer-compact {
+  gap: 0.45rem;
+}
+
+.player-chrome .toolbar-trailer-icons,
+.player-chrome .toolbar-full-main-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.35rem;
+  width: 100%;
+  min-width: 0;
+  overflow: visible;
+  padding-bottom: 2px;
+  background: transparent;
+}
+
+.player-chrome .toolbar-trailer-icons > .icon-tool--chrome-toggle,
+.player-chrome .toolbar-full-main-row > .icon-tool--chrome-toggle {
+  flex: 0 0 auto;
+}
+
+.player-chrome .toolbar-trailer-icons-main,
+.player-chrome .toolbar-full-icons-main {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.player-chrome .toolbar-chrome-persist {
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  flex: 0 0 auto;
+  align-self: center;
+  width: fit-content;
+  max-width: none;
+  margin-left: 0.15rem;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.player-chrome .icon-tool {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  border: 1px solid #454a53;
+  background: #252a32;
+  color: #e8eaed;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s, border-color 0.12s, transform 0.08s;
+}
+
+.player-chrome .icon-tool:hover:not(:disabled) {
+  background: #2d333b;
+  border-color: #5f6368;
+}
+
+.player-chrome .icon-tool:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.player-chrome .icon-tool:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.player-chrome .icon-tool--fav {
+  font-size: 1.15rem;
+}
+
+.player-chrome .icon-tool--fav-on {
+  color: #fcc934;
+  border-color: #6b5a2a;
+  background: #2a2415;
+}
+
+.player-chrome .icon-tool--memorable {
+  color: #d4b878;
+}
+
+.player-chrome .icon-tool--memorable:hover:not(:disabled) {
+  color: #f1d188;
+}
+
+.player-chrome .icon-tool--memorable-on {
+  color: #fbe293;
+  border-color: #b78a2a;
+  background: #2e2510;
+}
+
+.player-chrome .icon-tool--memorable-on:hover:not(:disabled) {
+  color: #ffe7a3;
+}
+
+.player-chrome .icon-tool--recents-on {
+  color: #9ec5f0;
+  border-color: #4a6888;
+  background: #1a2734;
+}
+
+.player-chrome .icon-tool--recents-on:hover:not(:disabled) {
+  color: #c5ddf5;
+}
+
+.player-chrome .icon-tool--primary {
+  background: #1a73e8;
+  border-color: #1a73e8;
+  color: #fff;
+}
+
+.player-chrome .icon-tool--primary:hover:not(:disabled) {
+  background: #1967d2;
+}
+
+.player-chrome .icon-tool--danger {
+  background: #3c1f1e;
+  border-color: #8b2e2a;
+  color: #f8b4b0;
+}
+
+.player-chrome .icon-tool--danger:hover:not(:disabled) {
+  background: #4a2523;
+  color: #fff;
+}
+
+.player-chrome .icon-tool--on {
+  border-color: #5f9dee;
+  background: #2a3f5f;
+  color: #e8f1ff;
+}
+
+.player-chrome .icon-tool--shuffle-on {
+  border-color: #2e7d32;
+  background: #18321b;
+  color: #c8f3d0;
+}
+
+.player-chrome .icon-tool--shuffle-on:hover:not(:disabled) {
+  border-color: #34a853;
+  background: #1c3b20;
+  color: #eaffef;
+}
+
+.player-chrome .icon-tool--fast-play {
+  min-width: 44px;
+  padding: 0 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.player-chrome .icon-tool--at-cap {
+  border-color: #f9ab00;
+  background: #2a2415;
+  color: #ffe7a3;
+}
+
+.player-chrome .icon-tool--at-cap:hover:not(:disabled) {
+  border-color: #fcc934;
+  background: #332a12;
+  color: #fff8e1;
+}
+
+.player-chrome .icon-tool--shrink.icon-tool--busy,
+.player-chrome .icon-tool--trailer-redo.icon-tool--busy {
+  opacity: 0.55;
+}
+
+.player-chrome .icon-svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.player-chrome .media-card-playback-name-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.player-chrome .media-card-playback-name-row .media-card-playback-video-name {
+  flex: 1;
+  width: auto;
+}
+
+.player-chrome .icon-tool--reveal-explorer {
+  flex-shrink: 0;
+  margin-top: 0.06rem;
+}
+
+.player-chrome .media-card-playback-video-name {
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+  font-size: clamp(0.75rem, 1vw, 0.88rem);
+  font-weight: 500;
+  color: #e8eaed;
+  line-height: 1.35;
+  text-align: left;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  padding-top: 0.1rem;
+}
+
+.player-chrome .media-card-playback-video-size {
+  display: inline-block;
+  margin-right: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(138, 180, 248, 0.18);
+  color: #8ab4f8;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.player-chrome .rate-block--inline {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  max-width: max-content;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
+  display: inline-flex;
+  align-items: center;
+}
+
+.player-chrome .rate-select.rate-select--compact {
+  min-height: 30px;
+  min-width: 2.6rem;
+  width: 2.9rem;
+  max-width: 3.2rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid #454a53;
+  background: #252a32;
+  color: #e8eaed;
+  padding: 0.12rem 0.2rem;
+  font: inherit;
+}
+
+.player-chrome .toolbar-tags-panel,
+.player-chrome .toolbar-full-tags {
+  width: 100%;
+  padding-top: 0.35rem;
+  border-top: 1px solid #2d333b;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  max-height: min(34vh, 15rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.player-chrome .toolbar-tags-panel-actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.player-chrome .tag-panel-action-btn {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid #3c4043;
+  border-radius: 6px;
+  background: #1a1d22;
+  color: #e8eaed;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.player-chrome .tag-panel-action-btn:hover {
+  background: #252a32;
+}
+
+.player-chrome .tag-input-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.player-chrome .tag-input {
+  flex: 1;
+  min-width: 120px;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.42rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid #3c4043;
+  background: #15171c;
+  color: #e8eaed;
+}
+
+.player-chrome .tag-input::placeholder {
+  color: #5f6368;
+}
+
+.player-chrome .tag-input:focus {
+  outline: 2px solid #5f9dee;
+  outline-offset: 0;
+  border-color: #5f9dee;
+}
+
+.player-chrome .tag-add-btn {
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.42rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #454a53;
+  background: #252a32;
+  color: #e8eaed;
+  cursor: pointer;
+}
+
+.player-chrome .tag-add-btn:hover {
+  background: #2d333b;
+}
+
+.player-chrome .tag-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.player-chrome .tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  max-width: 100%;
+  padding: 0.22rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid #3c4043;
+  background: #1a1d22;
+  color: #e8eaed;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.player-chrome .tag-chip:hover {
+  border-color: #5f9dee;
+  background: #222830;
+}
+
+.player-chrome .tag-chip--active {
+  border-color: #5f9dee;
+  background: #1e2a3d;
+  color: #8ab4f8;
+}
+
+.player-chrome .tag-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-chrome.toolbar--full-main {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}

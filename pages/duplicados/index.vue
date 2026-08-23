@@ -189,141 +189,81 @@
               type="button"
               class="admin-btn"
               :class="{ 'admin-btn--on': isPlayerPanelOpen(v) }"
-              title="Mostrar controlos (favorito, destaques, shrink, trailer…)"
+              title="Mostrar barra de controlos do player"
               @click="togglePlayerPanel(v)"
             >
               {{ isPlayerPanelOpen(v) ? 'Fechar controlos' : 'Player' }}
             </button>
+            <a
+              class="admin-btn"
+              :href="catalogHref(v)"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Abrir este título no catálogo / reprodutor"
+            >
+              Abrir no catálogo
+            </a>
           </div>
 
-          <div v-show="isPlayerPanelOpen(v)" class="pane-player-panel">
-            <div class="pane-actions">
-              <button
-                type="button"
-                class="admin-btn"
-                :class="{ 'admin-btn--fav': cardMeta(v)?.isFavorite }"
-                :disabled="favBusy === videoKey(v)"
-                :title="cardMeta(v)?.isFavorite ? 'Retirar dos favoritos' : 'Adicionar aos favoritos'"
-                @click="toggleFavorite(v)"
-              >
-                {{ favBusy === videoKey(v) ? '…' : cardMeta(v)?.isFavorite ? '★ Favorito' : '☆ Favorito' }}
-              </button>
-              <button
-                type="button"
-                class="admin-btn"
-                :class="{ 'admin-btn--destaque': cardMeta(v)?.inDestaques }"
-                :disabled="destaqueBusy === videoKey(v)"
-                :title="cardMeta(v)?.inDestaques ? 'Remover de Destaques' : 'Adicionar a Destaques'"
-                @click="toggleDestaque(v)"
-              >
-                {{
-                  destaqueBusy === videoKey(v)
-                    ? '…'
-                    : cardMeta(v)?.inDestaques
-                      ? 'Destaque'
-                      : 'Destaques'
-                }}
-              </button>
-              <button
-                type="button"
-                class="admin-btn"
-                :class="{ 'admin-btn--memorable': isMemorable(v) }"
-                :disabled="memorableBusy === videoKey(v)"
-                :title="isMemorable(v) ? 'Retirar memorável' : 'Marcar memorável'"
-                @click="toggleMemorable(v)"
-              >
-                {{ memorableBusy === videoKey(v) ? '…' : isMemorable(v) ? '★ Memorável' : 'Memorável' }}
-              </button>
-              <button
-                type="button"
-                class="admin-btn"
-                :class="{ 'admin-btn--on': cardMode[videoKey(v)] !== 'full' }"
-                @click="setCardMode(v, 'trailer')"
-              >
-                Trailer
-              </button>
-              <button
-                type="button"
-                class="admin-btn"
-                :class="{ 'admin-btn--on': cardMode[videoKey(v)] === 'full' }"
-                @click="setCardMode(v, 'full')"
-              >
-                Completo
-              </button>
-              <button
-                type="button"
-                class="admin-btn"
-                :disabled="revealBusy === videoKey(v)"
-                title="Abrir pasta no explorador"
-                @click="revealVideo(v)"
-              >
-                {{ revealBusy === videoKey(v) ? 'A abrir…' : 'Pasta' }}
-              </button>
-              <button
-                type="button"
-                class="admin-btn"
-                :class="{ 'admin-btn--shrink': cardMeta(v)?.alreadyShrunk }"
-                :disabled="shrinkBusy === videoKey(v) || !cardMeta(v)?.mainRel"
-                :title="
-                  cardMeta(v)?.alreadyShrunk
-                    ? 'Já no histórico de shrink — enfileira outra vez (substitui o ficheiro)'
-                    : 'Enfileirar shrink in-place (parâmetros do reprodutor)'
-                "
-                @click="enqueueShrink(v)"
-              >
-                {{ shrinkBusy === videoKey(v) ? '…' : 'Shrink' }}
-              </button>
-              <button
-                type="button"
-                class="admin-btn"
-                :disabled="trailerBusy === videoKey(v) || !cardMeta(v)?.mainRel"
-                title="Reprocessar trailer (parâmetros do reprodutor)"
-                @click="enqueueTrailerReprocess(v)"
-              >
-                {{ trailerBusy === videoKey(v) ? '…' : 'Reprocessar trailer' }}
-              </button>
-            </div>
-
-            <div class="pane-tags-panel">
-              <div class="pane-tags-panel-actions">
-                <button type="button" class="tag-panel-action-btn" @click="openTagInput(v)">
-                  Adicionar tags
-                </button>
-                <button type="button" class="tag-panel-action-btn" @click="closeTagInput(v)">
-                  Esconder tags
-                </button>
-              </div>
-              <div v-show="isTagInputOpen(v)" class="tag-input-row">
-                <input
-                  v-model="tagInputByKey[videoKey(v)]"
-                  type="text"
-                  class="tag-input"
-                  maxlength="80"
-                  placeholder="Uma ou várias tags (separar com , ou ;)"
-                  :list="`dup-tag-suggestions-${videoKey(v)}`"
-                  autocomplete="off"
-                  @keydown.enter.prevent="addTagsForVideo(v)"
-                />
-                <button type="button" class="tag-add-btn" @click="addTagsForVideo(v)">Adicionar</button>
-              </div>
-              <datalist :id="`dup-tag-suggestions-${videoKey(v)}`">
-                <option v-for="s in tagSuggestionsFor(v)" :key="s" :value="s" />
-              </datalist>
-              <div v-if="v.tags?.length" class="tag-chip-list" aria-label="Tags deste título">
-                <button
-                  v-for="t in v.tags"
-                  :key="t"
-                  type="button"
-                  class="tag-chip"
-                  :title="`Manter ~2s premido e soltar para remover «${t}»`"
-                  @pointerdown="onDupTagPointerDown(v, t, $event)"
-                  @pointerup="onDupTagPointerUp(v, t, $event)"
-                  @pointercancel="onDupTagPointerCancel($event)"
-                >
-                  <span class="tag-chip-text">{{ t }}</span>
-                </button>
-              </div>
-            </div>
+          <div
+            v-show="isPlayerPanelOpen(v)"
+            class="pane-player-panel"
+            :class="{ 'pane-player-panel--theater': cardTheater[videoKey(v)] }"
+          >
+            <PlayerChromeToolbar
+              :mode="(cardMode[videoKey(v)] || 'trailer') === 'full' ? 'full' : 'trailer'"
+              :title="chromeTitleFor(v)"
+              :chrome-collapsed="!!cardChromeCollapsed[videoKey(v)]"
+              :theater-mode="!!cardTheater[videoKey(v)]"
+              :playback-rate="cardPlaybackRate[videoKey(v)] ?? 1"
+              :show-theater="true"
+              :show-tags="true"
+              :show-move="moveTargets.length > 0"
+              :show-editor="true"
+              :show-trailer-reprocess="true"
+              :show-shrink="true"
+              :show-delete="true"
+              :show-reveal="true"
+              :show-nav="false"
+              :show-pin="false"
+              :show-shuffle="false"
+              :show-open-full="true"
+              :show-fast-play="false"
+              :show-name-row="true"
+              :show-size-in-name="true"
+              :destaque-busy="destaqueBusy === videoKey(v)"
+              :shrink-busy="shrinkBusy === videoKey(v)"
+              :trailer-busy="trailerBusy === videoKey(v)"
+              :tags-panel-open="!!tagInputOpen[videoKey(v)]"
+              :tags-hidden="!!cardTagsHidden[videoKey(v)]"
+              :tag-input="tagInputByKey[videoKey(v)] ?? ''"
+              :tag-suggestions="tagSuggestionsFor(v)"
+              :tag-input-id="`dup-tag-input-${videoKey(v)}`"
+              :datalist-id="`dup-tag-suggestions-${videoKey(v)}`"
+              :rate-select-id="`dup-rate-${videoKey(v)}`"
+              @update:chrome-collapsed="cardChromeCollapsed[videoKey(v)] = $event"
+              @update:theater-mode="cardTheater[videoKey(v)] = $event"
+              @update:playback-rate="setCardPlaybackRate(v, $event)"
+              @update:tag-input="tagInputByKey[videoKey(v)] = $event"
+              @toggle-favorite="toggleFavorite(v)"
+              @toggle-memorable="toggleMemorable(v)"
+              @toggle-destaque="toggleDestaque(v)"
+              @open-tags="showTagsAndToggleInput(v)"
+              @open-move="openMoveDialog(v)"
+              @open-editor="openEditorFor(v)"
+              @open-trailer-reprocess="enqueueTrailerReprocess(v)"
+              @open-shrink="openShrinkDialog(v)"
+              @delete-title="deleteVideoTitle(v)"
+              @reveal="revealVideo(v)"
+              @open-full="setCardMode(v, 'full')"
+              @close-full="setCardMode(v, 'trailer')"
+              @open-tag-input="openTagInput(v)"
+              @hide-tags="hideTagsFor(v)"
+              @add-tags="addTagsForVideo(v)"
+              @tag-pointer-down="(t, e) => onDupTagPointerDown(v, t, e)"
+              @tag-pointer-up="(t, e) => onDupTagPointerUp(v, t, e)"
+              @tag-pointer-cancel="onDupTagPointerCancel"
+            />
           </div>
         </article>
       </div>
@@ -409,12 +349,136 @@
     </p>
     </div>
   </div>
+
+  <Teleport to="body">
+    <div
+      v-show="moveDialogOpen"
+      class="dup-move-backdrop"
+      @click="moveDialogOpen = false"
+    />
+    <div
+      v-show="moveDialogOpen"
+      class="dup-move-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="dup-move-title"
+    >
+      <div class="dup-move-card">
+        <div class="dup-move-head">
+          <span id="dup-move-title">Mover para outra pasta</span>
+          <button type="button" class="admin-btn" :disabled="moveBusy" @click="moveDialogOpen = false">
+            ×
+          </button>
+        </div>
+        <p class="admin-muted">
+          Move o vídeo completo, trailer, preview e miniaturas para a pasta seleccionada.
+        </p>
+        <nav class="dup-move-list" aria-label="Destino">
+          <button
+            v-for="s in moveTargetsForCurrent"
+            :key="s.id"
+            type="button"
+            class="admin-btn"
+            :disabled="moveBusy"
+            @click="confirmMoveToSession(s.id)"
+          >
+            {{ s.label }}
+          </button>
+        </nav>
+        <p v-if="moveBusy" class="admin-muted">A mover ficheiros…</p>
+      </div>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
+    <div
+      v-show="shrinkDialogOpen"
+      class="dup-move-backdrop"
+      @click="shrinkDialogOpen = false"
+    />
+    <div
+      v-show="shrinkDialogOpen"
+      class="dup-shrink-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="dup-shrink-title"
+    >
+      <div class="dup-shrink-card">
+        <div class="dup-move-head">
+          <span id="dup-shrink-title">Shrink — fila</span>
+          <button type="button" class="admin-btn" @click="shrinkDialogOpen = false">×</button>
+        </div>
+        <div class="dup-shrink-body">
+          <p class="admin-muted">
+            Adiciona à fila; processa no servidor e <strong>substitui o original</strong>
+            (backup em <code class="admin-code">shrinked_backup</code>).
+            Progresso no reprodutor / Admin · histórico em
+            <NuxtLink to="/historico" class="empty-hint-link">/historico</NuxtLink>.
+          </p>
+          <p v-if="shrinkDialogVideo" class="dup-shrink-file">
+            Actual: {{ chromeTitleFor(shrinkDialogVideo)?.mainFilename || shrinkDialogVideo.displayName }}
+          </p>
+          <p v-if="shrinkDialogAlreadyHint" class="dup-shrink-already" role="alert">
+            <span class="dup-shrink-already-title">Já foi shrinkado</span>
+            {{ shrinkDialogAlreadyHint }}
+          </p>
+          <div class="dup-shrink-grid">
+            <label class="dup-shrink-field">
+              <span>Resolução (altura)</span>
+              <select v-model.number="shrinkForm.height" class="admin-input">
+                <option v-for="h in SHRINK_IN_PLACE_HEIGHT_OPTIONS" :key="h" :value="h">
+                  {{ SHRINK_IN_PLACE_HEIGHT_LABELS[h] ?? `${h}p` }}
+                </option>
+              </select>
+            </label>
+            <label class="dup-shrink-field">
+              <span>Velocidade (×)</span>
+              <select v-model.number="shrinkForm.speed" class="admin-input">
+                <option v-for="s in SHRINK_IN_PLACE_SPEED_OPTIONS" :key="s" :value="s">{{ s }}×</option>
+              </select>
+            </label>
+            <label class="dup-shrink-field dup-shrink-field--full">
+              <span>Codec de vídeo</span>
+              <select v-model="shrinkForm.codec" class="admin-input">
+                <option v-for="c in SHRINK_IN_PLACE_CODEC_OPTIONS" :key="c.value" :value="c.value">
+                  {{ c.label }}
+                </option>
+              </select>
+            </label>
+            <label class="dup-shrink-check">
+              <input v-model="shrinkForm.prioritizeSize" type="checkbox" />
+              <span>Priorizar tamanho (2ª passagem se a saída ficar grande)</span>
+            </label>
+          </div>
+        </div>
+        <div class="dup-shrink-actions">
+          <button type="button" class="admin-btn" @click="resetShrinkForm">Restaurar padrões</button>
+          <button type="button" class="admin-btn" @click="shrinkDialogOpen = false">Fechar</button>
+          <button
+            type="button"
+            class="admin-btn admin-btn--primary"
+            :disabled="shrinkBusy !== null || !shrinkDialogVideo"
+            @click="confirmShrinkFromDialog"
+          >
+            {{ shrinkBusy ? '…' : 'Adicionar na fila' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
 import { apiVideoUrl } from '~/composables/useVideoFolder'
+import PlayerChromeToolbar from '~/components/player/PlayerChromeToolbar.vue'
+import type { PlayerChromeTitle } from '~/components/player/PlayerChromeToolbar.vue'
 import {
   normalizeShrinkInPlaceParams,
+  SHRINK_IN_PLACE_CODEC_OPTIONS,
+  SHRINK_IN_PLACE_HEIGHT_LABELS,
+  SHRINK_IN_PLACE_HEIGHT_OPTIONS,
+  SHRINK_IN_PLACE_PARAMS_DEFAULT,
+  SHRINK_IN_PLACE_SPEED_OPTIONS,
   type ShrinkInPlaceParams,
 } from '#shared/shrinkInPlaceParams'
 import {
@@ -533,6 +597,107 @@ function loadShrinkInPlaceParamsFromStorage(): ShrinkInPlaceParams {
     return normalizeShrinkInPlaceParams(JSON.parse(raw) as Record<string, unknown>)
   } catch {
     return normalizeShrinkInPlaceParams(null)
+  }
+}
+
+function saveShrinkInPlaceParamsToStorage(p: ShrinkInPlaceParams) {
+  if (!import.meta.client) return
+  try {
+    localStorage.setItem(SHRINK_IN_PLACE_STORAGE_KEY, JSON.stringify(p))
+  } catch {
+    /* */
+  }
+}
+
+const shrinkDialogOpen = ref(false)
+const shrinkDialogVideo = ref<DupVideo | null>(null)
+const shrinkForm = ref<ShrinkInPlaceParams>(loadShrinkInPlaceParamsFromStorage())
+
+const shrinkDialogAlreadyHint = computed(() => {
+  const v = shrinkDialogVideo.value
+  if (!v) return ''
+  const meta = cardMeta(v)
+  if (!meta?.alreadyShrunk) return ''
+  if (meta.shrinkEndedAt) {
+    try {
+      return `Histórico: shrink pelo grid em ${new Date(meta.shrinkEndedAt).toLocaleString()}. Enfileirar outra vez substitui o ficheiro de novo — vais precisar de confirmar duas vezes.`
+    } catch {
+      /* */
+    }
+  }
+  return 'Histórico: este vídeo já foi shrinkado pelo grid. Enfileirar outra vez substitui o ficheiro de novo — vais precisar de confirmar duas vezes.'
+})
+
+async function openShrinkDialog(v: DupVideo) {
+  const info = await ensureMainRel(v)
+  if (!info?.mainRel) return
+  shrinkDialogVideo.value = v
+  shrinkForm.value = loadShrinkInPlaceParamsFromStorage()
+  shrinkDialogOpen.value = true
+}
+
+function resetShrinkForm() {
+  shrinkForm.value = { ...SHRINK_IN_PLACE_PARAMS_DEFAULT }
+}
+
+async function confirmShrinkFromDialog() {
+  const v = shrinkDialogVideo.value
+  if (!v || shrinkBusy.value) return
+  const info = await ensureMainRel(v)
+  if (!info?.mainRel) return
+
+  if (info.alreadyShrunk) {
+    const when = info.shrinkEndedAt
+      ? (() => {
+          try {
+            return new Date(info.shrinkEndedAt!).toLocaleString()
+          } catch {
+            return null
+          }
+        })()
+      : null
+    const msg1 = when
+      ? `Este vídeo já foi shrinkado (${when}).\n\nEnfileirar outra vez? O ficheiro actual será processado e substituído de novo.`
+      : `Este vídeo já foi shrinkado.\n\nEnfileirar outra vez? O ficheiro actual será processado e substituído de novo.`
+    if (!confirm(msg1)) return
+    if (
+      !confirm(
+        'Confirma outra vez: este vídeo já tem histórico de shrink.\n\nTens a certeza que queres enfileirar e substituir o ficheiro de novo?',
+      )
+    ) {
+      return
+    }
+  }
+
+  const ref = titleRef(v)
+  const params = normalizeShrinkInPlaceParams(shrinkForm.value)
+  shrinkForm.value = params
+  saveShrinkInPlaceParamsToStorage(params)
+  const key = videoKey(v)
+  shrinkBusy.value = key
+  err.value = ''
+  try {
+    const state = await $fetch<{ items?: { status?: string }[] }>('/api/admin/shrink-in-place-queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: {
+        action: 'enqueue',
+        session: ref.session,
+        mainRel: info.mainRel,
+        trailerRel: ref.trailerRel,
+        label: v.displayName || info.mainRel,
+        params,
+      },
+    })
+    const pending = (state.items ?? []).filter(
+      (i) => i.status === 'pending' || i.status === 'running',
+    ).length
+    err.value = `Shrink na fila (${pending} activo(s)). Progresso no reprodutor / Admin.`
+    shrinkDialogOpen.value = false
+  } catch (e: unknown) {
+    err.value = apiErrMessage(e, 'Falha ao enfileirar shrink.')
+  } finally {
+    shrinkBusy.value = null
   }
 }
 const verdictBusy = ref<'not_duplicate' | 'resolved' | null>(null)
@@ -657,6 +822,10 @@ function setVideoRef(v: DupVideo, el: unknown) {
 }
 
 function onCardLoadedData(v: DupVideo) {
+  const key = videoKey(v)
+  const rate = cardPlaybackRate[key]
+  const el = videoEls.get(key)
+  if (el && rate && Number.isFinite(rate)) el.playbackRate = rate
   if (autoLoadTrailers.value) tryAutoPlayCard(v)
 }
 
@@ -789,6 +958,14 @@ function titleRef(v: DupVideo): { session: number; trailerRel: string } {
   }
 }
 
+function catalogHref(v: DupVideo): string {
+  const ref = titleRef(v)
+  const q = new URLSearchParams()
+  q.set('session', String(ref.session))
+  q.set('rel', ref.trailerRel)
+  return `/?${q.toString()}`
+}
+
 const TAG_INPUT_MAX_LEN = 80
 const TAG_LONGPRESS_MS = 2000
 const MEMORABLE_TAG = 'memoravel'
@@ -798,6 +975,23 @@ const tagInputOpen = reactive<Record<string, boolean>>({})
 const tagInputByKey = reactive<Record<string, string>>({})
 const tagSuggestionsBySession = reactive<Record<string, string[]>>({})
 const memorableBusy = ref<string | null>(null)
+const cardChromeCollapsed = reactive<Record<string, boolean>>({})
+const cardTheater = reactive<Record<string, boolean>>({})
+const cardTagsHidden = reactive<Record<string, boolean>>({})
+const cardPlaybackRate = reactive<Record<string, number>>({})
+
+const librarySessions = ref<{ id: number; label: string }[]>([])
+const moveDialogOpen = ref(false)
+const moveBusy = ref(false)
+const moveSourceVideo = ref<DupVideo | null>(null)
+
+const moveTargetsForCurrent = computed(() => {
+  const src = moveSourceVideo.value
+  const sid = src ? Math.floor(Number(src.session)) : -1
+  return librarySessions.value.filter((s) => s.id >= 0 && s.id !== sid)
+})
+
+const moveTargets = computed(() => librarySessions.value.filter((s) => s.id >= 0))
 
 let dupTagPointer: { t: number; key: string; tagName: string } | null = null
 
@@ -822,6 +1016,118 @@ function isTagInputOpen(v: DupVideo): boolean {
 
 function isMemorable(v: DupVideo): boolean {
   return (v.tags ?? []).some((t) => t.trim().toLowerCase() === MEMORABLE_TAG)
+}
+
+function chromeTitleFor(v: DupVideo): PlayerChromeTitle {
+  const meta = cardMeta(v)
+  const mainRel = meta?.mainRel || null
+  const mainName = mainRel
+    ? mainRel.replace(/\\/g, '/').split('/').pop() || v.displayName
+    : v.displayName
+  return {
+    displayName: v.displayName,
+    mainFilename: mainName,
+    mainSizeBytes: meta?.mainBytes ?? 0,
+    isFavorite: !!meta?.isFavorite,
+    isMemorable: isMemorable(v),
+    inDestaques: !!meta?.inDestaques,
+    hasMain: !!mainRel,
+    tags: [...(v.tags ?? [])],
+  }
+}
+
+function setCardPlaybackRate(v: DupVideo, rate: number) {
+  const key = videoKey(v)
+  const r = Number(rate)
+  cardPlaybackRate[key] = Number.isFinite(r) && r > 0 ? r : 1
+  const el = videoEls.get(key)
+  if (el) el.playbackRate = cardPlaybackRate[key]!
+}
+
+function showTagsAndToggleInput(v: DupVideo) {
+  const key = videoKey(v)
+  cardTagsHidden[key] = false
+  tagInputOpen[key] = !tagInputOpen[key]
+}
+
+function hideTagsFor(v: DupVideo) {
+  const key = videoKey(v)
+  cardTagsHidden[key] = true
+  tagInputOpen[key] = false
+}
+
+function openEditorFor(v: DupVideo) {
+  const meta = cardMeta(v)
+  if (!meta?.mainRel) {
+    err.value = 'Sem ficheiro completo para o editor.'
+    return
+  }
+  const q = new URLSearchParams()
+  q.set('session', String(titleRef(v).session))
+  q.set('file', meta.mainRel)
+  navigateTo(`/editor?${q.toString()}`)
+}
+
+function openMoveDialog(v: DupVideo) {
+  moveSourceVideo.value = v
+  moveDialogOpen.value = true
+}
+
+async function confirmMoveToSession(destSession: number) {
+  const v = moveSourceVideo.value
+  if (!v || moveBusy.value) return
+  const ref = titleRef(v)
+  moveBusy.value = true
+  err.value = ''
+  try {
+    await $fetch('/api/library/move-title', {
+      method: 'POST',
+      body: {
+        session: ref.session,
+        targetSession: destSession,
+        trailerRel: ref.trailerRel,
+      },
+    })
+    moveDialogOpen.value = false
+    moveSourceVideo.value = null
+    err.value = 'Título movido. Corre o scan outra vez se a lista ficar desactualizada.'
+    focusVideos.value = focusVideos.value.filter((x) => videoKey(x) !== videoKey(v))
+  } catch (e: unknown) {
+    err.value = apiErrMessage(e, 'Falha ao mover o título.')
+  } finally {
+    moveBusy.value = false
+  }
+}
+
+async function deleteVideoTitle(v: DupVideo) {
+  if (
+    !confirm(
+      `Mover «${v.displayName}» para a Lixeira?\n(completo, trailer e preview)`,
+    )
+  ) {
+    return
+  }
+  const ref = titleRef(v)
+  err.value = ''
+  try {
+    await $fetch('/api/library/delete-title', {
+      method: 'POST',
+      body: { session: ref.session, trailerRel: ref.trailerRel },
+    })
+    focusVideos.value = focusVideos.value.filter((x) => videoKey(x) !== videoKey(v))
+    err.value = `«${v.displayName}» enviado para a Lixeira.`
+  } catch (e: unknown) {
+    err.value = apiErrMessage(e, 'Falha ao apagar o título.')
+  }
+}
+
+async function loadLibrarySessions() {
+  try {
+    const data = await $fetch<{ sessions?: { id: number; label: string }[] }>('/api/sessions')
+    librarySessions.value = Array.isArray(data.sessions) ? data.sessions : []
+  } catch {
+    librarySessions.value = []
+  }
 }
 
 function tagSuggestionsFor(v: DupVideo): string[] {
@@ -880,7 +1186,9 @@ async function togglePlayerPanel(v: DupVideo) {
 }
 
 function openTagInput(v: DupVideo) {
-  tagInputOpen[videoKey(v)] = true
+  const key = videoKey(v)
+  cardTagsHidden[key] = false
+  tagInputOpen[key] = true
 }
 
 function closeTagInput(v: DupVideo) {
@@ -1553,6 +1861,7 @@ async function enqueueTrailerReprocess(v: DupVideo) {
 }
 
 async function bootstrapDupPage() {
+  await loadLibrarySessions()
   await loadStored()
   if (scanBusy.value) return
   try {
@@ -1758,6 +2067,12 @@ onMounted(() => {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.84em;
   color: #fdd663;
+}
+
+.empty-hint-link {
+  color: #8ab4f8;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .admin-card {
@@ -2169,8 +2484,176 @@ onMounted(() => {
 
 .pane-player-panel {
   margin-top: 0.35rem;
-  padding-top: 0.35rem;
+  padding-top: 0.45rem;
   border-top: 1px solid #2d333b;
+}
+
+.pane-player-panel--theater .pane-video-wrap {
+  /* reserved: cinema no card usa a mesma barra */
+}
+
+.dup-move-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 243;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.dup-move-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 244;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  pointer-events: none;
+}
+
+.dup-move-card {
+  pointer-events: auto;
+  width: min(400px, 94vw);
+  max-height: min(72vh, 520px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  background: #1a1d22;
+  border: 1px solid #2d333b;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  padding: 0.85rem;
+  overflow: auto;
+}
+
+.dup-move-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-weight: 700;
+  color: #e8eaed;
+}
+
+.dup-move-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.dup-shrink-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 244;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  pointer-events: none;
+}
+
+.dup-shrink-card {
+  pointer-events: auto;
+  width: min(540px, 96vw);
+  max-height: min(88vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: #1a1d22;
+  border: 1px solid #2d333b;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.dup-shrink-body {
+  flex: 1;
+  overflow: auto;
+  padding: 0 0.85rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.dup-shrink-file {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #e8eaed;
+  word-break: break-all;
+}
+
+.dup-shrink-already {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  border: 2px solid #e0aa20;
+  background: linear-gradient(180deg, #4a3210 0%, #2e1f0a 100%);
+  color: #ffe7a3;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.dup-shrink-already-title {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #ffcc66;
+}
+
+.dup-shrink-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 0.65rem;
+}
+
+.dup-shrink-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  font-size: 0.8rem;
+  color: #bdc1c6;
+}
+
+.dup-shrink-field--full {
+  grid-column: 1 / -1;
+}
+
+.dup-shrink-field .admin-input,
+.dup-shrink-card .admin-input {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid #3c4043;
+  background: #15171c;
+  color: #e8eaed;
+}
+
+.dup-shrink-check {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  color: #e8eaed;
+}
+
+.dup-shrink-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  padding: 0.65rem 0.85rem 0.85rem;
+  border-top: 1px solid #2d333b;
+}
+
+.dup-shrink-card .admin-btn--primary {
+  border-color: #1a73e8;
+  background: #1a73e8;
+  color: #fff;
 }
 
 .pane-tags-panel {

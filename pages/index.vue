@@ -639,655 +639,135 @@
           </div>
         </div>
 
-        <div v-if="!playerUrl && previewUrl" class="toolbar toolbar--trailer toolbar--trailer-compact">
-          <div class="toolbar-trailer-icons">
-            <button
-              type="button"
-              class="icon-tool icon-tool--chrome-toggle"
-              :class="{ 'icon-tool--on': trailerControlsCollapsed }"
-              :title="trailerControlsCollapsed ? 'Mostrar controlos e nome' : 'Recolher controlos e nome'"
-              :aria-pressed="trailerControlsCollapsed"
-              :aria-label="trailerControlsCollapsed ? 'Mostrar controlos e nome' : 'Recolher controlos e nome'"
-              @click="trailerControlsCollapsed = !trailerControlsCollapsed"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path :d="trailerControlsCollapsed ? 'm6 9 6 6 6-6' : 'm18 15-6-6-6 6'" />
-              </svg>
-            </button>
-            <div v-show="!trailerControlsCollapsed" class="toolbar-trailer-icons-main">
-            <button
-              type="button"
-              class="icon-tool icon-tool--theater"
-              :class="{ 'icon-tool--on': theaterMode }"
-              :title="theaterMode ? 'Sair do modo cinema' : 'Modo cinema (só vídeo e barra inferior)'"
-              :aria-pressed="theaterMode"
-              aria-label="Alternar modo cinema"
-              @click="theaterMode = !theaterMode"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z" />
-                <path d="m6.2 5.3 3.1 3.9" />
-                <path d="m12.4 3.4 3.1 4" />
-                <path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-              </svg>
-            </button>
-            <button
-              v-if="selectedEntry && !isTvLayout"
-              type="button"
-              class="icon-tool icon-tool--tag"
-              :class="{ 'icon-tool--on': trailerTagPanelOpen && !trailerTagsHidden }"
-              :aria-expanded="trailerTagPanelOpen && !trailerTagsHidden"
-              :title="trailerTagsHidden ? 'Mostrar tags' : 'Adicionar tag'"
-              :aria-label="trailerTagsHidden ? 'Mostrar tags' : 'Adicionar tag'"
-              @click="showTrailerTagsAndToggleInput"
-            >
-              <svg
-                class="icon-svg"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83Z" />
-                <circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none" />
-              </svg>
-            </button>
-            <button
-              v-if="selectedEntry"
-              type="button"
-              class="icon-tool icon-tool--fav"
-              :class="{ 'icon-tool--fav-on': selectedEntry.isFavorite }"
-              :aria-pressed="!!selectedEntry.isFavorite"
-              :title="selectedEntry.isFavorite ? 'Retirar dos favoritos' : 'Favorito'"
-              @click="toggleFavoriteAtIndex(null)"
-            >
-              {{ selectedEntry.isFavorite ? '★' : '☆' }}
-            </button>
-            <button
-              v-if="selectedEntry"
-              type="button"
-              class="icon-tool icon-tool--memorable"
-              :class="{ 'icon-tool--memorable-on': isEntryMemorable(selectedEntry) }"
-              :aria-pressed="isEntryMemorable(selectedEntry)"
-              :title="isEntryMemorable(selectedEntry)
-                ? 'Retirar marca de memorável'
-                : 'Memorável (marca como visto e empurra para o fim)'"
-              @click="toggleMemorableAtIndex(null)"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M7 4h10v3a5 5 0 0 1-5 5 5 5 0 0 1-5-5V4z" />
-                <path d="M17 5h3a2 2 0 0 1-3 4" />
-                <path d="M7 5H4a2 2 0 0 0 3 4" />
-                <path d="M9 21h6" />
-                <path d="M12 12v6" />
-                <path d="M9.5 18h5l-.5 3h-4z" fill="currentColor" stroke="none" />
-              </svg>
-            </button>
-            <button
-              v-if="destaqueToolbarEntry"
-              type="button"
-              class="icon-tool icon-tool--recents"
-              :class="{ 'icon-tool--recents-on': destaqueToolbarActive }"
-              :disabled="recentsMutationBusy"
-              :title="
-                destaqueToolbarActive
-                  ? 'Remover da lista «Destaques»'
-                  : 'Adicionar a «Destaques» (lista no topo do menu)'
-              "
-              :aria-label="
-                destaqueToolbarActive ? 'Remover de Destaques' : 'Adicionar a Destaques'
-              "
-              :aria-pressed="destaqueToolbarActive"
-              @click="toggleCurrentTitleRecents"
-            >
-              <svg
-                v-if="!destaqueToolbarActive"
-                class="icon-svg"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
-                <circle cx="12" cy="12" r="3.5" />
-              </svg>
-              <svg
-                v-else
-                class="icon-svg"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path
-                  d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
-                />
-                <line x1="1" y1="1" x2="23" y2="23" />
-              </svg>
-            </button>
-            <button
-              v-if="moveTitleDesktopEligible && focusedIndex !== null && selectedEntry && !fromDuplicatesLite"
-              type="button"
-              class="icon-tool icon-tool--move-library"
-              title="Mover vídeo completo, trailer, preview e miniaturas para outra biblioteca de pastas"
-              aria-label="Mover para outra pasta"
-              @click="openMoveTitleDialog()"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                <path d="M12 11v6M9 14h6" />
-              </svg>
-            </button>
-            <button
-              v-if="editorDesktopEligible && editorOpenEntry && !fromDuplicatesLite"
-              type="button"
-              class="icon-tool icon-tool--editor"
-              title="Editar vídeo completo (abre o editor — backup e substitui o original)"
-              aria-label="Abrir no editor de vídeo"
-              @click="openCurrentVideoInEditor"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-              </svg>
-            </button>
-            <button
-              v-if="trailerReprocessEligible && editorOpenEntry && !fromDuplicatesLite"
-              type="button"
-              class="icon-tool icon-tool--trailer-redo"
-              :class="{ 'icon-tool--busy': trailerReprocessBusy }"
-              :disabled="shrinkInPlaceBusy"
-              title="Reprocessar trailer deste vídeo (fila — opções do trailer.bat)"
-              aria-label="Reprocessar trailer"
-              @click="openTrailerReprocessDialog"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                <path d="M3 3v5h5" />
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                <path d="M16 16h5v5" />
-              </svg>
-            </button>
-            <button
-              v-if="shrinkInPlaceEligible && editorOpenEntry && !fromDuplicatesLite"
-              type="button"
-              class="icon-tool icon-tool--shrink"
-              :class="{ 'icon-tool--busy': shrinkInPlaceBusy }"
-              :disabled="trailerReprocessBusy"
-              title="Shrink do vídeo completo (fila — substitui o original)"
-              aria-label="Shrink do vídeo completo"
-              @click="openShrinkInPlaceDialog"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M16 22h2a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v3" />
-                <path d="M14 2v4a2 2 0 0 0 2 2h4" />
-                <path d="M10 20v-1a2 2 0 1 1 4 0v1a2 2 0 1 1-4 0Z" />
-                <path d="M12 7v1" />
-                <path d="M12 11v1" />
-                <path d="M12 15v1" />
-              </svg>
-            </button>
-            <button type="button" class="icon-tool" title="Trailer anterior" @click="goToPrevTrailer">
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
-                <g transform="scale(-1 1) translate(-24 0)">
-                  <path d="M7 6v12l7-6-7-6zm9 0v12h2V6h-2z" />
-                </g>
-              </svg>
-            </button>
-            <button type="button" class="icon-tool" title="Próximo trailer" @click="goToNextTrailer">
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
-                <path d="M7 6v12l7-6-7-6zm9 0v12h2V6h-2z" />
-              </svg>
-            </button>
-            <button
-              v-if="!isTvLayout"
-              type="button"
-              class="icon-tool"
-              :class="{
-                'icon-tool--on': pinnedTrailers.length > 0,
-                'icon-tool--at-cap': pinnedTrailers.length >= MAX_PINNED_TRAILERS,
-              }"
-              :disabled="!previewUrl"
-              :title="pinSplitToolbarTitle"
-              :aria-label="pinSplitToolbarAria"
-              @click="onPinSplitToolbarClick"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="2.5" y="5" width="8.5" height="14" rx="1.5" />
-                <rect x="13" y="5" width="8.5" height="14" rx="1.5" />
-              </svg>
-            </button>
-            <button
-              v-if="!isTvLayout && pinnedTrailers.length > 0"
-              type="button"
-              class="icon-tool"
-              title="Remover trailers fixos (por baixo)"
-              aria-label="Remover trailers fixos"
-              @click="clearPinnedTrailers"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              class="icon-tool"
-              :class="{ 'icon-tool--shuffle-on': shuffleForwardEnabled }"
-              title="Aleatório ao avançar (próximo trailer, fim do preview ou FF). Voltar é sempre pela ordem; depois de voltar, um único avanço segue na fila antes do aleatório voltar."
-              :disabled="entries.length < 2"
-              :aria-pressed="shuffleForwardEnabled"
-              aria-label="Alternar aleatório ao avançar"
-              @click="toggleShuffleForward"
-            >
-              <IconTrailerRandom />
-            </button>
-            <button
-              type="button"
-              class="icon-tool icon-tool--primary"
-              :disabled="selectedEntry ? !selectedEntry.hasMain : true"
-              :title="selectedEntry && !selectedEntry.hasMain ? 'Completo em falta' : 'Vídeo completo'"
-              @click="openFullFromPreview"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="4" width="20" height="14" rx="2" />
-                <path d="M10 9l5 3-5 3V9z" fill="currentColor" stroke="none" />
-              </svg>
-            </button>
-            <button
-              v-if="focusedIndex !== null && selectedEntry && !fromDuplicatesLite"
-              type="button"
-              class="icon-tool icon-tool--danger"
-              title="Mover para a Lixeira (completo, trailer, preview)"
-              @click="deleteTitleAtIndex(focusedIndex)"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 6h18M8 6V4h8v2m2 0v14a2 2 0 01-2 2H8a2 2 0 01-2-2V6h12M10 11v6M14 11v6" stroke-linecap="round" />
-              </svg>
-            </button>
-            </div>
-            <div class="toolbar-chrome-persist">
-            <div class="rate-block rate-block--inline">
-              <select
-                id="rate-select-trailer"
-                class="rate-select rate-select--compact"
-                :value="playbackRate"
-                title="Velocidade"
-                aria-label="Velocidade"
-                @change="setPlaybackRate(Number(($event.target as HTMLSelectElement).value))"
-              >
-                <option v-for="r in PLAYBACK_RATES" :key="r" :value="r">
-                  {{ r === 1 ? '1×' : `${r}×` }}
-                </option>
-              </select>
-            </div>
-            </div>
-          </div>
-          <div
-            v-if="!playerUrl && previewUrl && selectedEntry && !trailerControlsCollapsed"
-            class="media-card-playback-name-row"
-          >
-            <button
-              v-if="revealExplorerEligible"
-              type="button"
-              class="icon-tool icon-tool--reveal-explorer"
-              :title="revealInFolderButtonTitle"
-              :aria-label="revealInFolderAriaLabel"
-              @click="revealPlayingFileInExplorer"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 7.5V19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
-              </svg>
-            </button>
-            <p
-              class="media-card-playback-video-name"
-              :title="selectedEntry.mainFilename"
-            >
-              <span
-                v-if="selectedEntry.mainSizeBytes > 0"
-                class="media-card-playback-video-size"
-              >{{ formatGB(selectedEntry.mainSizeBytes) }}</span>
-              {{ selectedEntry.mainFilename }}
-            </p>
-          </div>
-          <div
-            v-if="selectedEntry && !isTvLayout && !trailerTagsHidden"
-            class="toolbar-tags-panel"
-            :class="{ 'toolbar-tags-panel--input-open': trailerTagPanelOpen }"
-          >
-            <div class="toolbar-tags-panel-actions">
-              <button type="button" class="tag-panel-action-btn" @click="openTrailerTagInput">
-                Adicionar tags
-              </button>
-              <button type="button" class="tag-panel-action-btn" @click="hideTrailerTags">
-                Esconder tags
-              </button>
-            </div>
-            <div v-show="trailerTagPanelOpen" class="tag-input-row">
-              <input
-                id="tag-input-main"
-                v-model="newTagInput"
-                type="text"
-                class="tag-input"
-                maxlength="80"
-                placeholder="Uma ou várias tags (separar com , ou ;)"
-                list="catalog-tag-suggestions"
-                autocomplete="off"
-                @keydown.enter.prevent="addTagFromInput"
-              />
-              <button type="button" class="tag-add-btn" @click="addTagFromInput">Adicionar</button>
-            </div>
-            <datalist id="catalog-tag-suggestions">
-              <option v-for="s in tagSuggestions" :key="s" :value="s" />
-            </datalist>
-            <div
-              v-if="(selectedEntry?.tags?.length ?? 0) > 0"
-              class="tag-chip-list"
-              aria-label="Tags deste título"
-            >
-              <button
-                v-for="t in selectedEntry?.tags ?? []"
-                :key="t"
-                type="button"
-                class="tag-chip"
-                :class="{ 'tag-chip--active': catalogTagFilter === t }"
-                :title="`Toque para filtrar o catálogo por «${t}». Manter ~2s premido e soltar para remover (com confirmação).`"
-                @pointerdown="selectedEntry && onTagChipPointerDown(libSession(selectedEntry), selectedEntry.trailerRel, t, $event)"
-                @pointerup="selectedEntry && onTagChipPointerUp(libSession(selectedEntry), selectedEntry.trailerRel, t, $event)"
-                @pointercancel="onTagChipPointerCancel($event)"
-              >
-                <span class="tag-chip-text">{{ t }}</span>
-              </button>
-            </div>
-          </div>
-        </div>
+        <!-- Barra partilhada: components/player/PlayerChromeToolbar.vue -->
+        <PlayerChromeToolbar
+          v-if="!playerUrl && previewUrl"
+          mode="trailer"
+          :title="playerChromeTrailerTitle"
+          :chrome-collapsed="trailerControlsCollapsed"
+          :theater-mode="theaterMode"
+          :playback-rate="playbackRate"
+          :playback-rates="PLAYBACK_RATES"
+          :show-theater="true"
+          :show-tags="!isTvLayout"
+          :show-move="moveTitleDesktopEligible && focusedIndex !== null && !!selectedEntry"
+          :show-editor="editorDesktopEligible && !!editorOpenEntry"
+          :show-trailer-reprocess="trailerReprocessEligible && !!editorOpenEntry"
+          :show-shrink="shrinkInPlaceEligible && !!editorOpenEntry"
+          :show-delete="focusedIndex !== null && !!selectedEntry"
+          :show-reveal="revealExplorerEligible"
+          :show-nav="true"
+          :show-pin="!isTvLayout"
+          :show-shuffle="true"
+          :show-open-full="true"
+          :show-fast-play="false"
+          :show-name-row="!!selectedEntry"
+          :show-size-in-name="true"
+          :destaque-busy="recentsMutationBusy"
+          :shrink-busy="shrinkInPlaceBusy"
+          :trailer-busy="trailerReprocessBusy"
+          :pin-count="pinnedTrailers.length"
+          :pin-at-cap="pinnedTrailers.length >= MAX_PINNED_TRAILERS"
+          :pin-disabled="!previewUrl"
+          :pin-title="pinSplitToolbarTitle"
+          :pin-aria="pinSplitToolbarAria"
+          :shuffle-on="shuffleForwardEnabled"
+          :shuffle-disabled="entries.length < 2"
+          :tags-panel-open="trailerTagPanelOpen"
+          :tags-hidden="trailerTagsHidden"
+          :reveal-title="revealInFolderButtonTitle"
+          :reveal-aria="revealInFolderAriaLabel"
+          :tag-input="newTagInput"
+          :tag-suggestions="tagSuggestions"
+          tag-input-id="tag-input-main"
+          datalist-id="catalog-tag-suggestions"
+          rate-select-id="rate-select-trailer"
+          :tag-filter-active="catalogTagFilter"
+          @update:chrome-collapsed="trailerControlsCollapsed = $event"
+          @update:theater-mode="theaterMode = $event"
+          @update:playback-rate="setPlaybackRate"
+          @update:tag-input="newTagInput = $event"
+          @toggle-favorite="toggleFavoriteAtIndex(null)"
+          @toggle-memorable="toggleMemorableAtIndex(null)"
+          @toggle-destaque="toggleCurrentTitleRecents"
+          @open-tags="showTrailerTagsAndToggleInput"
+          @open-move="openMoveTitleDialog()"
+          @open-editor="openCurrentVideoInEditor"
+          @open-trailer-reprocess="openTrailerReprocessDialog"
+          @open-shrink="openShrinkInPlaceDialog"
+          @delete-title="focusedIndex !== null && deleteTitleAtIndex(focusedIndex)"
+          @reveal="revealPlayingFileInExplorer"
+          @prev-trailer="goToPrevTrailer"
+          @next-trailer="goToNextTrailer"
+          @pin-split="onPinSplitToolbarClick"
+          @clear-pins="clearPinnedTrailers"
+          @toggle-shuffle="toggleShuffleForward"
+          @open-full="openFullFromPreview"
+          @open-tag-input="openTrailerTagInput"
+          @hide-tags="hideTrailerTags"
+          @add-tags="addTagFromInput"
+          @tag-pointer-down="(t, e) => selectedEntry && onTagChipPointerDown(libSession(selectedEntry), selectedEntry.trailerRel, t, e)"
+          @tag-pointer-up="(t, e) => selectedEntry && onTagChipPointerUp(libSession(selectedEntry), selectedEntry.trailerRel, t, e)"
+          @tag-pointer-cancel="onTagChipPointerCancel"
+        />
 
-        <div v-else-if="playerUrl" class="toolbar toolbar--full toolbar--full-main">
-          <div class="toolbar-full-main-row">
-            <button
-              type="button"
-              class="icon-tool icon-tool--chrome-toggle"
-              :class="{ 'icon-tool--on': trailerControlsCollapsed }"
-              :title="trailerControlsCollapsed ? 'Mostrar controlos e nome' : 'Recolher controlos e nome'"
-              :aria-pressed="trailerControlsCollapsed"
-              :aria-label="trailerControlsCollapsed ? 'Mostrar controlos e nome' : 'Recolher controlos e nome'"
-              @click="trailerControlsCollapsed = !trailerControlsCollapsed"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path :d="trailerControlsCollapsed ? 'm6 9 6 6 6-6' : 'm18 15-6-6-6 6'" />
-              </svg>
-            </button>
-            <div v-show="!trailerControlsCollapsed" class="toolbar-full-icons-main">
-            <button type="button" class="icon-tool" title="Voltar ao trailer" @click="closeFullVideo">
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              class="icon-tool icon-tool--theater"
-              :class="{ 'icon-tool--on': theaterMode }"
-              :title="theaterMode ? 'Sair do modo cinema' : 'Modo cinema (só vídeo e barra inferior)'"
-              :aria-pressed="theaterMode"
-              aria-label="Alternar modo cinema"
-              @click="theaterMode = !theaterMode"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z" />
-                <path d="m6.2 5.3 3.1 3.9" />
-                <path d="m12.4 3.4 3.1 4" />
-                <path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-              </svg>
-            </button>
-            <button
-              v-if="mainVideoEntry"
-              type="button"
-              class="icon-tool icon-tool--fav"
-              :class="{ 'icon-tool--fav-on': mainVideoEntry.isFavorite }"
-              :aria-pressed="!!mainVideoEntry.isFavorite"
-              :title="mainVideoEntry.isFavorite ? 'Retirar dos favoritos' : 'Favorito'"
-              @click="toggleFavoriteAtIndex(null)"
-            >
-              {{ mainVideoEntry.isFavorite ? '★' : '☆' }}
-            </button>
-            <button
-              v-if="mainVideoEntry"
-              type="button"
-              class="icon-tool icon-tool--memorable"
-              :class="{ 'icon-tool--memorable-on': isEntryMemorable(mainVideoEntry) }"
-              :aria-pressed="isEntryMemorable(mainVideoEntry)"
-              :title="isEntryMemorable(mainVideoEntry)
-                ? 'Retirar marca de memorável'
-                : 'Memorável (marca como visto e empurra para o fim)'"
-              @click="toggleMemorableAtIndex(null)"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M7 4h10v3a5 5 0 0 1-5 5 5 5 0 0 1-5-5V4z" />
-                <path d="M17 5h3a2 2 0 0 1-3 4" />
-                <path d="M7 5H4a2 2 0 0 0 3 4" />
-                <path d="M9 21h6" />
-                <path d="M12 12v6" />
-                <path d="M9.5 18h5l-.5 3h-4z" fill="currentColor" stroke="none" />
-              </svg>
-            </button>
-            <button
-              v-if="destaqueToolbarEntry && playerUrl"
-              type="button"
-              class="icon-tool icon-tool--recents"
-              :class="{ 'icon-tool--recents-on': destaqueToolbarActive }"
-              :disabled="recentsMutationBusy"
-              :title="
-                destaqueToolbarActive
-                  ? 'Remover da lista «Destaques»'
-                  : 'Adicionar a «Destaques» (lista no topo do menu)'
-              "
-              :aria-label="
-                destaqueToolbarActive ? 'Remover de Destaques' : 'Adicionar a Destaques'
-              "
-              :aria-pressed="destaqueToolbarActive"
-              @click="toggleCurrentTitleRecents"
-            >
-              <svg
-                v-if="!destaqueToolbarActive"
-                class="icon-svg"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
-                <circle cx="12" cy="12" r="3.5" />
-              </svg>
-              <svg
-                v-else
-                class="icon-svg"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path
-                  d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
-                />
-                <line x1="1" y1="1" x2="23" y2="23" />
-              </svg>
-            </button>
-            <button
-              v-if="moveTitleDesktopEligible && activeIndex !== null && mainVideoEntry && !fromDuplicatesLite"
-              type="button"
-              class="icon-tool icon-tool--move-library"
-              title="Mover vídeo completo, trailer, preview e miniaturas para outra biblioteca de pastas"
-              aria-label="Mover para outra pasta"
-              @click="openMoveTitleDialog()"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                <path d="M12 11v6M9 14h6" />
-              </svg>
-            </button>
-            <button
-              v-if="editorDesktopEligible && editorOpenEntry && !fromDuplicatesLite"
-              type="button"
-              class="icon-tool icon-tool--editor"
-              title="Editar vídeo completo (abre o editor — backup e substitui o original)"
-              aria-label="Abrir no editor de vídeo"
-              @click="openCurrentVideoInEditor"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-              </svg>
-            </button>
-            <button
-              v-if="trailerReprocessEligible && editorOpenEntry && !fromDuplicatesLite"
-              type="button"
-              class="icon-tool icon-tool--trailer-redo"
-              :class="{ 'icon-tool--busy': trailerReprocessBusy }"
-              :disabled="shrinkInPlaceBusy"
-              title="Reprocessar trailer deste vídeo (fila — opções do trailer.bat)"
-              aria-label="Reprocessar trailer"
-              @click="openTrailerReprocessDialog"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                <path d="M3 3v5h5" />
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                <path d="M16 16h5v5" />
-              </svg>
-            </button>
-            <button
-              v-if="shrinkInPlaceEligible && editorOpenEntry && !fromDuplicatesLite"
-              type="button"
-              class="icon-tool icon-tool--shrink"
-              :class="{ 'icon-tool--busy': shrinkInPlaceBusy }"
-              :disabled="trailerReprocessBusy"
-              title="Shrink do vídeo completo (fila — substitui o original)"
-              aria-label="Shrink do vídeo completo"
-              @click="openShrinkInPlaceDialog"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M16 22h2a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v3" />
-                <path d="M14 2v4a2 2 0 0 0 2 2h4" />
-                <path d="M10 20v-1a2 2 0 1 1 4 0v1a2 2 0 1 1-4 0Z" />
-                <path d="M12 7v1" />
-                <path d="M12 11v1" />
-                <path d="M12 15v1" />
-              </svg>
-            </button>
-            <button
-              v-if="activeIndex !== null && mainVideoEntry && !fromDuplicatesLite"
-              type="button"
-              class="icon-tool icon-tool--danger"
-              title="Mover para a Lixeira (completo, trailer, preview)"
-              @click="deleteTitleAtIndex(activeIndex)"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 6h18M8 6V4h8v2m2 0v14a2 2 0 01-2 2H8a2 2 0 01-2-2V6h12M10 11v6M14 11v6" stroke-linecap="round" />
-              </svg>
-            </button>
-            <button
-              v-if="activeIndex !== null && mainVideoEntry"
-              type="button"
-              class="icon-tool icon-tool--fast-play"
-              :class="{ 'icon-tool--on': fastPlayEnabled }"
-              :title="
-                fastPlayEnabled
-                  ? 'Fast Play activo: saltos automáticos; em pausa mostra a barra para mover o progresso (não desliga o FAST). Volte a premir FAST para desligar e sair do ecrã inteiro se estiver activo.'
-                  : 'Fast Play: ao activar, ecrã inteiro (se configurado), saltos automáticos no vídeo completo (Admin). Em pausa aparece a barra nativa; mover o progresso mantém o FAST até voltar a premir o botão.'
-              "
-              :aria-pressed="fastPlayEnabled"
-              @click="toggleFastPlay"
-            >
-              FAST
-            </button>
-            </div>
-            <div class="toolbar-chrome-persist">
-            <div class="rate-block rate-block--inline">
-              <select
-                id="rate-select-main"
-                class="rate-select rate-select--compact"
-                :value="playbackRate"
-                title="Velocidade"
-                aria-label="Velocidade"
-                @change="setPlaybackRate(Number(($event.target as HTMLSelectElement).value))"
-              >
-                <option v-for="r in PLAYBACK_RATES" :key="r" :value="r">
-                  {{ r === 1 ? '1×' : `${r}×` }}
-                </option>
-              </select>
-            </div>
-            </div>
-          </div>
-          <div v-if="playerUrl && mainVideoEntry && !trailerControlsCollapsed" class="media-card-playback-name-row">
-            <button
-              v-if="revealExplorerEligible"
-              type="button"
-              class="icon-tool icon-tool--reveal-explorer"
-              :title="revealInFolderButtonTitle"
-              :aria-label="revealInFolderAriaLabel"
-              @click="revealPlayingFileInExplorer"
-            >
-              <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 7.5V19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
-              </svg>
-            </button>
-            <p
-              class="media-card-playback-video-name"
-              :title="mainVideoEntry.mainFilename"
-            >
-              {{ mainVideoEntry.mainFilename }}
-            </p>
-          </div>
-          <div v-if="mainVideoEntry && !trailerTagsHidden && !trailerControlsCollapsed" class="toolbar-full-tags">
-            <div class="tag-input-row">
-              <input
-                id="tag-input-full"
-                v-model="newTagInput"
-                type="text"
-                class="tag-input"
-                maxlength="80"
-                placeholder="Uma ou várias tags (separar com , ou ;)"
-                list="catalog-tag-suggestions"
-                autocomplete="off"
-                @keydown.enter.prevent="addTagFromInput"
-              />
-              <button type="button" class="tag-add-btn" @click="addTagFromInput">Adicionar</button>
-            </div>
-            <div
-              v-if="(mainVideoEntry.tags?.length ?? 0) > 0"
-              class="tag-chip-list"
-              aria-label="Tags deste título"
-            >
-              <button
-                v-for="t in mainVideoEntry.tags ?? []"
-                :key="t"
-                type="button"
-                class="tag-chip"
-                :class="{ 'tag-chip--active': catalogTagFilter === t }"
-                :title="`Toque para filtrar o catálogo por «${t}». Manter ~2s premido e soltar para remover (com confirmação).`"
-                @pointerdown="onTagChipPointerDown(libSession(mainVideoEntry), mainVideoEntry.trailerRel, t, $event)"
-                @pointerup="onTagChipPointerUp(libSession(mainVideoEntry), mainVideoEntry.trailerRel, t, $event)"
-                @pointercancel="onTagChipPointerCancel($event)"
-              >
-                <span class="tag-chip-text">{{ t }}</span>
-              </button>
-            </div>
-          </div>
-        </div>
+        <PlayerChromeToolbar
+          v-else-if="playerUrl"
+          mode="full"
+          :title="playerChromeFullTitle"
+          :chrome-collapsed="trailerControlsCollapsed"
+          :theater-mode="theaterMode"
+          :playback-rate="playbackRate"
+          :playback-rates="PLAYBACK_RATES"
+          :show-theater="true"
+          :show-tags="true"
+          :show-move="moveTitleDesktopEligible && activeIndex !== null && !!mainVideoEntry"
+          :show-editor="editorDesktopEligible && !!editorOpenEntry"
+          :show-trailer-reprocess="trailerReprocessEligible && !!editorOpenEntry"
+          :show-shrink="shrinkInPlaceEligible && !!editorOpenEntry"
+          :show-delete="activeIndex !== null && !!mainVideoEntry"
+          :show-reveal="revealExplorerEligible"
+          :show-nav="false"
+          :show-pin="false"
+          :show-shuffle="false"
+          :show-open-full="false"
+          :show-fast-play="true"
+          :show-name-row="!!mainVideoEntry"
+          :show-size-in-name="false"
+          :destaque-busy="recentsMutationBusy"
+          :shrink-busy="shrinkInPlaceBusy"
+          :trailer-busy="trailerReprocessBusy"
+          :fast-play-on="fastPlayEnabled"
+          :tags-panel-open="true"
+          :tags-hidden="trailerTagsHidden"
+          :reveal-title="revealInFolderButtonTitle"
+          :reveal-aria="revealInFolderAriaLabel"
+          :tag-input="newTagInput"
+          :tag-suggestions="tagSuggestions"
+          tag-input-id="tag-input-full"
+          datalist-id="catalog-tag-suggestions-full"
+          rate-select-id="rate-select-main"
+          :tag-filter-active="catalogTagFilter"
+          @update:chrome-collapsed="trailerControlsCollapsed = $event"
+          @update:theater-mode="theaterMode = $event"
+          @update:playback-rate="setPlaybackRate"
+          @update:tag-input="newTagInput = $event"
+          @toggle-favorite="toggleFavoriteAtIndex(null)"
+          @toggle-memorable="toggleMemorableAtIndex(null)"
+          @toggle-destaque="toggleCurrentTitleRecents"
+          @open-move="openMoveTitleDialog()"
+          @open-editor="openCurrentVideoInEditor"
+          @open-trailer-reprocess="openTrailerReprocessDialog"
+          @open-shrink="openShrinkInPlaceDialog"
+          @delete-title="activeIndex !== null && deleteTitleAtIndex(activeIndex)"
+          @reveal="revealPlayingFileInExplorer"
+          @close-full="closeFullVideo"
+          @toggle-fast-play="toggleFastPlay"
+          @add-tags="addTagFromInput"
+          @tag-pointer-down="(t, e) => mainVideoEntry && onTagChipPointerDown(libSession(mainVideoEntry), mainVideoEntry.trailerRel, t, e)"
+          @tag-pointer-up="(t, e) => mainVideoEntry && onTagChipPointerUp(libSession(mainVideoEntry), mainVideoEntry.trailerRel, t, e)"
+          @tag-pointer-cancel="onTagChipPointerCancel"
+        />
         </div>
         </div>
       </section>
@@ -2272,8 +1752,9 @@
             </button>
           </div>
           <p class="tag-browse-hint">
-            Contagem em todas as pastas. Clica numa tag para buscar. Usa listas para agrupar tags
-            (ex.: género, local, tipo).
+            Contagem em todas as pastas. Clica numa tag para buscar. Listas (ex. «Supermercado»)
+            guardam itens de busca (ex. «Arroz Branco») — ao abrir a lista, mostra mosaicos
+            aleatórios dos vídeos encontrados.
           </p>
           <p v-if="tagBrowseError" class="tag-browse-err" role="alert">{{ tagBrowseError }}</p>
 
@@ -2333,7 +1814,7 @@
                   type="text"
                   class="tag-browse-filter"
                   maxlength="80"
-                  placeholder="Nova lista…"
+                  placeholder="Nova lista (ex. Supermercado)…"
                   aria-label="Nome da nova lista"
                 />
                 <button
@@ -2345,7 +1826,7 @@
                 </button>
               </form>
               <div v-if="!tagBrowseLists.length" class="tag-browse-empty">
-                Ainda sem listas. Cria uma para categorizar tags.
+                Ainda sem listas. Cria uma e adiciona itens de busca.
               </div>
               <ul v-else class="tag-browse-lists" role="list">
                 <li
@@ -2357,7 +1838,7 @@
                   <button
                     type="button"
                     class="tag-browse-list-pick"
-                    @click="tagBrowseSelectedListId = list.id"
+                    @click="selectTagBrowseList(list.id)"
                   >
                     <span class="tag-browse-list-name">{{ list.name }}</span>
                     <span class="tag-browse-list-qty">{{ list.tags.length }}</span>
@@ -2378,28 +1859,150 @@
                   Em «{{ tagBrowseSelectedList.name }}»
                   <span class="tag-browse-list-qty">{{ tagBrowseSelectedList.tags.length }}</span>
                 </p>
-                <p v-if="!tagBrowseSelectedList.tags.length" class="tag-browse-empty">
-                  Usa + nas tags à esquerda para adicionar.
+                <form class="tag-browse-create" @submit.prevent="addItemToSelectedList">
+                  <input
+                    v-model="tagBrowseNewItemName"
+                    type="text"
+                    class="tag-browse-filter"
+                    maxlength="80"
+                    placeholder="Novo item (ex. Arroz Branco)…"
+                    aria-label="Adicionar item à lista"
+                  />
+                  <button
+                    type="submit"
+                    class="tag-browse-create-btn"
+                    :disabled="tagBrowseListBusy || tagBrowseNewItemName.trim().length < 2"
+                  >
+                    + Item
+                  </button>
+                </form>
+                <p v-if="tagBrowsePreviewLoading" class="tag-browse-empty">
+                  A carregar mosaicos…
                 </p>
-                <ul v-else class="tag-browse-selected-tags">
-                  <li v-for="t in tagBrowseSelectedList.tags" :key="t">
-                    <button
-                      type="button"
-                      class="tag-browse-chip"
-                      :title="`Buscar «${t}»`"
-                      @click="searchFromTagBrowse(t)"
+                <p
+                  v-else-if="!tagBrowseSelectedList.tags.length"
+                  class="tag-browse-empty"
+                >
+                  Escreve um item acima ou usa + nas tags à esquerda.
+                </p>
+                <ul v-else class="tag-browse-item-cards" role="list">
+                  <li
+                    v-for="t in tagBrowseSelectedList.tags"
+                    :key="t"
+                    class="tag-browse-item-card"
+                  >
+                    <div class="tag-browse-item-card-head">
+                      <form
+                        v-if="tagBrowseEditingItem === t"
+                        class="tag-browse-item-edit"
+                        @submit.prevent="commitTagBrowseItemRename"
+                      >
+                        <input
+                          v-model="tagBrowseEditDraft"
+                          type="text"
+                          class="tag-browse-filter tag-browse-item-edit-input"
+                          maxlength="80"
+                          aria-label="Renomear item"
+                          @keydown.escape.prevent="cancelTagBrowseItemEdit"
+                        />
+                        <button
+                          type="submit"
+                          class="tag-browse-item-icon-btn tag-browse-item-icon-btn--ok"
+                          title="Guardar"
+                          :disabled="tagBrowseListBusy || tagBrowseEditDraft.trim().length < 2"
+                        >
+                          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          class="tag-browse-item-icon-btn"
+                          title="Cancelar"
+                          :disabled="tagBrowseListBusy"
+                          @click="cancelTagBrowseItemEdit"
+                        >
+                          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round">
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                        </button>
+                      </form>
+                      <template v-else>
+                        <button
+                          type="button"
+                          class="tag-browse-chip"
+                          :title="`Buscar «${t}»`"
+                          @click="searchFromTagBrowse(t)"
+                        >
+                          {{ t }}
+                        </button>
+                        <span
+                          v-if="tagBrowsePreviewByQuery[t]"
+                          class="tag-browse-item-total"
+                          :title="'Correspondências no catálogo'"
+                        >
+                          {{ tagBrowsePreviewByQuery[t]!.total }}
+                        </span>
+                        <button
+                          type="button"
+                          class="tag-browse-item-icon-btn"
+                          title="Editar item"
+                          aria-label="Editar item"
+                          :disabled="tagBrowseListBusy"
+                          @click="startTagBrowseItemEdit(t)"
+                        >
+                          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          class="tag-browse-item-icon-btn tag-browse-item-icon-btn--danger"
+                          title="Excluir item"
+                          aria-label="Excluir item"
+                          :disabled="tagBrowseListBusy"
+                          @click="removeTagBrowseItem(t)"
+                        >
+                          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            <line x1="10" y1="11" x2="10" y2="17" />
+                            <line x1="14" y1="11" x2="14" y2="17" />
+                          </svg>
+                        </button>
+                      </template>
+                    </div>
+                    <div
+                      v-if="(tagBrowsePreviewByQuery[t]?.samples.length ?? 0) > 0"
+                      class="tag-browse-mosaic"
+                      role="group"
+                      :aria-label="`Pré-visualizações de «${t}»`"
                     >
-                      {{ t }}
-                    </button>
-                    <button
-                      type="button"
-                      class="tag-browse-chip-x"
-                      title="Remover da lista"
-                      :disabled="tagBrowseListBusy"
-                      @click="toggleTagInSelectedList(t, false)"
+                      <button
+                        v-for="(s, si) in tagBrowsePreviewByQuery[t]!.samples"
+                        :key="`${s.session}-${s.trailerRel}-${si}`"
+                        type="button"
+                        class="tag-browse-mosaic-cell"
+                        :title="s.label"
+                        @click="searchFromTagBrowse(t)"
+                      >
+                        <img
+                          class="tag-browse-mosaic-img"
+                          :src="catalogPreviewFrameUrl(s.previewRel || s.trailerRel, s.session, si % 4)"
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </button>
+                    </div>
+                    <p
+                      v-else-if="tagBrowsePreviewByQuery[t] && tagBrowsePreviewByQuery[t]!.total === 0"
+                      class="tag-browse-empty tag-browse-empty--tiny"
                     >
-                      ×
-                    </button>
+                      Nenhum vídeo encontrado ainda.
+                    </p>
                   </li>
                 </ul>
               </div>
@@ -2802,6 +2405,8 @@
 
 <script setup lang="ts">
 import type { TrailerListEntry } from '~/composables/useVideoFolder'
+import PlayerChromeToolbar from '~/components/player/PlayerChromeToolbar.vue'
+import type { PlayerChromeTitle } from '~/components/player/PlayerChromeToolbar.vue'
 import {
   MEMORABLE_TAG_NAME,
   PLAYBACK_RATES,
@@ -2923,6 +2528,31 @@ const editorOpenEntry = computed((): TrailerListEntry | null => {
   if (selectedEntry.value?.hasMain) return selectedEntry.value
   return null
 })
+
+function toPlayerChromeTitle(
+  entry: TrailerListEntry | null | undefined,
+  inDestaques = false,
+): PlayerChromeTitle | null {
+  if (!entry) return null
+  return {
+    displayName: entry.mainFilename || entry.trailerRel,
+    mainFilename: entry.mainFilename,
+    mainSizeBytes: entry.mainSizeBytes,
+    isFavorite: !!entry.isFavorite,
+    isMemorable: isEntryMemorable(entry),
+    inDestaques,
+    hasMain: !!entry.hasMain,
+    tags: [...(entry.tags ?? [])],
+  }
+}
+
+const playerChromeTrailerTitle = computed(() =>
+  toPlayerChromeTitle(selectedEntry.value, !!destaqueToolbarActive.value),
+)
+
+const playerChromeFullTitle = computed(() =>
+  toPlayerChromeTitle(mainVideoEntry.value, !!destaqueToolbarActive.value),
+)
 const trailerReprocessEligible = computed(
   () => !isTvLayout.value && serverPlatform.value.toLowerCase() === 'win32',
 )
@@ -4388,6 +4018,12 @@ interface TagBrowseList {
   tags: string[]
   updatedAt?: string
 }
+interface TagBrowsePreviewSample {
+  session: number
+  trailerRel: string
+  label: string
+  previewRel: string
+}
 
 const tagBrowseDialogOpen = ref(false)
 const tagBrowseLoading = ref(false)
@@ -4398,7 +4034,15 @@ const tagBrowseRows = ref<TagBrowseRow[]>([])
 const tagBrowseLists = ref<TagBrowseList[]>([])
 const tagBrowseSelectedListId = ref<string | null>(null)
 const tagBrowseNewListName = ref('')
+const tagBrowseNewItemName = ref('')
 const tagBrowseListBusy = ref(false)
+const tagBrowsePreviewLoading = ref(false)
+const tagBrowseEditingItem = ref<string | null>(null)
+const tagBrowseEditDraft = ref('')
+const tagBrowsePreviewByQuery = reactive<
+  Record<string, { total: number; samples: TagBrowsePreviewSample[] }>
+>({})
+let tagBrowsePreviewSeq = 0
 
 const tagBrowseFilteredRows = computed(() => {
   const q = tagBrowseFilter.value.trim().toLowerCase()
@@ -4419,6 +4063,61 @@ function tagInSelectedList(tag: string): boolean {
   return list.tags.some((t) => t.toLowerCase() === key)
 }
 
+function clearTagBrowsePreviews() {
+  for (const k of Object.keys(tagBrowsePreviewByQuery)) delete tagBrowsePreviewByQuery[k]
+}
+
+async function loadTagBrowseItemPreviews(queries: string[], listId?: string | null) {
+  const qs = [...new Set(queries.map((q) => q.trim()).filter((q) => q.length >= 2))]
+  if (!qs.length) {
+    clearTagBrowsePreviews()
+    return
+  }
+  const seq = ++tagBrowsePreviewSeq
+  tagBrowsePreviewLoading.value = true
+  try {
+    const res = await $fetch<{
+      rows?: {
+        query: string
+        total: number
+        samples: TagBrowsePreviewSample[]
+      }[]
+      cached?: boolean
+      computed?: number
+    }>('/api/library/tag-list-previews', {
+      method: 'POST',
+      body: {
+        queries: qs,
+        sample: 6,
+        ...(listId ? { listId } : {}),
+      },
+    })
+    if (seq !== tagBrowsePreviewSeq) return
+    clearTagBrowsePreviews()
+    for (const row of res.rows ?? []) {
+      tagBrowsePreviewByQuery[row.query] = {
+        total: row.total,
+        samples: Array.isArray(row.samples) ? row.samples : [],
+      }
+    }
+  } catch (e: unknown) {
+    if (seq !== tagBrowsePreviewSeq) return
+    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    tagBrowseError.value =
+      ex?.data?.statusMessage || ex?.message || 'Falha ao montar pré-visualizações.'
+  } finally {
+    if (seq === tagBrowsePreviewSeq) tagBrowsePreviewLoading.value = false
+  }
+}
+
+function selectTagBrowseList(id: string) {
+  tagBrowseSelectedListId.value = id
+  tagBrowseNewItemName.value = ''
+  cancelTagBrowseItemEdit()
+  const list = tagBrowseLists.value.find((l) => l.id === id)
+  void loadTagBrowseItemPreviews(list?.tags ?? [], id)
+}
+
 async function refreshTagBrowseData() {
   tagBrowseLoading.value = true
   tagBrowseError.value = ''
@@ -4435,6 +4134,10 @@ async function refreshTagBrowseData() {
       !tagBrowseLists.value.some((l) => l.id === tagBrowseSelectedListId.value)
     ) {
       tagBrowseSelectedListId.value = null
+      clearTagBrowsePreviews()
+    } else if (tagBrowseSelectedListId.value) {
+      const list = tagBrowseLists.value.find((l) => l.id === tagBrowseSelectedListId.value)
+      void loadTagBrowseItemPreviews(list?.tags ?? [], tagBrowseSelectedListId.value)
     }
   } catch (e: unknown) {
     const ex = e as { data?: { statusMessage?: string }; message?: string }
@@ -4453,6 +4156,64 @@ async function openTagBrowseDialog() {
 
 function closeTagBrowseDialog() {
   tagBrowseDialogOpen.value = false
+  cancelTagBrowseItemEdit()
+}
+
+function startTagBrowseItemEdit(tag: string) {
+  const t = tag.trim()
+  if (!t || tagBrowseListBusy.value) return
+  tagBrowseEditingItem.value = t
+  tagBrowseEditDraft.value = t
+  void nextTick(() => {
+    const el = document.querySelector(
+      '.tag-browse-item-edit-input',
+    ) as HTMLInputElement | null
+    el?.focus()
+    el?.select()
+  })
+}
+
+function cancelTagBrowseItemEdit() {
+  tagBrowseEditingItem.value = null
+  tagBrowseEditDraft.value = ''
+}
+
+async function commitTagBrowseItemRename() {
+  const listId = tagBrowseSelectedListId.value
+  const from = tagBrowseEditingItem.value
+  const to = tagBrowseEditDraft.value.trim().replace(/\s+/g, ' ')
+  if (!listId || !from || tagBrowseListBusy.value) return
+  if (to.length < 2) return
+  if (to.toLowerCase() === from.toLowerCase() && to === from) {
+    cancelTagBrowseItemEdit()
+    return
+  }
+  tagBrowseListBusy.value = true
+  tagBrowseError.value = ''
+  try {
+    const res = await $fetch<{ lists?: TagBrowseList[] }>('/api/library/tag-lists', {
+      method: 'POST',
+      body: { action: 'rename-tag', id: listId, from, to },
+    })
+    tagBrowseLists.value = Array.isArray(res.lists) ? res.lists : []
+    cancelTagBrowseItemEdit()
+    const list = tagBrowseLists.value.find((l) => l.id === listId)
+    void loadTagBrowseItemPreviews(list?.tags ?? [], listId)
+  } catch (e: unknown) {
+    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    tagBrowseError.value =
+      ex?.data?.statusMessage || ex?.message || 'Falha ao renomear item.'
+  } finally {
+    tagBrowseListBusy.value = false
+  }
+}
+
+async function removeTagBrowseItem(tag: string) {
+  const t = tag.trim()
+  if (!t || tagBrowseListBusy.value) return
+  if (!confirm(`Excluir o item «${t}» desta lista?`)) return
+  if (tagBrowseEditingItem.value === t) cancelTagBrowseItemEdit()
+  await toggleTagInSelectedList(t, false)
 }
 
 async function searchFromTagBrowse(tag: string) {
@@ -4479,13 +4240,24 @@ async function createTagBrowseList() {
     const created = tagBrowseLists.value.find(
       (l) => l.name.toLowerCase() === name.toLowerCase(),
     )
-    if (created) tagBrowseSelectedListId.value = created.id
+    if (created) selectTagBrowseList(created.id)
   } catch (e: unknown) {
     const ex = e as { data?: { statusMessage?: string }; message?: string }
     tagBrowseError.value =
       ex?.data?.statusMessage || ex?.message || 'Falha ao criar lista.'
   } finally {
     tagBrowseListBusy.value = false
+  }
+}
+
+async function addItemToSelectedList() {
+  const raw = tagBrowseNewItemName.value.trim().replace(/\s+/g, ' ')
+  if (raw.length < 2 || tagBrowseListBusy.value) return
+  await toggleTagInSelectedList(raw, true)
+  if (!tagBrowseError.value) {
+    tagBrowseNewItemName.value = ''
+    const list = tagBrowseSelectedList.value
+    void loadTagBrowseItemPreviews(list?.tags ?? [], list?.id)
   }
 }
 
@@ -4501,7 +4273,10 @@ async function deleteTagBrowseList(id: string) {
       body: { action: 'delete', id },
     })
     tagBrowseLists.value = Array.isArray(res.lists) ? res.lists : []
-    if (tagBrowseSelectedListId.value === id) tagBrowseSelectedListId.value = null
+    if (tagBrowseSelectedListId.value === id) {
+      tagBrowseSelectedListId.value = null
+      clearTagBrowsePreviews()
+    }
   } catch (e: unknown) {
     const ex = e as { data?: { statusMessage?: string }; message?: string }
     tagBrowseError.value =
@@ -4528,6 +4303,8 @@ async function toggleTagInSelectedList(tag: string, wantIn?: boolean) {
       body,
     })
     tagBrowseLists.value = Array.isArray(res.lists) ? res.lists : []
+    const list = tagBrowseLists.value.find((l) => l.id === listId)
+    void loadTagBrowseItemPreviews(list?.tags ?? [], listId)
   } catch (e: unknown) {
     const ex = e as { data?: { statusMessage?: string }; message?: string }
     tagBrowseError.value =
@@ -9177,23 +8954,145 @@ onUnmounted(() => {
   gap: 0.4rem;
 }
 
-.tag-browse-selected-tags {
+.tag-browse-item-cards {
   list-style: none;
-  margin: 0;
+  margin: 0.45rem 0 0;
   padding: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
+  flex-direction: column;
+  gap: 0.55rem;
 }
 
-.tag-browse-selected-tags > li {
-  display: inline-flex;
+.tag-browse-item-card {
+  border: 1px solid #2d333b;
+  border-radius: 10px;
+  background: #12161c;
+  padding: 0.4rem 0.45rem 0.5rem;
+}
+
+.tag-browse-item-card-head {
+  display: flex;
   align-items: center;
-  gap: 0;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.tag-browse-item-card-head .tag-browse-chip {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
   border: 1px solid #2d3a4a;
   border-radius: 999px;
-  overflow: hidden;
   background: #151a22;
+  padding: 0.28rem 0.55rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-browse-item-card-head .tag-browse-chip:hover {
+  border-color: #5f9dee;
+  background: #1e2a3d;
+}
+
+.tag-browse-item-total {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: #fdd663;
+  font-weight: 600;
+}
+
+.tag-browse-item-edit {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.tag-browse-item-edit-input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.tag-browse-item-icon-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  border: 1px solid #2d333b;
+  border-radius: 6px;
+  background: #151a22;
+  color: #9aa0a6;
+  cursor: pointer;
+}
+
+.tag-browse-item-icon-btn svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.tag-browse-item-icon-btn:hover:not(:disabled) {
+  color: #e8eaed;
+  border-color: #5f9dee;
+  background: #1e2a3d;
+}
+
+.tag-browse-item-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tag-browse-item-icon-btn--ok:hover:not(:disabled) {
+  color: #b7f0c4;
+  border-color: #3d8f55;
+  background: #15241a;
+}
+
+.tag-browse-item-icon-btn--danger:hover:not(:disabled) {
+  color: #f8b4b0;
+  border-color: #8b3a3a;
+  background: #2a1a1a;
+}
+
+.tag-browse-mosaic {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.tag-browse-mosaic-cell {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border: 0;
+  padding: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #0a0b0d;
+  cursor: pointer;
+}
+
+.tag-browse-mosaic-cell:hover {
+  outline: 1px solid #5f9dee;
+  outline-offset: 0;
+}
+
+.tag-browse-mosaic-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tag-browse-empty--tiny {
+  margin: 0;
+  padding: 0.15rem 0 0;
+  font-size: 0.72rem;
 }
 
 .tag-browse-chip {

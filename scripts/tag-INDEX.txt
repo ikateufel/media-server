@@ -7,6 +7,8 @@ Scripts com prefixo tag-* (ordenacao alfabetica na pasta scripts/)
   tag-import-file-lists.ts  passo 4 — importa CSV tags_* para a SQLite
 
   tag-pipeline.ts           orquestra os quatro passos acima
+    Flags: --dry-run | --new-only | --all | --session=N
+    --new-only: nao limpa; import so para videos sem nenhuma tag
 
   tag-from-names.py          Python: nomes em trailers/ → tags_<sessao>.csv (regras JSON em data/tag-rules/)
   tag-from-names.cmd         Launcher CMD local para tag-from-names.py

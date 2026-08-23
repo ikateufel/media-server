@@ -171,15 +171,26 @@
                 </button>
               </td>
               <td class="admin-td-autotags">
-                <button
-                  type="button"
-                  class="admin-btn admin-btn--sm"
-                  :disabled="autoTagsBusy || jobActive"
-                  title="Corre o pipeline de tags automáticas só para esta sessão (índice da linha)"
-                  @click="runAutoTags({ session: i })"
-                >
-                  Auto-tags
-                </button>
+                <div class="admin-autotags-btns">
+                  <button
+                    type="button"
+                    class="admin-btn admin-btn--sm"
+                    :disabled="autoTagsBusy || jobActive"
+                    title="Pipeline completo nesta sessão (limpa auto-tags e regenera)"
+                    @click="runAutoTags({ session: i })"
+                  >
+                    Auto-tags
+                  </button>
+                  <button
+                    type="button"
+                    class="admin-btn admin-btn--sm"
+                    :disabled="autoTagsBusy || jobActive"
+                    title="Só gera tags para vídeos desta pasta que ainda não têm nenhuma tag (não limpa existentes)"
+                    @click="runAutoTags({ session: i, newOnly: true })"
+                  >
+                    Auto-tags new
+                  </button>
+                </div>
               </td>
               <td class="admin-td-del">
                 <button
@@ -290,6 +301,7 @@
         <code class="admin-code">tags_*.csv</code>
         via Python sobre <code class="admin-code">trailers/</code> e importa para a SQLite de tags. É preciso Python no PATH
         no servidor no passo intermédio.
+        <strong>Auto-tags new</strong> não limpa a base e só atribui tags a ficheiros que ainda não têm nenhuma.
       </p>
       <div class="admin-row admin-row--checks">
         <label class="admin-check-label">
@@ -309,6 +321,15 @@
           @click="runAutoTags({ all: true })"
         >
           Auto-tags (todas)
+        </button>
+        <button
+          type="button"
+          class="admin-btn admin-btn--primary"
+          :disabled="autoTagsBusy || jobActive || !rows.length"
+          title="Em todas as pastas: só vídeos sem tags; não limpa tags existentes"
+          @click="runAutoTags({ all: true, newOnly: true })"
+        >
+          Auto-tags new (todas)
         </button>
         <button type="button" class="admin-btn admin-btn--ghost" @click="addRow">+ Linha</button>
         <button type="button" class="admin-btn admin-btn--ghost" @click="removeLastRow" :disabled="rows.length <= 1">
@@ -1259,10 +1280,11 @@ async function startSyncJob(kind: JobKind, opts: { all?: boolean; session?: numb
   }
 }
 
-async function runAutoTags(opts: { all?: boolean; session?: number }) {
+async function runAutoTags(opts: { all?: boolean; session?: number; newOnly?: boolean }) {
   if (autoTagsBusy.value || jobActive.value) return
 
-  const clearManual = autoTagsClearManual.value
+  const newOnly = opts.newOnly === true
+  const clearManual = !newOnly && autoTagsClearManual.value
   if (clearManual) {
     if (
       !confirm(
@@ -1285,6 +1307,7 @@ async function runAutoTags(opts: { all?: boolean; session?: number }) {
         all: opts.all === true,
         ...(opts.all === true ? {} : { session: opts.session }),
         clearManual,
+        newOnly,
       },
     })
     autoTagsResult.value = data
@@ -1292,7 +1315,9 @@ async function runAutoTags(opts: { all?: boolean; session?: number }) {
       autoTagsErr.value = `O pipeline terminou com código ${data.exitCode}.`
     } else {
       flashReloadMsg(
-        'Pipeline auto-tags concluído. Recarrega o reprodutor (F5) para ver tags actualizadas.',
+        newOnly
+          ? 'Auto-tags new concluído (só ficheiros sem tags). Recarrega o reprodutor (F5) se precisares.'
+          : 'Pipeline auto-tags concluído. Recarrega o reprodutor (F5) para ver tags actualizadas.',
       )
     }
   } catch (e: unknown) {
@@ -1746,14 +1771,21 @@ async function checkFolderStatsAll(mode: 'counts' | 'pairing') {
 
 .admin-td-autotags {
   white-space: nowrap;
+  vertical-align: top;
 }
 
-.admin-td-sync,
-.admin-td-autotags {
+.admin-td-sync {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
   align-items: center;
+}
+
+.admin-autotags-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: stretch;
 }
 
 .admin-col-del {

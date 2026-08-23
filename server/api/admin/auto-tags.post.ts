@@ -81,10 +81,11 @@ function runAutoTagsPipeline(
  * Executa o mesmo pipeline que `npm run auto-tags` (scripts/tag-pipeline.ts).
  *
  * Body:
- *   { dryRun?: boolean, all?: boolean, session?: number, clearManual?: boolean }
+ *   { dryRun?: boolean, all?: boolean, session?: number, clearManual?: boolean, newOnly?: boolean }
  *
  * `all: true` → exporta todas as sessões; caso contrário `session` é obrigatório (índice 0..n-1).
  * `clearManual: true` → repassa `--all` ao passo de limpeza (apaga também tags manuais).
+ * `newOnly: true` → não limpa tags; só importa para vídeos que ainda não têm nenhuma tag.
  */
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
@@ -95,6 +96,7 @@ export default defineEventHandler(async (event) => {
     all?: unknown
     session?: unknown
     clearManual?: unknown
+    newOnly?: unknown
   } | null
 
   const items = getVideoMenuItems(config)
@@ -106,11 +108,21 @@ export default defineEventHandler(async (event) => {
   }
 
   const dryRun = body?.dryRun === true || body?.dryRun === 'true' || body?.dryRun === 1
-  const clearManual = body?.clearManual === true || body?.clearManual === 'true' || body?.clearManual === 1
+  const clearManual =
+    body?.clearManual === true || body?.clearManual === 'true' || body?.clearManual === 1
+  const newOnly = body?.newOnly === true || body?.newOnly === 'true' || body?.newOnly === 1
   const all = body?.all === true || body?.all === 'true' || body?.all === 1
+
+  if (newOnly && clearManual) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'newOnly e clearManual não podem ser usados em conjunto.',
+    })
+  }
 
   const pipelineArgs: string[] = []
   if (dryRun) pipelineArgs.push('--dry-run')
+  if (newOnly) pipelineArgs.push('--new-only')
   if (clearManual) pipelineArgs.push('--all')
 
   if (all) {
@@ -144,5 +156,6 @@ export default defineEventHandler(async (event) => {
     stdout: result.stdout,
     stderr: result.stderr,
     truncated: result.truncated,
+    newOnly,
   }
 })

@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import {
+  deleteAllTagListPreviews,
+  deleteTagListPreview,
+  pruneTagListPreviewsToQueries,
+} from './tagListPreviewCache'
 import { normalizeTagInput, TAG_MAX_LEN } from './videoTagsDb'
 
 export interface TagList {
@@ -128,6 +133,7 @@ export async function deleteTagList(idRaw: unknown): Promise<TagListsState> {
   const state = await readTagLists()
   const next = state.lists.filter((l) => l.id !== id)
   if (next.length === state.lists.length) throw new Error('Lista não encontrada.')
+  deleteAllTagListPreviews(id)
   return writeTagLists({ lists: next })
 }
 
@@ -139,6 +145,7 @@ export async function setTagListTags(idRaw: unknown, tagsRaw: unknown): Promise<
   if (!list) throw new Error('Lista não encontrada.')
   list.tags = normalizeTagArray(tagsRaw)
   list.updatedAt = nowIso()
+  pruneTagListPreviewsToQueries(id, list.tags)
   return writeTagLists(state)
 }
 
@@ -158,7 +165,46 @@ export async function toggleTagInList(
   const has = list.tags.some((t) => t.toLowerCase() === key)
   const shouldAdd = wantIn == null ? !has : Boolean(wantIn)
   if (shouldAdd && !has) list.tags = normalizeTagArray([...list.tags, tag])
-  if (!shouldAdd && has) list.tags = list.tags.filter((t) => t.toLowerCase() !== key)
+  if (!shouldAdd && has) {
+    list.tags = list.tags.filter((t) => t.toLowerCase() !== key)
+    deleteTagListPreview(id, tag)
+  }
   list.updatedAt = nowIso()
+  return writeTagLists(state)
+}
+
+/** Renomeia um item da lista; invalida o mosaico antigo para regenerar. */
+export async function renameTagInList(
+  idRaw: unknown,
+  fromRaw: unknown,
+  toRaw: unknown,
+): Promise<TagListsState> {
+  const id = String(idRaw ?? '').trim()
+  const from = normalizeTagInput(typeof fromRaw === 'string' ? fromRaw : String(fromRaw ?? ''))
+  const to = normalizeTagInput(typeof toRaw === 'string' ? toRaw : String(toRaw ?? ''))
+  if (!id) throw new Error('id da lista obrigatório.')
+  if (!from) throw new Error('item actual inválido.')
+  if (!to) throw new Error('novo nome inválido.')
+  if (to.length < 2) throw new Error('Novo nome demasiado curto.')
+  const state = await readTagLists()
+  const list = state.lists.find((l) => l.id === id)
+  if (!list) throw new Error('Lista não encontrada.')
+  const fromKey = from.toLowerCase()
+  const idx = list.tags.findIndex((t) => t.toLowerCase() === fromKey)
+  if (idx < 0) throw new Error('Item não encontrado na lista.')
+  const toKey = to.toLowerCase()
+  if (list.tags.some((t, i) => i !== idx && t.toLowerCase() === toKey)) {
+    throw new Error('Já existe um item com este nome nesta lista.')
+  }
+  if (fromKey === toKey) {
+    list.tags[idx] = to
+    list.updatedAt = nowIso()
+    return writeTagLists(state)
+  }
+  const next = [...list.tags]
+  next[idx] = to
+  list.tags = normalizeTagArray(next)
+  list.updatedAt = nowIso()
+  deleteTagListPreview(id, from)
   return writeTagLists(state)
 }

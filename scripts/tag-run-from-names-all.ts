@@ -96,14 +96,37 @@ function runPython(trailersDir: string, label: string, treeRelpath?: string): nu
 
 function main() {
   loadDotenv()
+  let onlySession: number | null = null
+  for (const a of process.argv.slice(2)) {
+    if (a === '--help' || a === '-h') {
+      console.log(`
+Uso: npx tsx scripts/tag-run-from-names-all.ts [--session=N]
+
+Corre tag-from-names.py em cada sessão com pasta trailers/.
+  --session=N   Só a sessão N (índice do menu)
+`)
+      process.exit(0)
+    }
+    const ms = a.match(/^--session=(\d+)$/)
+    if (ms) onlySession = Number(ms[1])
+  }
+
   const rows = getVideoMenuRowsForCli()
   if (!rows.length) {
     console.error('Sem bibliotecas: data/video-menu.json (items) ou VIDEO_ROOT / VIDEO_ROOTS no .env.')
     process.exit(1)
   }
 
+  if (onlySession !== null && (onlySession < 0 || onlySession >= rows.length)) {
+    console.error(`--session=${onlySession} fora do intervalo (0..${rows.length - 1}).`)
+    process.exit(1)
+  }
+
+  const indices = onlySession !== null ? [onlySession] : rows.map((_, i) => i)
+
   let failed = 0
-  for (const row of rows) {
+  for (const i of indices) {
+    const row = rows[i]!
     const root = row.path.trim()
     const label = row.title.trim()
     const trailersDir = join(root, 'trailers')
@@ -115,7 +138,7 @@ function main() {
       console.warn(`[skip] nenhum .mp4/.mkv/.avi/.mov em: ${trailersDir}`)
       continue
     }
-    console.log(`\n=== ${label} ===`)
+    console.log(`\n=== [${i}] ${label} ===`)
     const code = runPython(trailersDir, label)
     if (code !== 0) failed++
   }
@@ -124,7 +147,7 @@ function main() {
     console.error(`\nTerminou com ${failed} sessao(oes) com erro.`)
     process.exit(1)
   }
-  console.log('\nFeito: tag-from-names.py em todas as sessoes com trailers.')
+  console.log('\nFeito: tag-from-names.py nas sessoes seleccionadas com trailers.')
 }
 
 main()

@@ -235,6 +235,22 @@ export function getTagsForVideo(session: number, trailerRel: string): string[] {
   return rows.map((r) => r.name)
 }
 
+/** True se o vídeo já tem pelo menos uma tag na SQLite. */
+export function videoHasAnyTags(session: number, trailerRel: string): boolean {
+  const rel = String(trailerRel || '').replace(/\\/g, '/').trim()
+  if (!rel) return false
+  const d = getVideoTagsDb()
+  const row = d
+    .prepare(
+      `SELECT 1 AS ok
+       FROM video_tags
+       WHERE session = ? AND trailer_rel = ?
+       LIMIT 1`,
+    )
+    .get(Math.floor(session), rel) as { ok: number } | undefined
+  return Boolean(row)
+}
+
 export type TaggedVideoRow = {
   session: number
   trailerRel: string

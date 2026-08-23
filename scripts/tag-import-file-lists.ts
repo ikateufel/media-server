@@ -24,7 +24,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { basename, extname, join, resolve } from 'node:path'
 import { getVideoMenuRowsForCli } from '../server/utils/videoMenu'
 import { isCatalogTrailerRelSuffix } from '../server/utils/trailerNames'
-import { addTagsToVideo, normalizeTagInput } from '../server/utils/videoTagsDb'
+import { addTagsToVideo, normalizeTagInput, videoHasAnyTags } from '../server/utils/videoTagsDb'
 
 function loadDotenv() {
   const p = join(process.cwd(), '.env')
@@ -49,6 +49,8 @@ function loadDotenv() {
 
 function parseArgs(argv: string[]) {
   let dryRun = false
+  let newOnly = false
+  let session: number | null = null
   let dir = join(process.cwd(), 'data', 'file-lists')
   for (const a of argv) {
     if (a === '--help' || a === '-h') {
@@ -60,14 +62,19 @@ Cada linha: ficheiro.mp4|tag1;tag2;tag3  (colunas por | ; tags na 2. coluna por 
 
   --dir=PATH     Pasta a varrer
   --dry-run, -n  So mostra o que faria
+  --new-only     Ignora vídeos que já têm pelo menos uma tag na SQLite
+  --session=N    Só importa o CSV da sessão N
 `)
       process.exit(0)
     }
     if (a === '--dry-run' || a === '-n') dryRun = true
+    if (a === '--new-only') newOnly = true
+    const ms = a.match(/^--session=(\d+)$/)
+    if (ms) session = Number(ms[1])
     const m = a.match(/^--dir=(.+)$/)
     if (m) dir = resolve(process.cwd(), m[1].trim())
   }
-  return { dryRun, dir }
+  return { dryRun, newOnly, session, dir }
 }
 
 function resolveTrailerRel(sessionRoot: string, firstField: string): string | null {
@@ -181,7 +188,7 @@ function parseTagLines(body: string): { file: string; tags: string[] }[] {
 
 function main() {
   loadDotenv()
-  const { dryRun, dir } = parseArgs(process.argv.slice(2))
+  const { dryRun, newOnly, session: onlySession, dir } = parseArgs(process.argv.slice(2))
 
   if (!existsSync(dir)) {
     console.error('Pasta inexistente:', dir)
@@ -193,6 +200,11 @@ function main() {
     console.error(
       'Sem bibliotecas: preenche data/video-menu.json (items) ou define VIDEO_ROOT / VIDEO_ROOTS no .env.',
     )
+    process.exit(1)
+  }
+
+  if (onlySession !== null && (onlySession < 0 || onlySession >= menuRows.length)) {
+    console.error(`--session=${onlySession} fora do intervalo (0..${menuRows.length - 1}).`)
     process.exit(1)
   }
 
@@ -212,6 +224,7 @@ function main() {
   let totalAdds = 0
   let totalLines = 0
   let totalSkipped = 0
+  let totalAlreadyTagged = 0
 
   for (const fn of files.sort()) {
     const label = labelFromTagsFilename(fn)
@@ -221,19 +234,24 @@ function main() {
       console.warn(`[ignorar] "${fn}": rotulo "${label}" nao corresponde a nenhuma sessao. Sessoes: ${labels.join(' | ')}`)
       continue
     }
+    if (onlySession !== null && session !== onlySession) continue
 
     const root = roots[session]!.trim()
     const path = join(dir, fn)
     const body = readFileSync(path, 'utf-8')
     const rows = parseTagLines(body)
     console.log(`\n[${fn}] sessao ${session} (${label}) -> ${root}`)
-    console.log(`  ${rows.length} linha(s) com tags`)
+    console.log(`  ${rows.length} linha(s) com tags${newOnly ? ' (--new-only)' : ''}`)
 
     for (const { file, tags } of rows) {
       const trailerRel = resolveTrailerRel(root, file)
       if (!trailerRel) {
         console.warn(`  [skip] sem trailer para: ${root}\\${file}`)
         totalSkipped++
+        continue
+      }
+      if (newOnly && videoHasAnyTags(session, trailerRel)) {
+        totalAlreadyTagged++
         continue
       }
       totalLines++
@@ -249,10 +267,15 @@ function main() {
     }
   }
 
+  const alreadyMsg = newOnly ? `, ${totalAlreadyTagged} ja tinham tags` : ''
   if (dryRun) {
-    console.log(`\nResumo dry-run: ${totalAdds} insercoes em falta (${totalLines} linhas ok, ${totalSkipped} skips).`)
+    console.log(
+      `\nResumo dry-run: ${totalAdds} insercoes em falta (${totalLines} linhas ok, ${totalSkipped} skips${alreadyMsg}).`,
+    )
   } else {
-    console.log(`\nResumo: ${totalAdds} operacoes addTag (${totalLines} ficheiros, ${totalSkipped} skips).`)
+    console.log(
+      `\nResumo: ${totalAdds} operacoes addTag (${totalLines} ficheiros, ${totalSkipped} skips${alreadyMsg}).`,
+    )
   }
 }
 
