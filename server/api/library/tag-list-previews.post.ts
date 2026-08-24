@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Máximo 40 queries por pedido.' })
   }
 
-  const sample = Number(body?.sample ?? 6)
+  const sample = Number(body?.sample ?? 4)
   const listId = typeof body?.listId === 'string' ? body.listId.trim() : ''
   const force = Boolean(body?.force)
 

@@ -32,21 +32,19 @@ function needleParts(needle: string): string[] {
     .filter((p) => p.length > 0)
 }
 
-function matchesNeedle(hay: string, needle: string): boolean {
-  const parts = needleParts(needle)
-  if (!parts.length) return false
-  const hayL = hay.toLowerCase()
-  return parts.some((part) => hayL.includes(part))
-}
-
+/**
+ * Mosaico das listas: exige todas as palavras (AND) no conjunto
+ * label + nome do ficheiro + tags.
+ */
 function entryMatchesQuery(entry: TrailerListEntry, query: string): boolean {
   const q = query.trim()
   if (q.length < 2) return false
-  if (matchesNeedle(entry.label, q) || matchesNeedle(entry.mainFilename, q)) return true
-  for (const t of entry.tags ?? []) {
-    if (matchesNeedle(t, q)) return true
-  }
-  return false
+  const parts = needleParts(q)
+  if (!parts.length) return false
+  const hay = [entry.label, entry.mainFilename, ...(entry.tags ?? [])]
+    .join('\0')
+    .toLowerCase()
+  return parts.every((part) => hay.includes(part))
 }
 
 function shufflePick<T>(arr: T[], n: number): T[] {
@@ -66,16 +64,19 @@ type CatalogHit = {
   entry: TrailerListEntry
 }
 
+/** Uma linha de miniaturas no mosaico da lista. */
+export const TAG_LIST_PREVIEW_SAMPLE = 4
+
 /**
  * Uma passagem pelo catálogo; para cada query devolve total + amostra aleatória
- * (para mosaico de orientação nas listas de tags).
+ * (para mosaico de orientação nas listas de tags). Match = todas as palavras.
  */
 export async function previewQueriesAgainstCatalog(
   event: H3Event,
   queriesRaw: string[],
-  samplePerQuery = 6,
+  samplePerQuery = TAG_LIST_PREVIEW_SAMPLE,
 ): Promise<TagListPreviewRow[]> {
-  const sample = Math.max(1, Math.min(12, Math.floor(samplePerQuery) || 6))
+  const sample = Math.max(1, Math.min(TAG_LIST_PREVIEW_SAMPLE, Math.floor(samplePerQuery) || TAG_LIST_PREVIEW_SAMPLE))
   const queries = [
     ...new Set(
       queriesRaw
@@ -141,7 +142,7 @@ export async function previewQueriesForList(
   event: H3Event,
   listId: string,
   queriesRaw: string[],
-  samplePerQuery = 6,
+  samplePerQuery = TAG_LIST_PREVIEW_SAMPLE,
   force = false,
 ): Promise<{ rows: TagListPreviewRow[]; fromCache: number; computed: number }> {
   const queries = [

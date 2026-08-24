@@ -14,6 +14,8 @@ export type CatalogSessionPrefs = {
   searchInput: string
   searchQuery: string
   searchMode: 'files' | 'tags'
+  /** any = qualquer palavra; all = todas as palavras; approx = proximidade. */
+  searchMatch?: 'any' | 'all' | 'approx'
 }
 
 const CATALOG_SESSION_PREFS_KEY = 'video_player_catalog_session_prefs'
@@ -61,6 +63,8 @@ function parseStoredPrefs(raw: unknown): CatalogSessionPrefs | null {
     searchInput: typeof o.searchInput === 'string' ? o.searchInput : '',
     searchQuery: typeof o.searchQuery === 'string' ? o.searchQuery : '',
     searchMode: o.searchMode === 'files' ? 'files' : 'tags',
+    searchMatch:
+      o.searchMatch === 'all' ? 'all' : o.searchMatch === 'approx' ? 'approx' : 'any',
   }
 }
 
@@ -102,6 +106,7 @@ export function readCatalogSessionPrefs(sessionId: number): CatalogSessionPrefs 
         searchInput: '',
         searchQuery: '',
         searchMode: 'tags',
+        searchMatch: 'any',
       }
     }
   }

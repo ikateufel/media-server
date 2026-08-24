@@ -863,11 +863,27 @@
               <option value="files">Arquivos</option>
               <option value="tags">Tags</option>
             </select>
+            <select
+              v-model="searchSessionMatch"
+              class="catalog-search-mode catalog-search-match"
+              aria-label="Correspondência da busca global"
+              @change="onSearchSessionMatchChange"
+            >
+              <option value="any">Qualquer</option>
+              <option value="all">Todas</option>
+              <option value="approx">Aproximado</option>
+            </select>
             <input
               v-model="searchSessionInput"
               class="catalog-search-input"
               type="search"
-              placeholder="Buscar em tags e nomes de arquivos (todas as pastas)"
+              :placeholder="
+                searchSessionMatch === 'all'
+                  ? 'Todas as palavras… (todas as pastas)'
+                  : searchSessionMatch === 'approx'
+                    ? 'Texto aproximado… (todas as pastas)'
+                    : 'Qualquer palavra… (todas as pastas)'
+              "
               aria-label="Buscar global em todas as pastas"
               @keydown.enter.prevent="runSearchSession"
             />
@@ -1751,15 +1767,64 @@
               ×
             </button>
           </div>
-          <p class="tag-browse-hint">
+          <p class="tag-browse-hint tag-browse-hint--desk">
             Contagem em todas as pastas. Clica numa tag para buscar. Listas (ex. «Supermercado»)
             guardam itens de busca (ex. «Arroz Branco») — ao abrir a lista, mostra mosaicos
             aleatórios dos vídeos encontrados.
           </p>
+          <p class="tag-browse-hint tag-browse-hint--mobile">
+            Tags para buscar · Listas com mosaicos de orientação.
+          </p>
           <p v-if="tagBrowseError" class="tag-browse-err" role="alert">{{ tagBrowseError }}</p>
 
-          <div class="tag-browse-layout">
-            <section class="tag-browse-col tag-browse-col--tags" aria-label="Tags">
+          <div class="tag-browse-tabs" role="tablist" aria-label="Secções">
+            <button
+              type="button"
+              role="tab"
+              class="tag-browse-tab"
+              :class="{ 'tag-browse-tab--active': tagBrowsePanel === 'tags' }"
+              :aria-selected="tagBrowsePanel === 'tags'"
+              @click="tagBrowsePanel = 'tags'"
+            >
+              Tags
+              <span class="tag-browse-tab-meta">{{ tagBrowseRows.length }}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              class="tag-browse-tab"
+              :class="{ 'tag-browse-tab--active': tagBrowsePanel === 'lists' }"
+              :aria-selected="tagBrowsePanel === 'lists'"
+              @click="tagBrowsePanel = 'lists'"
+            >
+              Listas
+              <span class="tag-browse-tab-meta">{{ tagBrowseLists.length }}</span>
+            </button>
+          </div>
+          <p
+            v-if="tagBrowseSelectedList && tagBrowsePanel === 'tags'"
+            class="tag-browse-active-list"
+          >
+            Lista activa:
+            <strong>{{ tagBrowseSelectedList.name }}</strong>
+            <button
+              type="button"
+              class="tag-browse-active-list-go"
+              @click="tagBrowsePanel = 'lists'"
+            >
+              Ver lista
+            </button>
+          </p>
+
+          <div
+            class="tag-browse-layout"
+            :class="`tag-browse-layout--panel-${tagBrowsePanel}`"
+          >
+            <section
+              class="tag-browse-col tag-browse-col--tags"
+              aria-label="Tags"
+              role="tabpanel"
+            >
               <div class="tag-browse-toolbar">
                 <input
                   v-model="tagBrowseFilter"
@@ -1797,6 +1862,11 @@
                         ? `Tirar de «${tagBrowseSelectedList?.name}»`
                         : `Meter em «${tagBrowseSelectedList?.name}»`
                     "
+                    :aria-label="
+                      tagInSelectedList(row.name)
+                        ? `Tirar «${row.name}» da lista`
+                        : `Meter «${row.name}» na lista`
+                    "
                     :disabled="tagBrowseListBusy"
                     @click="toggleTagInSelectedList(row.name)"
                   >
@@ -1806,7 +1876,11 @@
               </ul>
             </section>
 
-            <section class="tag-browse-col tag-browse-col--lists" aria-label="Listas de tags">
+            <section
+              class="tag-browse-col tag-browse-col--lists"
+              aria-label="Listas de tags"
+              role="tabpanel"
+            >
               <h3 class="tag-browse-col-title">Listas</h3>
               <form class="tag-browse-create" @submit.prevent="createTagBrowseList">
                 <input
@@ -1838,15 +1912,20 @@
                   <button
                     type="button"
                     class="tag-browse-list-pick"
+                    :aria-label="`${list.name}, ${list.tags.length} ${list.tags.length === 1 ? 'item' : 'itens'}`"
                     @click="selectTagBrowseList(list.id)"
                   >
                     <span class="tag-browse-list-name">{{ list.name }}</span>
-                    <span class="tag-browse-list-qty">{{ list.tags.length }}</span>
+                    <span class="tag-browse-list-qty" :title="'Itens nesta lista'">
+                      {{ list.tags.length }}
+                      {{ list.tags.length === 1 ? 'item' : 'itens' }}
+                    </span>
                   </button>
                   <button
                     type="button"
                     class="tag-browse-list-del"
                     title="Apagar lista"
+                    aria-label="Apagar lista"
                     :disabled="tagBrowseListBusy"
                     @click="deleteTagBrowseList(list.id)"
                   >
@@ -1883,7 +1962,7 @@
                   v-else-if="!tagBrowseSelectedList.tags.length"
                   class="tag-browse-empty"
                 >
-                  Escreve um item acima ou usa + nas tags à esquerda.
+                  Escreve um item acima ou usa + na aba Tags.
                 </p>
                 <ul v-else class="tag-browse-item-cards" role="list">
                   <li
@@ -1981,7 +2060,7 @@
                       :aria-label="`Pré-visualizações de «${t}»`"
                     >
                       <button
-                        v-for="(s, si) in tagBrowsePreviewByQuery[t]!.samples"
+                        v-for="(s, si) in tagBrowsePreviewByQuery[t]!.samples.slice(0, 4)"
                         :key="`${s.session}-${s.trailerRel}-${si}`"
                         type="button"
                         class="tag-browse-mosaic-cell"
@@ -4007,6 +4086,11 @@ const searchSessionInput = ref('')
 const searchSessionQuery = ref('')
 const searchSessionError = ref('')
 const searchSessionMode = ref<'files' | 'tags'>('tags')
+const searchSessionMatch = ref<'any' | 'all' | 'approx'>('any')
+
+function onSearchSessionMatchChange() {
+  if (searchSessionQuery.value.trim().length >= 2) void runSearchSession()
+}
 
 interface TagBrowseRow {
   name: string
@@ -4033,6 +4117,7 @@ const tagBrowseFilter = ref('')
 const tagBrowseRows = ref<TagBrowseRow[]>([])
 const tagBrowseLists = ref<TagBrowseList[]>([])
 const tagBrowseSelectedListId = ref<string | null>(null)
+const tagBrowsePanel = ref<'tags' | 'lists'>('tags')
 const tagBrowseNewListName = ref('')
 const tagBrowseNewItemName = ref('')
 const tagBrowseListBusy = ref(false)
@@ -4086,9 +4171,9 @@ async function loadTagBrowseItemPreviews(queries: string[], listId?: string | nu
       computed?: number
     }>('/api/library/tag-list-previews', {
       method: 'POST',
-      body: {
+        body: {
         queries: qs,
-        sample: 6,
+        sample: 4,
         ...(listId ? { listId } : {}),
       },
     })
@@ -4113,6 +4198,7 @@ async function loadTagBrowseItemPreviews(queries: string[], listId?: string | nu
 function selectTagBrowseList(id: string) {
   tagBrowseSelectedListId.value = id
   tagBrowseNewItemName.value = ''
+  tagBrowsePanel.value = 'lists'
   cancelTagBrowseItemEdit()
   const list = tagBrowseLists.value.find((l) => l.id === id)
   void loadTagBrowseItemPreviews(list?.tags ?? [], id)
@@ -4152,6 +4238,7 @@ async function openTagBrowseDialog() {
   tagBrowseDialogOpen.value = true
   tagBrowseFilter.value = ''
   await refreshTagBrowseData()
+  tagBrowsePanel.value = tagBrowseLists.value.length > 0 ? 'lists' : 'tags'
 }
 
 function closeTagBrowseDialog() {
@@ -4181,11 +4268,18 @@ function cancelTagBrowseItemEdit() {
 async function commitTagBrowseItemRename() {
   const listId = tagBrowseSelectedListId.value
   const from = tagBrowseEditingItem.value
-  const to = tagBrowseEditDraft.value.trim().replace(/\s+/g, ' ')
+  const to = dedupeListItemWords(tagBrowseEditDraft.value)
   if (!listId || !from || tagBrowseListBusy.value) return
   if (to.length < 2) return
   if (to.toLowerCase() === from.toLowerCase() && to === from) {
     cancelTagBrowseItemEdit()
+    return
+  }
+  const list = tagBrowseLists.value.find((l) => l.id === listId)
+  if (
+    list?.tags.some((t) => t.toLowerCase() === to.toLowerCase() && t.toLowerCase() !== from.toLowerCase())
+  ) {
+    tagBrowseError.value = `«${to}» já está nesta lista.`
     return
   }
   tagBrowseListBusy.value = true
@@ -4250,14 +4344,33 @@ async function createTagBrowseList() {
   }
 }
 
+function dedupeListItemWords(raw: string): string {
+  const parts = raw.trim().replace(/\s+/g, ' ').split(' ').filter(Boolean)
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const p of parts) {
+    const key = p.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(p)
+  }
+  return out.join(' ')
+}
+
 async function addItemToSelectedList() {
-  const raw = tagBrowseNewItemName.value.trim().replace(/\s+/g, ' ')
+  const raw = dedupeListItemWords(tagBrowseNewItemName.value)
   if (raw.length < 2 || tagBrowseListBusy.value) return
+  const list = tagBrowseSelectedList.value
+  if (list?.tags.some((t) => t.toLowerCase() === raw.toLowerCase())) {
+    tagBrowseError.value = `«${raw}» já está nesta lista.`
+    return
+  }
+  tagBrowseNewItemName.value = raw
   await toggleTagInSelectedList(raw, true)
   if (!tagBrowseError.value) {
     tagBrowseNewItemName.value = ''
-    const list = tagBrowseSelectedList.value
-    void loadTagBrowseItemPreviews(list?.tags ?? [], list?.id)
+    const next = tagBrowseSelectedList.value
+    void loadTagBrowseItemPreviews(next?.tags ?? [], next?.id)
   }
 }
 
@@ -4335,6 +4448,7 @@ function snapshotCatalogSessionPrefs(): CatalogSessionPrefs {
     searchInput: searchSessionInput.value,
     searchQuery: searchSessionQuery.value,
     searchMode: searchSessionMode.value,
+    searchMatch: searchSessionMatch.value,
   }
 }
 
@@ -4355,6 +4469,12 @@ function restoreCatalogSessionPrefsFor(sessionId: number) {
       searchSessionInput.value = stored.searchInput
       searchSessionQuery.value = stored.searchQuery
       searchSessionMode.value = stored.searchMode
+      searchSessionMatch.value =
+        stored.searchMatch === 'all'
+          ? 'all'
+          : stored.searchMatch === 'approx'
+            ? 'approx'
+            : 'any'
       return
     }
     catalogTagFilter.value = null
@@ -4367,6 +4487,7 @@ function restoreCatalogSessionPrefsFor(sessionId: number) {
     searchSessionInput.value = ''
     searchSessionQuery.value = ''
     searchSessionMode.value = 'tags'
+    searchSessionMatch.value = 'any'
     if (sessionId === RECENTS_SESSION_ID || sessionId === LAST_VIEWED_SESSION_ID) {
       applyDestaquesCatalogSortDefaults()
     } else if (sessionId >= 0) {
@@ -4391,6 +4512,7 @@ watch(
     searchSessionInput,
     searchSessionQuery,
     searchSessionMode,
+    searchSessionMatch,
   ],
   () => {
     if (suppressCatalogPrefsPersist || !catalogPrefsEnabled.value) return
@@ -7385,7 +7507,7 @@ async function loadTrailers(opts?: {
   const searchQ = searchSessionQuery.value.trim()
   const trailerUrl = isSearchSession
     ? searchQ.length >= 2
-      ? `/api/library/search?q=${encodeURIComponent(searchQ)}&mode=${encodeURIComponent(searchSessionMode.value)}`
+      ? `/api/library/search?q=${encodeURIComponent(searchQ)}&mode=${encodeURIComponent(searchSessionMode.value)}&match=${encodeURIComponent(searchSessionMatch.value)}`
       : ''
     : sessionIndex.value === SURPRESA_SESSION_ID
       ? '/api/trailers/surprise'
@@ -8602,6 +8724,10 @@ onUnmounted(() => {
   flex: 0 0 auto;
 }
 
+.catalog-search-match {
+  min-width: 7.4rem;
+}
+
 .catalog-search-input {
   flex: 1;
   min-width: 0;
@@ -8696,28 +8822,113 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+.tag-browse-dialog-card .session-menu-title {
+  font-size: 1.05rem;
+}
+
 .tag-browse-hint {
   margin: 0;
   padding: 0 0.85rem 0.55rem;
-  font-size: 0.8rem;
+  font-size: 0.95rem;
   line-height: 1.45;
   color: #9aa0a6;
 }
 
+.tag-browse-hint--desk {
+  display: none;
+}
+
+.tag-browse-hint--mobile {
+  display: block;
+}
+
 .tag-browse-err {
   margin: 0 0.85rem 0.45rem;
-  font-size: 0.8rem;
+  font-size: 0.95rem;
   color: #f8b4b0;
+}
+
+.tag-browse-tabs {
+  display: flex;
+  margin: 0 0.65rem 0.35rem;
+  padding: 0.2rem;
+  gap: 0.25rem;
+  border-radius: 12px;
+  background: #12161c;
+  border: 1px solid #2d333b;
+}
+
+.tag-browse-tab {
+  flex: 1;
+  min-height: 2.65rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #9aa0a6;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tag-browse-tab--active {
+  background: #234c7c;
+  color: #e8f3ff;
+}
+
+.tag-browse-tab-meta {
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.tag-browse-active-list {
+  display: flex;
+  margin: 0 0.75rem 0.45rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  background: #1e2a3d;
+  border: 1px solid #2d3a4a;
+  color: #c5ddf5;
+  font-size: 0.95rem;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.tag-browse-active-list-go {
+  margin-left: auto;
+  border: 1px solid #5f9dee;
+  background: #151a22;
+  color: #c5ddf5;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.4rem 0.8rem;
+  min-height: 2.35rem;
+  cursor: pointer;
 }
 
 .tag-browse-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.9fr);
+  grid-template-columns: 1fr;
   gap: 0;
   min-height: 0;
   flex: 1;
   border-top: 1px solid #2d333b;
   overflow: hidden;
+}
+
+.tag-browse-layout--panel-tags .tag-browse-col--lists,
+.tag-browse-layout--panel-lists .tag-browse-col--tags {
+  display: none;
 }
 
 .tag-browse-col {
@@ -8729,15 +8940,11 @@ onUnmounted(() => {
 }
 
 .tag-browse-col--tags {
-  border-right: 1px solid #2d333b;
+  border-right: 0;
 }
 
 .tag-browse-col-title {
-  margin: 0 0 0.45rem;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #7aa9e8;
+  display: none;
 }
 
 .tag-browse-toolbar {
@@ -8755,18 +8962,18 @@ onUnmounted(() => {
   color: #e8eaed;
   border-radius: 8px;
   font: inherit;
-  font-size: 0.84rem;
-  padding: 0.38rem 0.55rem;
+  font-size: 1rem;
+  padding: 0.45rem 0.6rem;
 }
 
 .tag-browse-count {
   flex: 0 0 auto;
-  font-size: 0.72rem;
+  font-size: 0.85rem;
   color: #9aa0a6;
 }
 
 .tag-browse-empty {
-  font-size: 0.8rem;
+  font-size: 0.95rem;
   color: #9aa0a6;
   padding: 0.35rem 0;
 }
@@ -8801,8 +9008,8 @@ onUnmounted(() => {
   color: #e8eaed;
   border-radius: 7px;
   font: inherit;
-  font-size: 0.84rem;
-  padding: 0.32rem 0.45rem;
+  font-size: 1rem;
+  padding: 0.4rem 0.5rem;
   cursor: pointer;
   text-align: left;
 }
@@ -8822,18 +9029,18 @@ onUnmounted(() => {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
   color: #fdd663;
-  font-size: 0.78rem;
+  font-size: 0.92rem;
   font-weight: 600;
 }
 
 .tag-browse-toggle {
-  flex: 0 0 2rem;
+  flex: 0 0 2.2rem;
   border: 1px solid #2d333b;
   background: #151a22;
   color: #9aa0a6;
   border-radius: 7px;
   font: inherit;
-  font-size: 0.9rem;
+  font-size: 1.05rem;
   cursor: pointer;
 }
 
@@ -8856,9 +9063,9 @@ onUnmounted(() => {
   color: #e8f3ff;
   border-radius: 8px;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: 0.95rem;
   font-weight: 600;
-  padding: 0.35rem 0.6rem;
+  padding: 0.45rem 0.75rem;
   cursor: pointer;
 }
 
@@ -8873,20 +9080,26 @@ onUnmounted(() => {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  max-height: 28vh;
+  gap: 0.45rem;
+  max-height: none;
   overflow: auto;
+  flex: 0 1 auto;
 }
 
 .tag-browse-list-item {
   display: flex;
   align-items: stretch;
-  gap: 0.2rem;
-  border-radius: 8px;
+  gap: 0.35rem;
+  border-radius: 12px;
+  border: 1px solid #2d333b;
+  background: #12161c;
+  min-height: 3.25rem;
+  overflow: hidden;
 }
 
 .tag-browse-list-item--active {
   background: #1e2a3d;
+  border-color: #5f9dee;
 }
 
 .tag-browse-list-pick {
@@ -8895,40 +9108,61 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.4rem;
+  gap: 0.65rem;
   border: 0;
   background: transparent;
   color: #e8eaed;
   font: inherit;
-  font-size: 0.84rem;
-  padding: 0.35rem 0.45rem;
+  font-size: 1.08rem;
+  font-weight: 600;
+  padding: 0.85rem 0.85rem;
+  min-height: 3.25rem;
   cursor: pointer;
   text-align: left;
-  border-radius: 8px;
+  border-radius: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tag-browse-list-pick:hover {
+  background: #1a222e;
+}
+
+.tag-browse-list-item--active .tag-browse-list-pick:hover {
+  background: #243247;
 }
 
 .tag-browse-list-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .tag-browse-list-qty {
   flex: 0 0 auto;
-  font-size: 0.72rem;
-  color: #9aa0a6;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fdd663;
   font-variant-numeric: tabular-nums;
+  background: #2a2410;
+  border: 1px solid #5c4a1a;
+  border-radius: 999px;
+  padding: 0.28rem 0.7rem;
+  line-height: 1.2;
 }
 
 .tag-browse-list-del {
-  flex: 0 0 1.8rem;
+  flex: 0 0 3.25rem;
+  min-width: 3.25rem;
   border: 0;
+  border-left: 1px solid #2d333b;
   background: transparent;
   color: #9aa0a6;
   font: inherit;
-  font-size: 1rem;
+  font-size: 1.45rem;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 0;
 }
 
 .tag-browse-list-del:hover {
@@ -8947,7 +9181,7 @@ onUnmounted(() => {
 
 .tag-browse-selected-head {
   margin: 0 0 0.4rem;
-  font-size: 0.8rem;
+  font-size: 0.95rem;
   color: #c5ddf5;
   display: flex;
   align-items: center;
@@ -8984,10 +9218,11 @@ onUnmounted(() => {
   border: 1px solid #2d3a4a;
   border-radius: 999px;
   background: #151a22;
-  padding: 0.28rem 0.55rem;
+  padding: 0.4rem 0.7rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.95rem;
 }
 
 .tag-browse-item-card-head .tag-browse-chip:hover {
@@ -8997,7 +9232,7 @@ onUnmounted(() => {
 
 .tag-browse-item-total {
   flex: 0 0 auto;
-  font-size: 0.72rem;
+  font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
   color: #fdd663;
   font-weight: 600;
@@ -9062,8 +9297,9 @@ onUnmounted(() => {
 
 .tag-browse-mosaic {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.25rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.3rem;
+  grid-auto-rows: 1fr;
 }
 
 .tag-browse-mosaic-cell {
@@ -9092,7 +9328,7 @@ onUnmounted(() => {
 .tag-browse-empty--tiny {
   margin: 0;
   padding: 0.15rem 0 0;
-  font-size: 0.72rem;
+  font-size: 0.88rem;
 }
 
 .tag-browse-chip {
@@ -9100,8 +9336,8 @@ onUnmounted(() => {
   background: transparent;
   color: #e8eaed;
   font: inherit;
-  font-size: 0.75rem;
-  padding: 0.22rem 0.45rem 0.22rem 0.55rem;
+  font-size: 0.95rem;
+  padding: 0.28rem 0.5rem 0.28rem 0.6rem;
   cursor: pointer;
 }
 
@@ -9121,20 +9357,121 @@ onUnmounted(() => {
   background: #2a1a1a;
 }
 
-@media (max-width: 720px) {
-  .tag-browse-layout {
-    grid-template-columns: 1fr;
-    overflow: auto;
+@media (max-width: 820px) {
+  .tag-browse-dialog {
+    padding: 0;
+    align-items: stretch;
   }
 
-  .tag-browse-col--tags {
-    border-right: 0;
-    border-bottom: 1px solid #2d333b;
-    max-height: 42vh;
+  .tag-browse-dialog-card {
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    height: 100%;
+    min-height: 100dvh;
+    border-radius: 0;
+    border: 0;
+  }
+
+  .tag-browse-hint--mobile {
+    padding: 0 0.85rem 0.4rem;
+    font-size: 0.78rem;
+  }
+
+  .tag-browse-tabs .tag-browse-tab {
+    min-height: 2.85rem;
+    font-size: 1.08rem;
+  }
+
+  .tag-browse-layout {
+    border-top: 0;
+  }
+
+  .tag-browse-col {
+    padding: 0.45rem 0.75rem 1rem;
+  }
+
+  .tag-browse-filter {
+    font-size: 1rem;
+    padding: 0.65rem 0.75rem;
+    border-radius: 10px;
+    min-height: 2.75rem;
+  }
+
+  .tag-browse-tag {
+    min-height: 2.85rem;
+    font-size: 0.95rem;
+    padding: 0.55rem 0.65rem;
+    border-radius: 10px;
+  }
+
+  .tag-browse-toggle {
+    flex-basis: 2.85rem;
+    min-width: 2.85rem;
+    font-size: 1.2rem;
+    border-radius: 10px;
+  }
+
+  .tag-browse-create {
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .tag-browse-create-btn {
+    min-height: 2.75rem;
+    padding: 0.55rem 1rem;
+    font-size: 0.92rem;
+    border-radius: 10px;
   }
 
   .tag-browse-lists {
     max-height: none;
+    flex: 0 0 auto;
+    gap: 0.5rem;
+  }
+
+  .tag-browse-list-pick {
+    min-height: 3.5rem;
+    font-size: 1.12rem;
+    padding: 0.95rem 0.9rem;
+  }
+
+  .tag-browse-list-del {
+    flex-basis: 3.5rem;
+    min-width: 3.5rem;
+    font-size: 1.5rem;
+  }
+
+  .tag-browse-list-item {
+    min-height: 3.5rem;
+  }
+
+  .tag-browse-selected {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .tag-browse-item-card-head .tag-browse-chip {
+    min-height: 2.5rem;
+    font-size: 1rem;
+    padding: 0.5rem 0.8rem;
+    border-radius: 12px;
+  }
+
+  .tag-browse-item-icon-btn {
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 10px;
+  }
+
+  .tag-browse-item-icon-btn svg {
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+
+  .tag-browse-mosaic {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.3rem;
   }
 }
 

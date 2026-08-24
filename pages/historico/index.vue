@@ -30,6 +30,7 @@
           Actualizar
         </button>
       </div>
+      <p v-if="actionError" class="admin-err">{{ actionError }}</p>
       <p v-if="loadError" class="admin-err">{{ loadError }}</p>
       <p v-else-if="loading" class="admin-muted">A carregar…</p>
       <p v-else-if="!items.length" class="admin-muted">Ainda sem entradas no histórico.</p>
@@ -40,35 +41,66 @@
           class="hist-item"
           :class="`hist-item--${item.status}`"
         >
-          <div class="hist-item-top">
-            <span class="hist-kind">{{ item.kind === 'shrink' ? 'Shrink' : 'Trailer' }}</span>
-            <span class="hist-status">{{ item.status === 'done' ? 'ok' : 'falhou' }}</span>
-            <span class="hist-when" :title="formatFull(item.endedAt)">{{ formatWhen(item.endedAt) }}</span>
-          </div>
-          <div class="hist-label" :title="item.mainRel">{{ item.label }}</div>
-          <div class="hist-meta">
-            sessão {{ item.session }} · {{ item.mainRel }}
-          </div>
-          <p v-if="item.error" class="hist-error">{{ item.error }}</p>
-          <div class="hist-actions">
+          <div class="hist-item-body">
             <a
-              class="hist-open-catalog"
+              v-if="histPreviewRel(item)"
+              class="hist-thumb"
               :href="catalogOpenHref(item)"
               target="_blank"
               rel="noopener noreferrer"
+              :title="`Abrir «${item.label}» no catálogo`"
             >
-              Abrir no catálogo
+              <img
+                class="hist-thumb-img"
+                :src="catalogPreviewFrameUrl(histPreviewRel(item)!, item.session, 0)"
+                alt=""
+                loading="lazy"
+                decoding="async"
+              />
             </a>
-            <button
-              v-if="item.log"
-              type="button"
-              class="hist-log-toggle"
-              @click="toggleLog(item.id)"
-            >
-              {{ expandedLogId === item.id ? 'Ocultar log' : 'Ver log' }}
-            </button>
+            <div v-else class="hist-thumb hist-thumb--empty" aria-hidden="true" />
+            <div class="hist-item-main">
+              <div class="hist-item-top">
+                <span class="hist-kind">{{ item.kind === 'shrink' ? 'Shrink' : 'Trailer' }}</span>
+                <span class="hist-status">{{ item.status === 'done' ? 'ok' : 'falhou' }}</span>
+                <span class="hist-when" :title="formatFull(item.endedAt)">{{
+                  formatWhen(item.endedAt)
+                }}</span>
+              </div>
+              <div class="hist-label" :title="item.mainRel">{{ item.label }}</div>
+              <div class="hist-meta">sessão {{ item.session }} · {{ item.mainRel }}</div>
+              <p v-if="item.error" class="hist-error">{{ item.error }}</p>
+              <div class="hist-actions">
+                <a
+                  class="hist-open-catalog"
+                  :href="catalogOpenHref(item)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Abrir no catálogo
+                </a>
+                <button
+                  v-if="item.kind === 'shrink'"
+                  type="button"
+                  class="hist-log-toggle"
+                  :disabled="backupBusyId === item.id"
+                  title="Abre shrinked_backup junto ao ficheiro (cria a pasta se ainda não existir)"
+                  @click="openShrinkBackupFolder(item)"
+                >
+                  {{ backupBusyId === item.id ? 'A abrir…' : 'Pasta backup' }}
+                </button>
+                <button
+                  v-if="item.log"
+                  type="button"
+                  class="hist-log-toggle"
+                  @click="toggleLog(item.id)"
+                >
+                  {{ expandedLogId === item.id ? 'Ocultar log' : 'Ver log' }}
+                </button>
+              </div>
+              <pre v-if="item.log && expandedLogId === item.id" class="hist-log">{{ item.log }}</pre>
+            </div>
           </div>
-          <pre v-if="item.log && expandedLogId === item.id" class="hist-log">{{ item.log }}</pre>
         </li>
       </ul>
     </section>
@@ -76,6 +108,8 @@
 </template>
 
 <script setup lang="ts">
+import { catalogPreviewFrameUrl } from '~/composables/useVideoFolder'
+
 interface HistItem {
   id: string
   kind: 'shrink' | 'trailer'
@@ -94,7 +128,9 @@ const kindFilter = ref<'all' | 'shrink' | 'trailer'>('all')
 const items = ref<HistItem[]>([])
 const loading = ref(false)
 const loadError = ref('')
+const actionError = ref('')
 const expandedLogId = ref<string | null>(null)
+const backupBusyId = ref<string | null>(null)
 
 function formatWhen(ms: number) {
   if (!Number.isFinite(ms)) return '—'
@@ -113,6 +149,16 @@ function toggleLog(id: string) {
   expandedLogId.value = expandedLogId.value === id ? null : id
 }
 
+/** Rel para miniatura JPEG (`/api/library/preview-frame`). */
+function histPreviewRel(item: HistItem): string | null {
+  const trailer =
+    typeof item.trailerRel === 'string' ? item.trailerRel.trim().replace(/\\/g, '/') : ''
+  if (trailer.toLowerCase().startsWith('trailers/')) return trailer
+  const main = item.mainRel.trim().replace(/\\/g, '/')
+  if (!main || main.includes('..')) return null
+  return `trailers/${main}`
+}
+
 function catalogOpenHref(item: HistItem) {
   const parts = [`session=${encodeURIComponent(String(item.session))}`]
   const trailer = typeof item.trailerRel === 'string' ? item.trailerRel.trim().replace(/\\/g, '/') : ''
@@ -124,9 +170,37 @@ function catalogOpenHref(item: HistItem) {
   return `/?${parts.join('&')}`
 }
 
+async function openShrinkBackupFolder(item: HistItem) {
+  if (item.kind !== 'shrink' || backupBusyId.value) return
+  const main = item.mainRel.trim().replace(/\\/g, '/')
+  if (!main || main.includes('..')) {
+    actionError.value = 'Caminho do ficheiro inválido.'
+    return
+  }
+  backupBusyId.value = item.id
+  actionError.value = ''
+  try {
+    await $fetch('/api/admin/reveal-in-explorer', {
+      method: 'POST',
+      body: {
+        session: item.session,
+        target: 'shrinked_backup',
+        rel: main,
+      },
+    })
+  } catch (e: unknown) {
+    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    actionError.value =
+      ex?.data?.statusMessage || ex?.message || 'Não foi possível abrir a pasta de backup.'
+  } finally {
+    backupBusyId.value = null
+  }
+}
+
 async function loadHistory() {
   loading.value = true
   loadError.value = ''
+  actionError.value = ''
   expandedLogId.value = null
   try {
     const q = kindFilter.value === 'all' ? '' : `?kind=${kindFilter.value}`
@@ -252,7 +326,7 @@ onMounted(() => {
 .hist-item {
   border: 1px solid #2d333b;
   border-radius: 10px;
-  padding: 0.65rem 0.75rem;
+  padding: 0.55rem 0.65rem;
   background: #0c0d10;
 }
 .hist-item--failed {
@@ -260,6 +334,35 @@ onMounted(() => {
 }
 .hist-item--done {
   border-color: #1e3d2f;
+}
+.hist-item-body {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+.hist-thumb {
+  flex: 0 0 auto;
+  width: 7.5rem;
+  aspect-ratio: 16 / 10;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #090a0c;
+  border: 1px solid #2d333b;
+  display: block;
+  text-decoration: none;
+}
+.hist-thumb--empty {
+  background: #12141a;
+}
+.hist-thumb-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.hist-item-main {
+  flex: 1;
+  min-width: 0;
 }
 .hist-item-top {
   display: flex;
@@ -334,8 +437,12 @@ onMounted(() => {
   color: #e8eaed;
   cursor: pointer;
 }
-.hist-log-toggle:hover {
+.hist-log-toggle:hover:not(:disabled) {
   background: #252a32;
+}
+.hist-log-toggle:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 .hist-log {
   margin: 0.45rem 0 0;
@@ -350,5 +457,11 @@ onMounted(() => {
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+@media (max-width: 560px) {
+  .hist-thumb {
+    width: 5.5rem;
+  }
 }
 </style>

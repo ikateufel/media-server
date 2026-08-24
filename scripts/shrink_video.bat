@@ -303,7 +303,14 @@ goto :encode_done
 
 :encode_failed
 echo [ERRO] falha ao encodar: "%ORIG%"
-if not exist "%FLOG%" goto :encode_failed_cleanup
+if not exist "%FLOG%" (
+    echo [DET] ffmpeg: ^(ficheiro de log em falta: %FLOG%^)
+    goto :encode_failed_cleanup
+)
+for %%Z in ("%FLOG%") do if %%~zZ EQU 0 (
+    echo [DET] ffmpeg: ^(log vazio^)
+    goto :encode_failed_cleanup
+)
 echo [DET] ffmpeg:
 type "%FLOG%"
 

@@ -192,12 +192,14 @@ export default defineEventHandler(async (event) => {
       target !== 'main' &&
       target !== 'trailer' &&
       target !== 'preview' &&
-      target !== 'edited'
+      target !== 'edited' &&
+      target !== 'shrinked_backup'
     ) {
       console.error(LOG, 'FALHA: target inválido', { target: raw?.target })
       throw createError({
         statusCode: 400,
-        statusMessage: 'Campo "target" inválido: use "main", "trailer", "preview" ou "edited".',
+        statusMessage:
+          'Campo "target" inválido: use "main", "trailer", "preview", "edited" ou "shrinked_backup".',
       })
     }
 
@@ -235,6 +237,13 @@ export default defineEventHandler(async (event) => {
         absPath = resolveSafeUnderRoot(root, editedRel)
         openAsFolder = true
         await mkdir(absPath, { recursive: true })
+      } else if (target === 'shrinked_backup') {
+        const slash = rel.lastIndexOf('/')
+        const parentRel = slash >= 0 ? rel.slice(0, slash) : ''
+        const backupRel = parentRel ? `${parentRel}/shrinked_backup` : 'shrinked_backup'
+        absPath = resolveSafeUnderRoot(root, backupRel)
+        openAsFolder = true
+        await mkdir(absPath, { recursive: true })
       } else {
         absPath = resolveSafeUnderRoot(root, rel)
       }
@@ -252,7 +261,10 @@ export default defineEventHandler(async (event) => {
       if (openAsFolder && !st.isDirectory()) {
         throw createError({
           statusCode: 400,
-          statusMessage: 'O caminho edited existe mas não é uma pasta.',
+          statusMessage:
+            target === 'shrinked_backup'
+              ? 'O caminho shrinked_backup existe mas não é uma pasta.'
+              : 'O caminho edited existe mas não é uma pasta.',
         })
       }
     } catch (e) {
@@ -261,7 +273,9 @@ export default defineEventHandler(async (event) => {
       throw createError({
         statusCode: 404,
         statusMessage: openAsFolder
-          ? 'Pasta edited não encontrada na biblioteca.'
+          ? target === 'shrinked_backup'
+            ? 'Pasta shrinked_backup não encontrada na biblioteca.'
+            : 'Pasta edited não encontrada na biblioteca.'
           : 'Ficheiro não encontrado na pasta da biblioteca.',
       })
     }

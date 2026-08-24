@@ -18,11 +18,15 @@ function ensureSchema() {
   `)
 }
 
+/** Versão do match do mosaico — muda quando a regra de match muda (invalida cache antigo). */
+const PREVIEW_CACHE_MATCH_VER = 'all-v1'
+
 export function normalizePreviewQueryKey(raw: string): string {
-  return String(raw ?? '')
+  const base = String(raw ?? '')
     .trim()
     .replace(/\s+/g, ' ')
     .toLowerCase()
+  return base ? `${PREVIEW_CACHE_MATCH_VER}:${base}` : ''
 }
 
 function parseSamples(raw: string): TagListPreviewSample[] {

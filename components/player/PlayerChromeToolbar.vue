@@ -310,20 +310,6 @@ function onTagInput(e: Event) {
         </button>
 
         <button
-          v-if="title && showMove"
-          type="button"
-          class="icon-tool icon-tool--move-library"
-          title="Mover vídeo completo, trailer, preview e miniaturas para outra biblioteca de pastas"
-          aria-label="Mover para outra pasta"
-          @click="emit('openMove')"
-        >
-          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-            <path d="M12 11v6M9 14h6" />
-          </svg>
-        </button>
-
-        <button
           v-if="title?.hasMain && showEditor"
           type="button"
           class="icon-tool icon-tool--editor"
@@ -391,6 +377,44 @@ function onTagInput(e: Event) {
         </template>
 
         <button
+          v-if="mode === 'trailer' && showOpenFull"
+          type="button"
+          class="icon-tool icon-tool--primary"
+          :disabled="title ? !title.hasMain : true"
+          :title="title && !title.hasMain ? 'Completo em falta' : 'Vídeo completo'"
+          @click="emit('openFull')"
+        >
+          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="4" width="20" height="14" rx="2" />
+            <path d="M10 9l5 3-5 3V9z" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+
+        <button
+          v-if="title && showDelete"
+          type="button"
+          class="icon-tool icon-tool--danger"
+          title="Mover para a Lixeira (completo, trailer, preview)"
+          @click="emit('deleteTitle')"
+        >
+          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 6h18M8 6V4h8v2m2 0v14a2 2 0 01-2 2H8a2 2 0 01-2-2V6h12M10 11v6M14 11v6" stroke-linecap="round" />
+          </svg>
+        </button>
+
+        <button
+          v-if="mode === 'full' && title && showFastPlay"
+          type="button"
+          class="icon-tool icon-tool--fast-play"
+          :class="{ 'icon-tool--on': fastPlayOn }"
+          title="Fast Play"
+          :aria-pressed="fastPlayOn"
+          @click="emit('toggleFastPlay')"
+        >
+          FAST
+        </button>
+
+        <button
           v-if="mode === 'trailer' && showPin"
           type="button"
           class="icon-tool"
@@ -437,41 +461,17 @@ function onTagInput(e: Event) {
         </button>
 
         <button
-          v-if="mode === 'trailer' && showOpenFull"
+          v-if="title && showMove"
           type="button"
-          class="icon-tool icon-tool--primary"
-          :disabled="title ? !title.hasMain : true"
-          :title="title && !title.hasMain ? 'Completo em falta' : 'Vídeo completo'"
-          @click="emit('openFull')"
+          class="icon-tool icon-tool--move-library"
+          title="Mover vídeo completo, trailer, preview e miniaturas para outra biblioteca de pastas"
+          aria-label="Mover para outra pasta"
+          @click="emit('openMove')"
         >
-          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="4" width="20" height="14" rx="2" />
-            <path d="M10 9l5 3-5 3V9z" fill="currentColor" stroke="none" />
+          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            <path d="M12 11v6M9 14h6" />
           </svg>
-        </button>
-
-        <button
-          v-if="title && showDelete"
-          type="button"
-          class="icon-tool icon-tool--danger"
-          title="Mover para a Lixeira (completo, trailer, preview)"
-          @click="emit('deleteTitle')"
-        >
-          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 6h18M8 6V4h8v2m2 0v14a2 2 0 01-2 2H8a2 2 0 01-2-2V6h12M10 11v6M14 11v6" stroke-linecap="round" />
-          </svg>
-        </button>
-
-        <button
-          v-if="mode === 'full' && title && showFastPlay"
-          type="button"
-          class="icon-tool icon-tool--fast-play"
-          :class="{ 'icon-tool--on': fastPlayOn }"
-          title="Fast Play"
-          :aria-pressed="fastPlayOn"
-          @click="emit('toggleFastPlay')"
-        >
-          FAST
         </button>
       </div>
 

@@ -38,12 +38,31 @@ function normalizeListName(raw: unknown): string | null {
   return s
 }
 
+/** Item de lista: normaliza espaços e remove palavras repetidas (case-insensitive). */
+export function normalizeListItemQuery(raw: unknown): string | null {
+  const base = normalizeTagInput(typeof raw === 'string' ? raw : String(raw ?? ''))
+  if (!base) return null
+  const parts = base.split(/\s+/).filter(Boolean)
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const p of parts) {
+    const key = p.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(p)
+  }
+  if (!out.length) return null
+  const joined = out.join(' ')
+  if (joined.length > TAG_MAX_LEN) return joined.slice(0, TAG_MAX_LEN).trim() || null
+  return joined
+}
+
 function normalizeTagArray(raw: unknown): string[] {
   if (!Array.isArray(raw)) return []
   const out: string[] = []
   const seen = new Set<string>()
   for (const item of raw) {
-    const n = normalizeTagInput(typeof item === 'string' ? item : String(item ?? ''))
+    const n = normalizeListItemQuery(item)
     if (!n || n.length > TAG_MAX_LEN) continue
     const key = n.toLowerCase()
     if (seen.has(key)) continue
@@ -155,7 +174,7 @@ export async function toggleTagInList(
   wantIn?: boolean | null,
 ): Promise<TagListsState> {
   const id = String(idRaw ?? '').trim()
-  const tag = normalizeTagInput(typeof tagRaw === 'string' ? tagRaw : String(tagRaw ?? ''))
+  const tag = normalizeListItemQuery(tagRaw)
   if (!id) throw new Error('id da lista obrigatório.')
   if (!tag) throw new Error('tag inválida.')
   const state = await readTagLists()
@@ -180,8 +199,8 @@ export async function renameTagInList(
   toRaw: unknown,
 ): Promise<TagListsState> {
   const id = String(idRaw ?? '').trim()
-  const from = normalizeTagInput(typeof fromRaw === 'string' ? fromRaw : String(fromRaw ?? ''))
-  const to = normalizeTagInput(typeof toRaw === 'string' ? toRaw : String(toRaw ?? ''))
+  const from = normalizeListItemQuery(fromRaw) ?? normalizeTagInput(String(fromRaw ?? ''))
+  const to = normalizeListItemQuery(toRaw)
   if (!id) throw new Error('id da lista obrigatório.')
   if (!from) throw new Error('item actual inválido.')
   if (!to) throw new Error('novo nome inválido.')
