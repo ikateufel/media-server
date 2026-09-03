@@ -65,7 +65,8 @@ type CatalogHit = {
 }
 
 /** Uma linha de miniaturas no mosaico da lista. */
-export const TAG_LIST_PREVIEW_SAMPLE = 4
+/** Uma imagem por vídeo, até 6 títulos distintos. */
+export const TAG_LIST_PREVIEW_SAMPLE = 6
 
 /**
  * Uma passagem pelo catálogo; para cada query devolve total + amostra aleatória
@@ -154,11 +155,25 @@ export async function previewQueriesForList(
   ]
   if (!queries.length) return { rows: [], fromCache: 0, computed: 0 }
 
+  const sample = Math.max(
+    1,
+    Math.min(TAG_LIST_PREVIEW_SAMPLE, Math.floor(samplePerQuery) || TAG_LIST_PREVIEW_SAMPLE),
+  )
   const id = String(listId ?? '').trim()
   const cached = !force && id ? getCachedTagListPreviews(id, queries) : new Map()
   const missing = force
     ? queries
-    : queries.filter((q) => !cached.has(normalizePreviewQueryKey(q)))
+    : queries.filter((q) => {
+        const key = normalizePreviewQueryKey(q)
+        const hit = cached.get(key)
+        if (!hit) return true
+        const want = Math.min(sample, hit.total || sample)
+        if (hit.samples.length < want) {
+          cached.delete(key)
+          return true
+        }
+        return false
+      })
 
   let computedRows: TagListPreviewRow[] = []
   if (missing.length) {
@@ -172,8 +187,8 @@ export async function previewQueriesForList(
   const rows = queries.map((query) => {
     const key = normalizePreviewQueryKey(query)
     return (
-      cached.get(key) ??
-      computedByKey.get(key) ?? {
+      computedByKey.get(key) ??
+      cached.get(key) ?? {
         query,
         total: 0,
         samples: [],

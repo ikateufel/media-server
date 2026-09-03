@@ -65,6 +65,7 @@ function scrollRootFor(el: HTMLElement): Element | null {
   return (
     el.closest('.tv-minimal-rail-scroll') ??
     el.closest('.trailer-grid-scroll') ??
+    el.closest('.tag-browse-item-cards') ??
     null
   )
 }
