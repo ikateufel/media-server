@@ -94,7 +94,7 @@
               >
                 Trailer
               </button>
-              <div v-if="tvMinimalIsFull" class="tv-minimal-rate">
+              <div class="tv-minimal-rate">
                 <label for="rate-select-tv-minimal" class="tv-minimal-rate-label">Vel.</label>
                 <select
                   id="rate-select-tv-minimal"
@@ -3937,7 +3937,7 @@ function onTvMinimalLoadedData() {
   if (playerUrl.value) {
     el.playbackRate = fastPlayEnabled.value ? fastPlayRate.value : playbackRate.value
   } else {
-    el.playbackRate = 1
+    el.playbackRate = playbackRate.value
   }
   void el.play().catch(() => {})
 }
@@ -3980,7 +3980,7 @@ async function onTvMinimalBackToTrailer() {
   void nextTick(() => applyTvMinimalVideoSrc(tvMinimalVideoSrc.value))
 }
 
-const playbackRate = ref(1)
+const playbackRate = ref(isTvLayout.value ? 0.8 : 1)
 const fastPlayEnabled = ref(false)
 
 const fastPlayRate = ref(2)

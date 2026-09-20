@@ -1,5 +1,5 @@
 /** Velocidades comuns de reprodução */
-export const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] as const
+export const PLAYBACK_RATES = [0.25, 0.5, 0.75, 0.8, 1, 1.25, 1.5, 1.75, 2] as const
 
 /**
  * Índice reservado no menu de bibliotecas: aba «Favoritos» (`GET /api/sessions`).
