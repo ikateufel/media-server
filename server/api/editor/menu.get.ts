@@ -6,8 +6,8 @@ import {
 export default defineEventHandler(() => {
   const config = useRuntimeConfig()
   const items = getVideoMenuItems(config)
-  const fromFile = tryLoadVideoMenuFromDisk()
-  const source: 'file' | 'env' = fromFile?.length ? 'file' : 'env'
+  const fromDb = tryLoadVideoMenuFromDisk()
+  const source: 'db' | 'env' = fromDb?.length ? 'db' : 'env'
 
   return {
     source,

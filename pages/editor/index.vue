@@ -11,9 +11,11 @@
     </header>
 
     <p v-if="!videoSrc" class="admin-lead">
-      Marque trechos a <strong>excluir</strong> (vermelho) ou <strong>recortar</strong> (verde), opcionalmente
-      <strong>pontos de split</strong> (azul) para gerar <code class="admin-code">edited\nome_c1.mp4</code>,
-      <code class="admin-code">_c2</code>… — exclusões e recortes aplicam-se dentro de cada parte.
+      Marque trechos a <strong>excluir</strong> (vermelho) ou <strong>recortar</strong> (verde).
+      <strong>Split</strong> no instante actual divide o vídeo em partes
+      (<code class="admin-code">edited\nome_1.mp4</code>,
+      <code class="admin-code">_2</code>, <code class="admin-code">_3</code>…) —
+      exclusões e recortes aplicam-se dentro de cada parte.
     </p>
 
     <p v-if="!isWinServer" class="admin-warn" role="status">
@@ -140,6 +142,14 @@
       >
         <div class="editor-timeline-track">
           <div
+            v-for="(chunk, ci) in splitChunks"
+            :key="`chunk-${ci}`"
+            class="editor-timeline-chunk"
+            :class="ci % 2 === 0 ? 'editor-timeline-chunk--a' : 'editor-timeline-chunk--b'"
+            :style="segmentStyle(chunk)"
+            :title="`Parte ${ci + 1}`"
+          />
+          <div
             v-for="seg in markedSegments"
             :key="seg.id"
             class="editor-timeline-mark"
@@ -193,6 +203,19 @@
         <button type="button" class="admin-btn" title="Atalho: O" @click="markOut">Marcar fim (O)</button>
         <button
           type="button"
+          class="admin-btn editor-btn-split"
+          :title="
+            canAddSplit
+              ? 'Divide o vídeo neste instante (atalho: P)'
+              : 'Move o cursor — split precisa de ≥0,5s do início, do fim e de outro corte'
+          "
+          :disabled="!canAddSplit"
+          @click="addSplitPoint"
+        >
+          Split
+        </button>
+        <button
+          type="button"
           class="admin-btn admin-btn--danger"
           :disabled="!canAddMark"
           @click="addMarked('exclude')"
@@ -221,6 +244,8 @@
         </span>
       </div>
       <p class="admin-muted editor-mark-help">
+        <strong>Split</strong> — corta neste ponto; cada parte vira um ficheiro
+        (<code class="admin-code">nome_1.mp4</code>, <code class="admin-code">_2</code>…).
         <strong>Excluir</strong> — marca o que sai; exporta o resto.
         <strong>Recortar</strong> — marca o que fica; exporta só esses pedaços.
         Repete início/fim para cada trecho. Trechos sobrepostos do mesmo tipo são fundidos na exportação.
@@ -229,14 +254,10 @@
       </div>
       </div>
 
-      <div class="editor-split-section">
-        <h3 class="editor-h3">Split em partes (c1, c2, …)</h3>
+      <div v-if="splitPoints.length" class="editor-split-section">
+        <h3 class="editor-h3">Partes ({{ chunkPlansPreview.length }})</h3>
         <div class="admin-row editor-mark-row">
-          <button type="button" class="admin-btn editor-btn-split" title="Atalho: P" @click="addSplitPoint">
-            Marcar split (P)
-          </button>
           <button
-            v-if="splitPoints.length"
             type="button"
             class="admin-btn admin-btn--ghost"
             @click="clearSplitPoints"
@@ -245,11 +266,12 @@
           </button>
         </div>
         <p class="admin-muted editor-mark-help">
-          Cada ponto de split divide o vídeo. Com 3 pontos obténs 4 ficheiros
-          (<code class="admin-code">nome_c1.mp4</code> … <code class="admin-code">nome_c4.mp4</code>).
-          Podes combinar com exclusões — por exemplo remover um trecho só no pedaço c3.
+          {{ splitPoints.length }} corte{{ splitPoints.length === 1 ? '' : 's' }} →
+          {{ splitPoints.length + 1 }} ficheiros
+          em <code class="admin-code">edited\nome_1.mp4</code> …
+          <code class="admin-code">nome_{{ splitPoints.length + 1 }}.mp4</code>.
         </p>
-        <ul v-if="splitPoints.length" class="editor-split-list">
+        <ul class="editor-split-list">
           <li v-for="sp in splitPoints" :key="sp.id" class="editor-split-item">
             <button type="button" class="editor-split-time" @click="seekTo(sp.time)">
               {{ formatTime(sp.time) }}
@@ -260,7 +282,7 @@
           </li>
         </ul>
         <div v-if="chunkPlansPreview.length" class="editor-chunks-preview">
-          <h4 class="editor-chunks-title">Pré-visualização das partes</h4>
+          <h4 class="editor-chunks-title">Blocos a gravar</h4>
           <ul class="editor-chunks-list">
             <li v-for="plan in chunkPlansPreview" :key="plan.label" class="editor-chunk-row">
               <span class="editor-chunk-label">{{ plan.label }}</span>
@@ -349,7 +371,7 @@
           :disabled="!canExportSplit"
           @click="startExportSplit"
         >
-          Gerar partes (c1…)
+          Gerar partes (1, 2, 3…)
         </button>
         <button
           type="button"
@@ -460,6 +482,7 @@
 <script setup lang="ts">
 import {
   buildChunkExportPlans,
+  computeChunksFromSplits,
   formatTime,
   keepSegmentsForExport,
   mergeSegments,
@@ -594,6 +617,17 @@ const keepExportDuration = computed(() =>
 
 const splitTimes = computed(() => splitPoints.value.map((s) => s.time))
 
+const splitChunks = computed(() => {
+  if (!duration.value || !splitPoints.value.length) return []
+  return computeChunksFromSplits(duration.value, splitTimes.value)
+})
+
+const canAddSplit = computed(() => {
+  if (!duration.value) return false
+  const next = normalizeSplitTimes([...splitTimes.value, currentTime.value], duration.value)
+  return next.length > splitTimes.value.length
+})
+
 const chunkPlansPreview = computed((): EditorChunkPlan[] => {
   if (!duration.value || !splitPoints.value.length) return []
   const exclude = mergeSegments(
@@ -630,8 +664,7 @@ const pendingStyle = computed(() => {
 const canLoadVideo = computed(() => {
   const hasFile = !!fileRel.value.trim() && isVideoName(fileRel.value)
   if (!hasFile) return false
-  if (sourceRoot.value.trim()) return true
-  return resolvedSessionIndex() != null
+  return !!effectiveSourceRoot()
 })
 
 function resolvedSessionIndex(): number | null {
@@ -640,6 +673,15 @@ function resolvedSessionIndex(): number | null {
   const sn = Number(raw)
   if (!Number.isFinite(sn) || sn < 0 || !Number.isInteger(sn)) return null
   return sn
+}
+
+/** Pasta efectiva: campo manual ou path da biblioteca seleccionada no menu. */
+function effectiveSourceRoot(): string {
+  const manual = sourceRoot.value.trim()
+  if (manual) return manual
+  const sn = resolvedSessionIndex()
+  if (sn == null || sn < 0 || sn >= menuRows.value.length) return ''
+  return menuRows.value[sn]!.path.trim()
 }
 
 function usesSessionVideoApi(): boolean {
@@ -655,7 +697,7 @@ const exportBaseOk = computed(
   () =>
     isWinServer.value &&
     !jobActive.value &&
-    !!sourceRoot.value.trim() &&
+    !!effectiveSourceRoot() &&
     !!fileRel.value.trim() &&
     !!videoSrc.value,
 )
@@ -764,7 +806,6 @@ function readRouteVideoQuery(): boolean {
   const file =
     typeof fileRaw === 'string' ? fileRaw : Array.isArray(fileRaw) ? (fileRaw[0] ?? '') : ''
   if (!file.trim()) return false
-  fileRel.value = normalizeRel(file)
   const sn = Number(
     typeof sessionRaw === 'string' ? sessionRaw : Array.isArray(sessionRaw) ? (sessionRaw[0] ?? NaN) : NaN,
   )
@@ -781,6 +822,8 @@ function readRouteVideoQuery(): boolean {
           : ''
     useVideo.value = uv !== '0' && uv !== 'false'
   }
+  // Depois de fixar a pasta — normalizeRel usa sourceRoot para tirar prefixos.
+  fileRel.value = normalizeRel(file)
   return true
 }
 
@@ -812,17 +855,55 @@ function pickVideoRelFromList(list: FileList | File[]): string | null {
 }
 
 function editorVideoUrl(root: string, rel: string): string {
-  const session = resolvedSessionIndex()
-  if (session != null) {
-    const q = new URLSearchParams()
-    q.set('session', String(session))
-    q.set('rel', rel)
-    return `/api/video?${q.toString()}`
-  }
+  // Nunca /api/video aqui — exige unlock do catálogo e falha com 401 no /editor.
   const q = new URLSearchParams()
-  q.set('sourceRoot', root.trim())
   q.set('rel', rel)
+  const session = resolvedSessionIndex()
+  if (session != null && session < menuRows.value.length) {
+    // Preferir session: evita caminhos Windows longos/especiais na query string.
+    q.set('session', String(session))
+    return `/api/admin/editor-video?${q.toString()}`
+  }
+  const rootTrim = root.trim()
+  if (!rootTrim) {
+    throw new Error('Pasta de origem em falta.')
+  }
+  q.set('sourceRoot', rootTrim)
   return `/api/admin/editor-video?${q.toString()}`
+}
+
+function parseApiErrorBody(body: string): string {
+  try {
+    const j = JSON.parse(body) as { statusMessage?: string; message?: string }
+    return (j.message || j.statusMessage || '').trim()
+  } catch {
+    return (
+      body.match(/"statusMessage"\s*:\s*"([^"]+)"/)?.[1] ||
+      body.match(/"message"\s*:\s*"([^"]+)"/)?.[1] ||
+      ''
+    )
+  }
+}
+
+/**
+ * Diagnóstico só em erro — `cache: 'no-store'` + Range curto.
+ * NÃO chamar antes de atribuir `videoSrc`: um GET Range na mesma URL
+ * pode ficar na cache HTTP e o <video> recebe 1 byte → falha de reprodução.
+ */
+async function diagnoseEditorVideo(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Range: 'bytes=0-0' },
+      cache: 'no-store',
+    })
+    if (res.ok || res.status === 206) return null
+    const body = await res.text().catch(() => '')
+    const msg = parseApiErrorBody(body)
+    return msg || `HTTP ${res.status}`
+  } catch {
+    return 'Sem resposta do servidor ao pedir o vídeo.'
+  }
 }
 
 function applyVideoRel(relRaw: string, autoLoad = true) {
@@ -870,16 +951,23 @@ function onFolderInput(ev: Event) {
 async function loadVideo() {
   videoLoadErr.value = ''
   const rel = normalizeRel(fileRel.value)
-  const root = sourceRoot.value.trim()
-  const sessionApi = usesSessionVideoApi()
+  const sn = resolvedSessionIndex()
+  if (sn != null && sn < menuRows.value.length) {
+    sourceRoot.value = menuRows.value[sn]!.path.trim()
+  }
+  const root = effectiveSourceRoot()
   if (!rel || !isVideoName(rel)) {
     videoLoadErr.value = 'Indique um ficheiro de vídeo válido.'
     return
   }
-  if (!sessionApi && !root) {
-    videoLoadErr.value = 'Escolha uma biblioteca ou indique a pasta de origem.'
+  if (!root) {
+    videoLoadErr.value =
+      menuRows.value.length === 0
+        ? 'Aguarde o carregamento das bibliotecas…'
+        : 'Escolha uma biblioteca ou indique a pasta de origem.'
     return
   }
+  if (!sourceRoot.value.trim()) sourceRoot.value = root
   fileRel.value = rel
   markedSegments.value = []
   splitPoints.value = []
@@ -891,7 +979,15 @@ async function loadVideo() {
     videoWrapRef.value.style.aspectRatio = ''
     videoWrapRef.value.style.width = ''
   }
-  videoSrc.value = editorVideoUrl(root, rel)
+  try {
+    // Cache-buster leve: evita reutilizar resposta Range de 1 byte na cache HTTP.
+    const base = editorVideoUrl(root, rel)
+    const sep = base.includes('?') ? '&' : '?'
+    videoSrc.value = `${base}${sep}_=${Date.now()}`
+  } catch (e: unknown) {
+    videoSrc.value = ''
+    videoLoadErr.value = e instanceof Error ? e.message : 'Pasta de origem inválida.'
+  }
 }
 
 function onVideoLoaded() {
@@ -906,9 +1002,35 @@ function onVideoLoaded() {
   }
 }
 
-function onVideoError() {
-  videoLoadErr.value =
-    'Não foi possível reproduzir o vídeo. Confirme pasta de origem e caminho do ficheiro.'
+async function onVideoError() {
+  const src = videoSrc.value
+  let detail = ''
+  if (src && import.meta.client) {
+    const probeErr = await diagnoseEditorVideo(src)
+    if (probeErr) {
+      detail = ` ${probeErr}`
+    } else {
+      // API OK (bytes chegaram) — falha no decode do browser.
+      const code = videoRef.value?.error?.code
+      if (code === 3) {
+        detail =
+          ' O ficheiro chegou do servidor, mas o H.264 está corrupto (falha ao descodificar). Re-descarregue ou repare o MP4.'
+      } else if (code === 4) {
+        detail =
+          ' O ficheiro chegou do servidor, mas o browser não consegue lê-lo (bitstream/codec inválido). Re-descarregue ou repare o MP4.'
+      } else if (code === 2) {
+        detail = ' Falha de rede ao obter o stream.'
+      } else {
+        detail =
+          ' O ficheiro chegou do servidor, mas o player falhou ao abrir (provavelmente MP4 corrupto).'
+      }
+    }
+  } else {
+    const code = videoRef.value?.error?.code
+    if (code === 4) detail = ' Formato/codec não suportado pelo browser.'
+    else if (code === 2) detail = ' Falha de rede ao obter o stream.'
+  }
+  videoLoadErr.value = `Não foi possível reproduzir o vídeo.${detail}`
   duration.value = 0
 }
 
@@ -1044,7 +1166,7 @@ function markedForMode(mode: EditorMarkMode) {
 function exportBody(mode?: EditorMarkMode) {
   const session = resolvedSessionIndex()
   return {
-    sourceRoot: sourceRoot.value.trim(),
+    sourceRoot: effectiveSourceRoot(),
     file: normalizeRel(fileRel.value),
     editMode: mode ?? 'exclude',
     splitPoints: splitTimes.value,
@@ -1345,12 +1467,14 @@ onMounted(() => {
   if (!import.meta.client) return
   readRouteVideoQuery()
   window.addEventListener('keydown', onKeyDown)
+  // Só carrega o vídeo depois do menu (senão session sem sourceRoot ia para /api/video → 401).
   void loadMenu().then(() => bootstrapJob())
 })
 
 watch(
   () => [route.query.session, route.query.file, route.query.useVideo],
   () => {
+    if (!menuRows.value.length) return
     readRouteVideoQuery()
     if (canLoadVideo.value) {
       void applyRoutePrefill()
@@ -1767,6 +1891,7 @@ onUnmounted(() => {
   top: 0;
   bottom: 0;
   pointer-events: none;
+  z-index: 1;
 }
 
 .editor-timeline-mark--exclude {
@@ -1807,6 +1932,22 @@ onUnmounted(() => {
   background: #8ab4f8;
   pointer-events: none;
   z-index: 2;
+}
+
+.editor-timeline-chunk {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.editor-timeline-chunk--a {
+  background: color-mix(in srgb, #58a6ff 18%, transparent);
+}
+
+.editor-timeline-chunk--b {
+  background: color-mix(in srgb, #3fb950 16%, transparent);
 }
 
 .editor-timeline-split {

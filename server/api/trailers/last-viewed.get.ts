@@ -1,4 +1,4 @@
-import { createError } from 'h3'
+﻿import { createError } from 'h3'
 import { LAST_VIEWED_LIMIT, LAST_VIEWED_SESSION_ID } from '~/composables/useVideoFolder'
 import { buildCatalogEntriesFromPlaybackRows } from '../../utils/buildCatalogFromPlaybackRows'
 import { requireCatalogUnlock } from '../../utils/catalogAccess'
@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   if (!roots.length) {
     throw createError({
       statusCode: 503,
-      statusMessage: 'Defina pastas em data/video-menu.json ou VIDEO_ROOT no .env.',
+      statusMessage: 'Defina pastas no menu (Admin / SQLite) ou VIDEO_ROOT no .env.',
     })
   }
 

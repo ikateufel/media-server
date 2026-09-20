@@ -39,7 +39,7 @@ export function normalizeSplitTimes(raw: unknown, duration: number | null): numb
   return merged
 }
 
-/** Limites de cada parte (c1, c2, …) a partir dos pontos de split. */
+/** Limites de cada parte (1, 2, …) a partir dos pontos de split. */
 export function computeChunksFromSplits(duration: number, splitTimes: number[]): CutSegment[] {
   if (!Number.isFinite(duration) || duration <= MIN_CHUNK_SEC) return []
   const points = normalizeSplitTimes(splitTimes, duration)
@@ -144,7 +144,7 @@ export function buildChunkExportPlans(
       const keepSegments = keepSegmentsForChunk(chunk, excludeMarks, keepMarks)
       return {
         index: i + 1,
-        label: `c${i + 1}`,
+        label: String(i + 1),
         chunk,
         keepSegments,
       }

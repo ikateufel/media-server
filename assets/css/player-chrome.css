@@ -197,7 +197,8 @@
 
 .player-chrome .icon-tool--shrink.icon-tool--busy,
 .player-chrome .icon-tool--trailer-redo.icon-tool--busy {
-  opacity: 0.55;
+  border-color: #8ab4f8;
+  color: #c5ddf5;
 }
 
 .player-chrome .icon-svg {

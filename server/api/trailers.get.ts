@@ -1,4 +1,4 @@
-import { readdir, stat } from 'node:fs/promises'
+﻿import { readdir, stat } from 'node:fs/promises'
 import { basename, extname, join, resolve } from 'node:path'
 import { createError, getQuery } from 'h3'
 import type { TrailerListEntry } from '~/composables/useVideoFolder'
@@ -86,7 +86,7 @@ export default defineEventHandler(async (event) => {
   if (!roots.length) {
     throw createError({
       statusCode: 503,
-      statusMessage: 'Defina pastas em data/video-menu.json ou VIDEO_ROOT no .env.',
+      statusMessage: 'Defina pastas no menu (Admin / SQLite) ou VIDEO_ROOT no .env.',
     })
   }
 

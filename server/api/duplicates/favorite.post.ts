@@ -18,6 +18,6 @@ export default defineEventHandler(async (event) => {
   if (!Number.isFinite(session) || session < 0 || session >= roots.length || !trailerRel) {
     throw createError({ statusCode: 400, statusMessage: 'session e trailerRel são obrigatórios.' })
   }
-  const isFavorite = await toggleFavorite(Math.floor(session), trailerRel)
-  return { ok: true, isFavorite }
+  const { isFavorite, favoritedAt } = await toggleFavorite(Math.floor(session), trailerRel)
+  return { ok: true, isFavorite, favoritedAt }
 })

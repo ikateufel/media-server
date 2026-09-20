@@ -10,6 +10,9 @@ export interface LibraryState {
 
   favorites: Record<string, string[]>
 
+  /** ISO 8601: instante em que o utilizador marcou o título como favorito. */
+  favoriteAt: Record<string, Record<string, string>>
+
   fullProgress: Record<string, { seconds: number; duration?: number; updated: string }>
 
 }
@@ -19,6 +22,8 @@ export interface LibraryState {
 const EMPTY: LibraryState = {
 
   favorites: {},
+
+  favoriteAt: {},
 
   fullProgress: {},
 
@@ -52,6 +57,8 @@ export async function readLibraryState(): Promise<LibraryState> {
 
           : {},
 
+      favoriteAt: parseFavoriteAt(j.favoriteAt),
+
       fullProgress:
 
         j.fullProgress && typeof j.fullProgress === 'object' && !Array.isArray(j.fullProgress)
@@ -64,7 +71,17 @@ export async function readLibraryState(): Promise<LibraryState> {
 
   } catch {
 
-    return { ...EMPTY, favorites: { ...EMPTY.favorites }, fullProgress: { ...EMPTY.fullProgress } }
+    return {
+
+      ...EMPTY,
+
+      favorites: { ...EMPTY.favorites },
+
+      favoriteAt: { ...EMPTY.favoriteAt },
+
+      fullProgress: { ...EMPTY.fullProgress },
+
+    }
 
   }
 
@@ -90,6 +107,50 @@ export function sessionKey(session: number): string {
 
 }
 
+function parseFavoriteAt(raw: unknown): Record<string, Record<string, string>> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, Record<string, string>> = {}
+  for (const [sk, map] of Object.entries(raw as Record<string, unknown>)) {
+    if (!map || typeof map !== 'object' || Array.isArray(map)) continue
+    const inner: Record<string, string> = {}
+    for (const [rel, at] of Object.entries(map as Record<string, unknown>)) {
+      if (typeof at !== 'string' || !at.trim()) continue
+      const ms = Date.parse(at)
+      if (!Number.isFinite(ms)) continue
+      inner[rel] = new Date(ms).toISOString()
+    }
+    if (Object.keys(inner).length) out[sk] = inner
+  }
+  return out
+}
+
+function pruneFavoriteAt(state: LibraryState, k: string, rels: Iterable<string>): void {
+  const keep = new Set(rels)
+  const map = state.favoriteAt[k]
+  if (!map) return
+  for (const rel of Object.keys(map)) {
+    if (!keep.has(rel)) delete map[rel]
+  }
+  if (Object.keys(map).length === 0) delete state.favoriteAt[k]
+}
+
+function moveFavoriteAtEntry(
+  state: LibraryState,
+  fromK: string,
+  toK: string,
+  trailerRel: string,
+): void {
+  const fromMap = state.favoriteAt[fromK]
+  const at = fromMap?.[trailerRel]
+  if (fromMap) {
+    delete fromMap[trailerRel]
+    if (Object.keys(fromMap).length === 0) delete state.favoriteAt[fromK]
+  }
+  if (!at) return
+  const toMap = state.favoriteAt[toK] ?? (state.favoriteAt[toK] = {})
+  if (!toMap[trailerRel] || at < toMap[trailerRel]!) toMap[trailerRel] = at
+}
+
 
 
 export function fullProgressKey(session: number, mainRel: string): string {
@@ -100,25 +161,33 @@ export function fullProgressKey(session: number, mainRel: string): string {
 
 
 
-/** Devolve `true` se ficou favorito. */
+export type ToggleFavoriteResult = { isFavorite: boolean; favoritedAt: string | null }
 
-export async function toggleFavorite(session: number, trailerRel: string): Promise<boolean> {
+/** Devolve se ficou favorito e o instante gravado (só quando passa a favorito). */
+
+export async function toggleFavorite(session: number, trailerRel: string): Promise<ToggleFavoriteResult> {
 
   const state = await readLibraryState()
 
   const k = sessionKey(session)
 
   const set = new Set(state.favorites[k] ?? [])
+  const times = state.favoriteAt[k] ?? (state.favoriteAt[k] = {})
 
-  if (set.has(trailerRel)) set.delete(trailerRel)
-
-  else set.add(trailerRel)
+  if (set.has(trailerRel)) {
+    set.delete(trailerRel)
+    delete times[trailerRel]
+  } else {
+    set.add(trailerRel)
+    times[trailerRel] = new Date().toISOString()
+  }
 
   state.favorites[k] = [...set].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  pruneFavoriteAt(state, k, set)
 
   await writeLibraryState(state)
 
-  return set.has(trailerRel)
+  return { isFavorite: set.has(trailerRel), favoritedAt: times[trailerRel] ?? null }
 
 }
 
@@ -130,6 +199,13 @@ export async function getFavoriteSet(session: number): Promise<Set<string>> {
 
   return new Set(state.favorites[sessionKey(session)] ?? [])
 
+}
+
+/** Mapa `trailerRel -> ISO` do instante em que foi marcado favorito. */
+export async function getFavoriteAtMap(session: number): Promise<Map<string, string>> {
+  const state = await readLibraryState()
+  const map = state.favoriteAt[sessionKey(session)] ?? {}
+  return new Map(Object.entries(map))
 }
 
 /** Move favorito de um `trailer_rel` alias para o canónico (mesmo vídeo físico). */
@@ -151,6 +227,15 @@ export async function remapFavoriteTrailerRel(
   next.delete(from)
   if (hadFrom || hadTo) next.add(to)
   state.favorites[k] = [...next].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  const times = state.favoriteAt[k] ?? (state.favoriteAt[k] = {})
+  const fromAt = times[from]
+  const toAt = times[to]
+  delete times[from]
+  if (hadFrom || hadTo) {
+    const kept = [fromAt, toAt].filter((v): v is string => !!v).sort()[0]
+    if (kept) times[to] = kept
+  }
+  pruneFavoriteAt(state, k, next)
   await writeLibraryState(state)
 }
 
@@ -300,7 +385,25 @@ export async function moveTitleLibraryState(
 
       }
 
+      moveFavoriteAtEntry(state, fromK, toK, trailerRel)
+
+      pruneFavoriteAt(state, toK, state.favorites[toK] ?? [])
+
+    } else {
+
+      const fromMap = state.favoriteAt[fromK]
+
+      if (fromMap) {
+
+        delete fromMap[trailerRel]
+
+        if (Object.keys(fromMap).length === 0) delete state.favoriteAt[fromK]
+
+      }
+
     }
+
+    pruneFavoriteAt(state, fromK, state.favorites[fromK] ?? [])
 
   }
 
@@ -351,6 +454,7 @@ export async function purgeTitleFromLibraryState(
   state.favorites[k] = arr.filter((r) => r !== trailerRel)
 
   if (state.favorites[k].length === 0) delete state.favorites[k]
+  pruneFavoriteAt(state, k, state.favorites[k] ?? [])
 
   delete state.fullProgress[fullProgressKey(session, mainRel)]
 

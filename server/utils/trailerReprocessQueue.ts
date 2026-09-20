@@ -176,6 +176,44 @@ async function persist() {
   await writeFile(QUEUE_FILE(), JSON.stringify(payload, null, 2), 'utf8')
 }
 
+/** Itens `running` sem job vivo (HMR/crash) bloqueavam a bomba — voltam a pending. */
+function recoverOrphanedRunning(): boolean {
+  const rt = runtime()
+  let changed = false
+  for (const item of rt.items) {
+    if (item.status !== 'running') continue
+    const live = item.jobId ? getTrailerReprocessSnapshot(item.jobId) : null
+    if (live && live.status === 'running') continue
+    item.status = 'pending'
+    item.jobId = null
+    item.startedAt = null
+    item.endedAt = null
+    item.error = undefined
+    changed = true
+  }
+  return changed
+}
+
+/** Após HMR o async da bomba morre mas `pumpActive` fica true no globalThis. */
+function recoverStuckPumpFlag(): boolean {
+  const rt = runtime()
+  if (!rt.pumpActive) return false
+  const hasLiveJob = rt.items.some((i) => {
+    if (i.status !== 'running' || !i.jobId) return false
+    const live = getTrailerReprocessSnapshot(i.jobId)
+    return Boolean(live && live.status === 'running')
+  })
+  if (hasLiveJob) return false
+  rt.pumpActive = false
+  return true
+}
+
+function recoverQueueRuntime(): boolean {
+  const a = recoverOrphanedRunning()
+  const b = recoverStuckPumpFlag()
+  return a || b
+}
+
 async function ensureLoaded() {
   const rt = runtime()
   if (rt.loaded) return
@@ -192,18 +230,10 @@ async function ensureLoaded() {
       for (const row of rows) {
         const item = parseItem(row)
         if (!item) continue
-        if (item.status === 'running') {
-          const live = item.jobId ? getTrailerReprocessSnapshot(item.jobId) : null
-          if (!live || live.status !== 'running') {
-            item.status = 'pending'
-            item.jobId = null
-            item.startedAt = null
-            item.error = undefined
-          }
-        }
         items.push(item)
       }
       rt.items = pruneFinished(items)
+      recoverQueueRuntime()
       rt.updatedAt =
         typeof parsed.updatedAt === 'number' && Number.isFinite(parsed.updatedAt)
           ? parsed.updatedAt
@@ -258,6 +288,10 @@ async function runPump() {
   try {
     while (true) {
       await ensureLoaded()
+      if (recoverQueueRuntime()) {
+        await persist()
+        emitQueue()
+      }
       const next = rt.items.find((i) => i.status === 'pending')
       if (!next) break
 
@@ -337,6 +371,11 @@ function kickPump() {
 
 export async function getTrailerReprocessQueueState(): Promise<TrailerReprocessQueueState> {
   await ensureLoaded()
+  if (recoverQueueRuntime()) {
+    await persist()
+    emitQueue()
+  }
+  kickPump()
   return publicState()
 }
 

@@ -1,4 +1,4 @@
-import { requireCatalogUnlock } from '../../utils/catalogAccess'
+﻿import { requireCatalogUnlock } from '../../utils/catalogAccess'
 import { createError, readBody } from 'h3'
 import { resolveTrailerRelForTagMutation } from '../../utils/catalogTagMutation'
 import { pushTrailerViewHistory } from '../../utils/recentPlaybackDb'
@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   if (!roots.length) {
     throw createError({
       statusCode: 503,
-      statusMessage: 'Defina pastas em data/video-menu.json ou VIDEO_ROOT no .env.',
+      statusMessage: 'Defina pastas no menu (Admin / SQLite) ou VIDEO_ROOT no .env.',
     })
   }
 

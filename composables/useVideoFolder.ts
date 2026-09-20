@@ -101,6 +101,8 @@ export interface TrailerListEntry {
   highlightedAtMs?: number
   /** Definido no servidor (`data/library-state.json`). */
   isFavorite?: boolean
+  /** Epoch ms em que o utilizador marcou favorito (`library-state.json → favoriteAt`). */
+  favoritedAtMs?: number
   /** Tags SQLite (`data/library-tags.sqlite`), por sessão + `trailerRel`. */
   tags?: string[]
   /**

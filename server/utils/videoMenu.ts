@@ -1,8 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, resolve } from 'node:path'
 import { parseVideoRootsFromEnv } from './parseVideoRoots'
 import { buildSessionFolderLabels, getVideoRootsFromConfig, type RootsConfig } from './videoSession'
+import { getVideoTagsDb, runVideoTagsTxn } from './videoTagsDb'
 
 export interface VideoMenuItem {
   path: string
@@ -24,10 +23,6 @@ export const DEFAULT_FAST_PLAY_SETTINGS: FastPlaySettings = {
   windowSeconds: 10,
   lastMinuteSeconds: 60,
   fullscreenOnFastPlay: true,
-}
-
-function menuFilePath() {
-  return join(process.cwd(), 'data', 'video-menu.json')
 }
 
 function clampNumber(raw: unknown, min: number, max: number, fallback: number): number {
@@ -68,66 +63,39 @@ function normalizeFastPlaySettings(raw: unknown): FastPlaySettings {
   }
 }
 
-function parseMenuItemsFromUnknown(parsed: unknown): VideoMenuItem[] | null {
-  const rows: unknown = Array.isArray(parsed)
-    ? parsed
-    : parsed && typeof parsed === 'object' && parsed !== null && 'items' in parsed
-      ? (parsed as { items: unknown }).items
-      : null
-  if (!Array.isArray(rows) || !rows.length) return null
-  const out: VideoMenuItem[] = []
-  for (const row of rows) {
-    if (!row || typeof row !== 'object') continue
-    const path = String((row as { path?: string }).path ?? '').trim()
-    if (!path) continue
-    let title = String((row as { title?: string }).title ?? '').trim()
-    if (!title) title = basename(resolve(path))
-    out.push({ path, title })
-  }
-  return out.length ? out : null
-}
-
-function parseMenuDocumentFromDisk(): {
+function readMenuDocumentFromDb(): {
   items: VideoMenuItem[] | null
   fastPlay: FastPlaySettings
   catalogPassword: string
 } {
-  const file = menuFilePath()
-  if (!existsSync(file)) {
-    return {
-      items: null,
-      fastPlay: { ...DEFAULT_FAST_PLAY_SETTINGS },
-      catalogPassword: '',
-    }
-  }
   try {
-    const raw = readFileSync(file, 'utf8').trim()
-    if (!raw) {
-      return {
-        items: null,
-        fastPlay: { ...DEFAULT_FAST_PLAY_SETTINGS },
-        catalogPassword: '',
-      }
+    const d = getVideoTagsDb()
+    const rows = d
+      .prepare('SELECT path, title FROM video_menu_items ORDER BY sort_order ASC')
+      .all() as { path: string; title: string }[]
+    const items: VideoMenuItem[] = []
+    for (const row of rows) {
+      const path = String(row.path ?? '').trim()
+      if (!path) continue
+      let title = String(row.title ?? '').trim()
+      if (!title) title = basename(resolve(path))
+      items.push({ path, title })
     }
-    const parsed = JSON.parse(raw) as unknown
-    const items = parseMenuItemsFromUnknown(parsed)
+    const meta = d
+      .prepare('SELECT fast_play_json, catalog_password FROM video_menu_meta WHERE id = 1')
+      .get() as { fast_play_json?: string; catalog_password?: string } | undefined
     let fastPlayRaw: unknown = null
-    let catalogPassword = ''
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const obj = parsed as Record<string, unknown>
-      fastPlayRaw =
-        obj.fastPlay ??
-        (obj.settings && typeof obj.settings === 'object'
-          ? (obj.settings as Record<string, unknown>).fastPlay
-          : null)
-      if (typeof obj.catalogPassword === 'string') {
-        catalogPassword = obj.catalogPassword.trim()
+    if (meta?.fast_play_json) {
+      try {
+        fastPlayRaw = JSON.parse(meta.fast_play_json)
+      } catch {
+        fastPlayRaw = null
       }
     }
     return {
-      items,
+      items: items.length ? items : null,
       fastPlay: normalizeFastPlaySettings(fastPlayRaw),
-      catalogPassword,
+      catalogPassword: typeof meta?.catalog_password === 'string' ? meta.catalog_password.trim() : '',
     }
   } catch {
     return {
@@ -139,21 +107,20 @@ function parseMenuDocumentFromDisk(): {
 }
 
 /**
- * Lê `data/video-menu.json` (array ou `{ items: [...] }`).
- * Cada entrada: `{ "path": "...", "title": "..." }`; `title` omisso → último segmento do `path`.
- * Se o ficheiro não existir, estiver vazio ou inválido, devolve `null` para usar o fallback do `.env`.
+ * Lê o menu de pastas em SQLite (`video_menu_items`).
+ * Se vazio/inválido, devolve `null` para usar o fallback do `.env`.
  */
 export function tryLoadVideoMenuFromDisk(): VideoMenuItem[] | null {
-  return parseMenuDocumentFromDisk().items
+  return readMenuDocumentFromDb().items
 }
 
 export function getFastPlaySettingsFromDisk(): FastPlaySettings {
-  return parseMenuDocumentFromDisk().fastPlay
+  return readMenuDocumentFromDb().fastPlay
 }
 
 /** Senha do catálogo (vazia = desligada). */
 export function getCatalogPasswordFromDisk(): string {
-  return parseMenuDocumentFromDisk().catalogPassword
+  return readMenuDocumentFromDb().catalogPassword
 }
 
 export function normalizeCatalogPassword(raw: unknown): string {
@@ -161,10 +128,10 @@ export function normalizeCatalogPassword(raw: unknown): string {
   return raw.trim().slice(0, 200)
 }
 
-/** Ordem e rótulos do menu; se não houver JSON válido, usa `runtimeConfig` + rótulos por pasta. */
+/** Ordem e rótulos do menu; se não houver menu na DB, usa `runtimeConfig` + rótulos por pasta. */
 export function getVideoMenuItems(config: RootsConfig): VideoMenuItem[] {
-  const fromDisk = tryLoadVideoMenuFromDisk()
-  if (fromDisk?.length) return fromDisk
+  const fromDb = tryLoadVideoMenuFromDisk()
+  if (fromDb?.length) return fromDb
   const roots = getVideoRootsFromConfig(config)
   const labels = buildSessionFolderLabels(roots)
   return roots.map((path, i) => ({ path, title: labels[i] ?? String(i) }))
@@ -177,17 +144,14 @@ export function getVideoRootsFromRuntime(config: RootsConfig): string[] {
 
 /**
  * Raízes de vídeo para scripts CLI (process.cwd() + `.env` carregado pelo script).
- * Ordem igual ao servidor: `data/video-menu.json` se válido, senão `VIDEO_ROOT` / `VIDEO_ROOTS`.
+ * Ordem igual ao servidor: SQLite se válido, senão `VIDEO_ROOT` / `VIDEO_ROOTS`.
  */
 export function getVideoRootsForCli(): string[] {
   return getVideoMenuRowsForCli().map((e) => e.path)
 }
 
 /**
- * Raízes + rótulo (para CSV, etc.): `video-menu.json` se válido, senão `VIDEO_ROOT` com rótulos como no app.
- */
-/**
- * Grava `data/video-menu.json` com `{ "items": [...] }` (UTF-8).
+ * Grava o menu em SQLite (`video_menu_items` + `video_menu_meta`).
  * Valida caminhos e títulos antes de escrever.
  */
 export async function writeVideoMenuToDisk(
@@ -219,17 +183,27 @@ export async function writeVideoMenuToDisk(
   if (!normalized.length) {
     throw new Error('Nenhuma entrada válida.')
   }
-  const file = menuFilePath()
-  await mkdir(dirname(file), { recursive: true })
+
+  const current = readMenuDocumentFromDb()
   const fastPlay = normalizeFastPlaySettings(
-    fastPlayRaw === undefined ? getFastPlaySettingsFromDisk() : fastPlayRaw,
+    fastPlayRaw === undefined ? current.fastPlay : fastPlayRaw,
   )
   const catalogPassword =
     catalogPasswordRaw === undefined
-      ? getCatalogPasswordFromDisk()
+      ? current.catalogPassword
       : normalizeCatalogPassword(catalogPasswordRaw)
-  const payload = `${JSON.stringify({ items: normalized, fastPlay, catalogPassword }, null, 2)}\n`
-  await writeFile(file, payload, 'utf8')
+
+  const d = getVideoTagsDb()
+  runVideoTagsTxn(d, () => {
+    d.exec('DELETE FROM video_menu_items')
+    const ins = d.prepare(
+      'INSERT INTO video_menu_items (sort_order, path, title) VALUES (?, ?, ?)',
+    )
+    normalized.forEach((it, i) => ins.run(i, it.path, it.title))
+    d.prepare(
+      'INSERT OR REPLACE INTO video_menu_meta (id, fast_play_json, catalog_password) VALUES (1, ?, ?)',
+    ).run(JSON.stringify(fastPlay), catalogPassword)
+  })
 }
 
 export function getVideoMenuRowsForCli(): VideoMenuItem[] {

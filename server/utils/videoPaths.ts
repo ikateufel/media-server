@@ -97,6 +97,63 @@ async function findCaseInsensitiveFile(dir: string, fileName: string): Promise<s
 }
 
 /**
+ * Recupera `Pasta.ficheiro.mp4` → `Pasta/ficheiro.mp4` quando a barra foi comida
+ * (URLs com `[…]` / query mal codificada) e a pasta existe na raiz.
+ */
+async function resolveDottedFolderFile(
+  sourceRoot: string,
+  rel: string,
+): Promise<{ rel: string; path: string } | null> {
+  const cleaned = rel.replace(/\\/g, '/').replace(/^\/+/, '')
+  if (!cleaned || cleaned.includes('/') || !cleaned.includes('.')) return null
+
+  const root = resolve(sourceRoot.trim())
+  let dirents: Awaited<ReturnType<typeof readdir>>
+  try {
+    dirents = await readdir(root, { withFileTypes: true })
+  } catch {
+    return null
+  }
+
+  const dirs = dirents
+    .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
+    .map((d) => d.name)
+    .sort((a, b) => b.length - a.length)
+
+  const relLower = cleaned.toLowerCase()
+  for (const dir of dirs) {
+    const prefix = `${dir}.`
+    if (!cleaned.startsWith(prefix) && !relLower.startsWith(prefix.toLowerCase())) continue
+    const rest = cleaned.slice(dir.length + 1)
+    if (!rest || rest.includes('/') || hasPathTraversal(rest)) continue
+
+    const full = resolve(root, dir, rest)
+    const relToRoot = relative(root, full)
+    if (relToRoot.startsWith('..') || relToRoot === '') continue
+
+    try {
+      const st = await stat(full)
+      if (st.isFile()) {
+        return { rel: `${dir}/${rest}`.replace(/\\/g, '/'), path: full }
+      }
+    } catch {
+      /* */
+    }
+
+    if (process.platform === 'win32') {
+      const ci = await findCaseInsensitiveFile(resolve(root, dir), rest)
+      if (ci) {
+        return {
+          rel: relative(root, ci).replace(/\\/g, '/'),
+          path: ci,
+        }
+      }
+    }
+  }
+  return null
+}
+
+/**
  * Resolve um vídeo relativo a `sourceRoot`, tentando variantes comuns de caminho
  * (prefixo duplicado, só nome, subpasta `_selected/`, case-insensitive no Windows).
  */
@@ -135,6 +192,12 @@ export async function resolveMediaFileUnderRoot(
     }
   }
 
+  const dotted = await resolveDottedFolderFile(sourceRoot, rel)
+  if (dotted) {
+    tried.push(dotted.path)
+    return { ...dotted, tried }
+  }
+
   const last =
     tried[tried.length - 1] ??
     resolve(resolve(sourceRoot.trim()), rel.replace(/\\/g, '/').replace(/^\/+/, ''))
@@ -149,7 +212,7 @@ export async function resolveMediaFileUnderRoot(
 
   throw createError({
     statusCode: 400,
-    statusMessage: `Ficheiro não encontrado: ${last}. ${hint}`,
+    message: `Ficheiro não encontrado: ${last}. ${hint}`,
   })
 }
 
@@ -183,14 +246,18 @@ export function parseBytesRange(
   return { start, end }
 }
 
-export async function streamVideoFile(event: H3Event, filePath: string): Promise<void> {
+export async function streamVideoFile(
+  event: H3Event,
+  filePath: string,
+  opts?: { cacheControl?: string },
+): Promise<void> {
   const { size } = await stat(filePath)
   const mime = mimeForVideoPath(filePath)
   const range = getRequestHeader(event, 'range')
   const parsed = parseBytesRange(range, size)
 
   setHeader(event, 'Accept-Ranges', 'bytes')
-  setHeader(event, 'Cache-Control', 'public, max-age=3600')
+  setHeader(event, 'Cache-Control', opts?.cacheControl ?? 'public, max-age=3600')
 
   if (parsed) {
     const { start, end } = parsed

@@ -12,10 +12,11 @@
     </header>
 
     <p class="admin-lead">
-      Gerir pastas em <code class="admin-code">data/video-menu.json</code>, nomes do menu e sincronizar
-      <code class="admin-code">trailers/</code> e <code class="admin-code">preview/</code> (scripts
-      <code class="admin-code">scripts/trailer.bat</code> e <code class="admin-code">scripts/preview.bat</code> no
-      servidor Windows).
+      Gerir pastas do menu (SQLite <code class="admin-code">library-tags.sqlite</code>), nomes e sincronizar
+      <code class="admin-code">trailers/</code> (<code class="admin-code">scripts/trailer.bat</code> no
+      servidor Windows). Miniaturas JPEG em
+      <code class="admin-code">.thumb_cache/</code> ficam para o botão «Previews (todas)»
+      (<code class="admin-code">scripts/preview.bat</code>).
     </p>
 
     <section class="admin-card admin-tools">
@@ -82,7 +83,7 @@
         Guarde o token e clique em «Carregar menu» para editar as pastas.
       </p>
       <p v-else-if="source" class="admin-meta">
-        Origem: <strong>{{ source === 'file' ? 'video-menu.json' : 'fallback .env (sem JSON válido)' }}</strong>
+        Origem: <strong>{{ source === 'db' ? 'SQLite (library-tags.sqlite)' : 'fallback .env (sem menu na DB)' }}</strong>
       </p>
     </section>
 
@@ -164,10 +165,10 @@
                   type="button"
                   class="admin-btn admin-btn--sm"
                   :disabled="jobActive || !isWinServer"
-                  title="Corre trailer.bat e depois preview.bat nesta pasta (um único job)"
-                  @click="startSyncJob('both', { session: i })"
+                  title="Corre só trailer.bat nesta pasta"
+                  @click="startSyncJob('trailers', { session: i })"
                 >
-                  Trailer + preview
+                  Trailer
                 </button>
               </td>
               <td class="admin-td-autotags">
@@ -358,7 +359,7 @@
         </button>
         <button
           type="button"
-          class="admin-btn"
+          class="admin-btn admin-btn--primary"
           :disabled="jobActive || !isWinServer || !rows.length"
           title="Corre só trailer.bat para todas as bibliotecas"
           @click="startSyncJob('trailers', { all: true })"
@@ -369,19 +370,10 @@
           type="button"
           class="admin-btn"
           :disabled="jobActive || !isWinServer || !rows.length"
-          title="Corre só preview.bat para todas as bibliotecas"
+          title="Corre só preview.bat para todas as bibliotecas (miniaturas JPEG em .thumb_cache/)"
           @click="startSyncJob('previews', { all: true })"
         >
           Previews (todas)
-        </button>
-        <button
-          type="button"
-          class="admin-btn admin-btn--primary"
-          :disabled="jobActive || !isWinServer || !rows.length"
-          title="Corre trailer.bat e depois preview.bat para todas as bibliotecas (um único job)"
-          @click="startSyncJob('both', { all: true })"
-        >
-          Trailer + preview (todas)
         </button>
       </div>
       <p v-if="autoTagsBusy" class="admin-muted">A correr o pipeline auto-tags… (pode demorar vários minutos)</p>
@@ -611,7 +603,7 @@ const fastPlay = ref<FastPlaySettings>({
   lastMinuteSeconds: 60,
   fullscreenOnFastPlay: true,
 })
-const source = ref<'file' | 'env' | ''>('')
+const source = ref<'db' | 'env' | ''>('')
 const loadError = ref('')
 const saveMsg = ref('')
 const saveErr = ref('')
@@ -905,7 +897,7 @@ async function loadMenu() {
   try {
     const h = await adminHeaders()
     const data = await $fetch<{
-      source: 'file' | 'env'
+      source: 'db' | 'env'
       serverPlatform: string
       items: MenuRow[]
       fastPlay?: Partial<FastPlaySettings>

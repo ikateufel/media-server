@@ -159,7 +159,7 @@ function summarizeBatOutput(stdout: string, stderr: string): string {
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) =>
-      /\[(ERRO|SKIP|OVERSIZED|PROCESSANDO|META|OK|REPLACE|DET|RETRY|PHASE|FATAL|INICIO|INSUFFICIENT)/i.test(
+      /\[(ERRO|SKIP|OVERSIZED|PROCESSANDO|META|OK|REPLACE|DET|RETRY|PHASE|FATAL|INICIO|INSUFFICIENT|AVISO)/i.test(
         l,
       ),
     )

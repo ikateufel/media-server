@@ -1,4 +1,4 @@
 {
   "items": [],
-  "_readme": "Coloca bibliotecas em items com path absoluto OU deixa [] e usa só VIDEO_ROOT / VIDEO_ROOTS no .env. Copia este ficheiro para data/video-menu.json (gitignored)."
+  "_readme": "LEGACY — o menu passou para SQLite (library-tags.sqlite: video_menu_items / video_menu_meta). Se ainda existir video-menu.json na arranque e a tabela estiver vazia, é migrado automaticamente para .bak."
 }

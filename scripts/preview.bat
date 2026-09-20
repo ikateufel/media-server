@@ -6,7 +6,7 @@ setlocal DisableDelayedExpansion
 
 :: Gera JPEG em .thumb_cache\ a partir dos trailers\ (mesma logica que /api/library/preview-frame).
 
-:: O Admin/sync continua a chamar preview.bat apos trailer.bat; nao cria mais preview\*.mp4.
+:: O Admin ja nao chama preview.bat a seguir a trailer.bat; so via «Previews (todas)». Nao cria mais preview\*.mp4.
 
 ::
 

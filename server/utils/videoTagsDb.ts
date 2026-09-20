@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { resolveCatalogRelAbsoluteCandidates } from './trailerNames'
 import { resolveSafeUnderRoot } from './videoPaths'
 import { createRequire } from 'node:module'
@@ -125,6 +125,97 @@ function ensureDuplicateSchema(d: DatabaseSync) {
   `)
 }
 
+function ensureVideoMenuSchema(d: DatabaseSync) {
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS video_menu_items (
+      sort_order INTEGER NOT NULL PRIMARY KEY,
+      path TEXT NOT NULL,
+      title TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS video_menu_meta (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      fast_play_json TEXT NOT NULL,
+      catalog_password TEXT NOT NULL DEFAULT ''
+    );
+  `)
+}
+
+function migrateLegacyVideoMenuFromJson(d: DatabaseSync): void {
+  const cntRow = d.prepare('SELECT COUNT(*) AS c FROM video_menu_items').get() as { c: number }
+  if (cntRow.c > 0) return
+  const menuPath = join(process.cwd(), 'data', 'video-menu.json')
+  if (!existsSync(menuPath)) return
+  try {
+    const raw = readFileSync(menuPath, 'utf8').trim()
+    if (!raw) return
+    const parsed = JSON.parse(raw) as unknown
+    const rows: unknown = Array.isArray(parsed)
+      ? parsed
+      : parsed && typeof parsed === 'object' && parsed !== null && 'items' in parsed
+        ? (parsed as { items: unknown }).items
+        : null
+    if (!Array.isArray(rows) || !rows.length) return
+
+    const items: { path: string; title: string }[] = []
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue
+      const path = String((row as { path?: string }).path ?? '').trim()
+      if (!path) continue
+      let title = String((row as { title?: string }).title ?? '').trim()
+      if (!title) title = path.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || path
+      items.push({ path, title })
+    }
+    if (!items.length) return
+
+    let fastPlayJson = JSON.stringify({
+      rate: 2,
+      stepSeconds: 60,
+      windowSeconds: 10,
+      lastMinuteSeconds: 60,
+      fullscreenOnFastPlay: true,
+    })
+    let catalogPassword = ''
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const obj = parsed as Record<string, unknown>
+      const fp =
+        obj.fastPlay ??
+        (obj.settings && typeof obj.settings === 'object'
+          ? (obj.settings as Record<string, unknown>).fastPlay
+          : null)
+      if (fp && typeof fp === 'object') {
+        try {
+          fastPlayJson = JSON.stringify(fp)
+        } catch {
+          /* keep default */
+        }
+      }
+      if (typeof obj.catalogPassword === 'string') {
+        catalogPassword = obj.catalogPassword.trim()
+      }
+    }
+
+    runVideoTagsTxn(d, () => {
+      const ins = d.prepare(
+        'INSERT INTO video_menu_items (sort_order, path, title) VALUES (?, ?, ?)',
+      )
+      items.forEach((it, i) => ins.run(i, it.path, it.title))
+      d.prepare(
+        'INSERT OR REPLACE INTO video_menu_meta (id, fast_play_json, catalog_password) VALUES (1, ?, ?)',
+      ).run(fastPlayJson, catalogPassword)
+    })
+
+    try {
+      const bak = join(process.cwd(), 'data', 'video-menu.json.bak')
+      writeFileSync(bak, `${raw}\n`, 'utf8')
+      unlinkSync(menuPath)
+    } catch {
+      /* backup/remoção opcional */
+    }
+  } catch {
+    /* JSON inválido — ignorar */
+  }
+}
+
 function openDb(): DatabaseSync {
   const path = dbFilePath()
   const dir = dirname(path)
@@ -167,13 +258,18 @@ function openDb(): DatabaseSync {
   `)
   ensureDuplicateSchema(d)
   ensureVideoTagsIsManualColumn(d)
+  ensureVideoMenuSchema(d)
   migrateLegacyRecentPlaybackFromJson(d)
+  migrateLegacyVideoMenuFromJson(d)
   return d
 }
 
 export function getVideoTagsDb(): DatabaseSync {
   if (!db) db = openDb()
-  else ensureDuplicateSchema(db)
+  else {
+    ensureDuplicateSchema(db)
+    ensureVideoMenuSchema(db)
+  }
   return db
 }
 

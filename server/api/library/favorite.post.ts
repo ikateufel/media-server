@@ -15,6 +15,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'session e trailerRel são obrigatórios.' })
   }
   const trailerRel = await resolveTrailerRelForTagMutation(event, session, trailerRelRaw)
-  const isFavorite = await toggleFavorite(session, trailerRel)
-  return { isFavorite }
+  const { isFavorite, favoritedAt } = await toggleFavorite(session, trailerRel)
+  return { isFavorite, favoritedAt }
 })

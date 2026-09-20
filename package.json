@@ -21,6 +21,7 @@
     "repair-catalog-duplicates": "tsx scripts/repair-catalog-duplicate-tags.ts",
     "import-tags-filelists": "tsx scripts/tag-import-file-lists.ts",
     "migrate-legacy-trailers": "tsx scripts/migrate-legacy-trailers-previews.ts",
+    "backfill-favorite-at": "tsx scripts/backfill-favorite-at.ts",
     "warm-preview-cache": "tsx scripts/warm-preview-frame-cache.ts",
     "clear-thumb-caches": "tsx scripts/clear-thumb-caches.ts",
     "refresh-thumbs": "npm run clear-thumb-caches && npm run warm-preview-cache -- --force",

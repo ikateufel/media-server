@@ -1802,12 +1802,13 @@
             </button>
           </div>
           <p
-            v-if="tagBrowseSelectedList && tagBrowsePanel === 'tags'"
+            v-if="tagBrowseSelectedList"
             class="tag-browse-active-list"
           >
             Lista activa:
             <strong>{{ tagBrowseSelectedList.name }}</strong>
             <button
+              v-if="tagBrowsePanel === 'tags'"
               type="button"
               class="tag-browse-active-list-go"
               @click="tagBrowsePanel = 'lists'"
@@ -4341,6 +4342,11 @@ function selectTagBrowseList(id: string) {
   cancelTagBrowseItemEdit()
   const list = tagBrowseLists.value.find((l) => l.id === id)
   void loadTagBrowseItemPreviews(list?.tags ?? [], id)
+  void nextTick(() => {
+    document
+      .querySelector('.tag-browse-list-item--active')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  })
 }
 
 async function refreshTagBrowseData() {
@@ -6477,6 +6483,7 @@ async function toggleFavoriteAtIndex(i: number | null, opts?: { grid?: boolean }
   const ls = libSession(e)
   const idx = findFullEntryIndex(trailerRel, ls)
   const prevFav = e.isFavorite === true
+  const prevAt = e.favoritedAtMs
   const next = !prevFav
   const prevFocusedRel = trailerRel
   const wasFullRel = playerUrl.value ? (playbackBefore?.trailerRel ?? trailerRel) : null
@@ -6486,7 +6493,10 @@ async function toggleFavoriteAtIndex(i: number | null, opts?: { grid?: boolean }
     trailerRelMatchesFocus(playbackBefore.trailerRel, trailerRel) &&
     libSession(playbackBefore) === ls
 
-  if (idx >= 0) fullEntries.value[idx].isFavorite = next
+  if (idx >= 0) {
+    fullEntries.value[idx].isFavorite = next
+    fullEntries.value[idx].favoritedAtMs = next ? Date.now() : undefined
+  }
 
   if (keepsPlayback && entryLeavesCatalogAfterFavoriteChange(next)) {
     if (playerUrl.value) activeIndex.value = null
@@ -6494,12 +6504,14 @@ async function toggleFavoriteAtIndex(i: number | null, opts?: { grid?: boolean }
   }
 
   try {
-    const res = await $fetch<{ isFavorite?: boolean }>('/api/library/favorite', {
+    const res = await $fetch<{ isFavorite?: boolean; favoritedAt?: string | null }>('/api/library/favorite', {
       method: 'POST',
       body: { session: ls, trailerRel },
     })
     if (idx >= 0 && typeof res.isFavorite === 'boolean') {
       fullEntries.value[idx].isFavorite = res.isFavorite
+      const atMs = res.favoritedAt ? Date.parse(res.favoritedAt) : NaN
+      fullEntries.value[idx].favoritedAtMs = res.isFavorite && Number.isFinite(atMs) ? atMs : undefined
     }
     errorMsg.value = ''
     if (keepsPlayback && entryLeavesCatalogAfterFavoriteChange(res.isFavorite ?? next)) {
@@ -6509,7 +6521,10 @@ async function toggleFavoriteAtIndex(i: number | null, opts?: { grid?: boolean }
       await refocusAfterTagFilterChange(prevFocusedRel, wasFullRel)
     }
   } catch (err: unknown) {
-    if (idx >= 0) fullEntries.value[idx].isFavorite = prevFav
+    if (idx >= 0) {
+      fullEntries.value[idx].isFavorite = prevFav
+      fullEntries.value[idx].favoritedAtMs = prevAt
+    }
     const ex = err as { data?: { statusMessage?: string }; message?: string }
     errorMsg.value =
       ex?.data?.statusMessage || ex?.message || 'Não foi possível gravar o favorito (servidor).'
@@ -6612,14 +6627,13 @@ async function deleteTitleAtIndex(i: number) {
 function openCurrentVideoInEditor() {
   const entry = editorOpenEntry.value
   if (!entry?.hasMain) return
-  void router.push({
-    path: '/editor',
-    query: {
-      session: String(libSession(entry)),
-      file: entry.mainRel,
-      useVideo: '1',
-    },
-  })
+  // URLSearchParams garante %2F na subpasta (ex.: Pasta/[tag]/filme.mp4) —
+  // sem isso a barra pode ser comida e o editor recebe "Pasta.[tag].filme.mp4".
+  const q = new URLSearchParams()
+  q.set('session', String(libSession(entry)))
+  q.set('file', entry.mainRel.replace(/\\/g, '/'))
+  q.set('useVideo', '1')
+  void navigateTo(`/editor?${q.toString()}`)
 }
 
 function applyTrailerQueueState(state: TrailerQueueServerState) {
@@ -7282,7 +7296,7 @@ async function loadSessions() {
 /**
  * Refaz `loadSessions` + `loadTrailers` preservando o foco/full em curso.
  * Usado pelo canal `BroadcastChannel` quando a admin pede para recarregar
- * (depois de gerar trailers/previews ou editar `data/video-menu.json`).
+ * (depois de gerar trailers/previews ou editar o menu de pastas no Admin).
  */
 async function refreshLibraryFromExternal() {
   await loadSessions()
@@ -9295,8 +9309,10 @@ onUnmounted(() => {
 }
 
 .tag-browse-lists-pane--compact {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  min-height: 5.5rem;
   max-height: min(32vh, 18rem);
+  overflow: auto;
 }
 
 .tag-browse-selected-pane {
@@ -9913,7 +9929,10 @@ onUnmounted(() => {
   }
 
   .tag-browse-lists-pane--compact {
+    flex: 0 0 auto;
+    min-height: 5.5rem;
     max-height: min(38vh, 20rem);
+    overflow: auto;
   }
 
   .tag-browse-lists {
@@ -11638,7 +11657,8 @@ onUnmounted(() => {
 
 .icon-tool--shrink.icon-tool--busy,
 .icon-tool--trailer-redo.icon-tool--busy {
-  opacity: 0.55;
+  border-color: #8ab4f8;
+  color: #c5ddf5;
 }
 
 .job-progress-panel {

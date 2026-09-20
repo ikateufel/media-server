@@ -11,8 +11,8 @@ export default defineEventHandler((event) => {
   requireAdminToken(event)
 
   const items = getVideoMenuItems(config)
-  const fromFile = tryLoadVideoMenuFromDisk()
-  const source: 'file' | 'env' = fromFile?.length ? 'file' : 'env'
+  const fromDb = tryLoadVideoMenuFromDisk()
+  const source: 'db' | 'env' = fromDb?.length ? 'db' : 'env'
   const catalogPassword = getCatalogPasswordFromDisk()
 
   return {

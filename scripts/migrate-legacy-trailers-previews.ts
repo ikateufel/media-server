@@ -26,6 +26,7 @@ import {
 
 interface LibraryStateFile {
   favorites?: Record<string, string[]>
+  favoriteAt?: Record<string, Record<string, string>>
   fullProgress?: Record<string, unknown>
 }
 
@@ -245,6 +246,12 @@ async function migrateLibraryStateJson(pairs: RelPair[], dryRun: boolean) {
         arr[i] = newRel
         changed = true
       }
+    }
+    const times = state.favoriteAt?.[k]
+    if (times && typeof times === 'object' && oldRel in times) {
+      if (!(newRel in times)) times[newRel] = times[oldRel]!
+      delete times[oldRel]
+      changed = true
     }
   }
 

@@ -1,24 +1,4 @@
 {
-  "items": [
-    {
-      "id": "70a426bb-fbb3-47b3-939e-e887eca60418",
-      "session": 9,
-      "mainRel": "ihaveawife.25.06.05.kloe.love.mp4",
-      "trailerRel": "trailers/ihaveawife.25.06.05.kloe.love.mp4",
-      "label": "ihaveawife.25.06.05.kloe.love.mp4",
-      "params": {
-        "height": 1080,
-        "speed": 1.5,
-        "codec": "h264_nvenc",
-        "prioritizeSize": true
-      },
-      "status": "failed",
-      "jobId": "9f7e0a63-473c-4431-a7a3-2df17ffd0d2e",
-      "createdAt": 1787580056287,
-      "startedAt": 1787580056288,
-      "endedAt": 1787580067337,
-      "error": "[META] bitrate origem: video ~ kbps | [META] ffmpeg: \"C:\\Users\\Teufel\\AppData\\Local\\Microsoft\\WinGet\\Links\\ffmpeg.exe\" | [PROCESSANDO] \"H:\\temp\\note_h\\downloaded\\ihaveawife.25.06.05.kloe.love.mp4\" | [META] origem: \"h264 1280x720 mov video ~18,5 Mbps / audio aac / 2,8 GB\" | [META] origem 720px <= alvo 1080px — sem scale, so 1.5x | [META] 1a passagem: cap bitrate ~13764 kbps (max 16150 kbps, origem ~18353 kbps) | [ERRO] falha ao encodar: \"H:\\temp\\note_h\\downloaded\\ihaveawife.25.06.05.kloe.love.mp4\" | [DET] ffmpeg:"
-    }
-  ],
-  "updatedAt": 1787580067337
+  "items": [],
+  "updatedAt": 1789934726887
 }

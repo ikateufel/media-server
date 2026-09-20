@@ -11,7 +11,7 @@ import {
   resolveCatalogRelAbsoluteCandidates,
   trailerToMainFilename,
 } from './trailerNames'
-import { getFavoriteSet, getFullProgressMap } from './libraryState'
+import { getFavoriteAtMap, getFavoriteSet, getFullProgressMap } from './libraryState'
 import {
   getMainMetaMap,
   getTagsMapForSession,
@@ -195,6 +195,7 @@ export async function enrichTrailerListForSession(
   }
 
   const favSet = await getFavoriteSet(session)
+  const favAtMap = await getFavoriteAtMap(session)
   const progressMap = await getFullProgressMap(session)
   const tagMap = getTagsMapForSession(
     session,
@@ -203,6 +204,9 @@ export async function enrichTrailerListForSession(
 
   for (const it of items) {
     it.isFavorite = favSet.has(it.trailerRel)
+    const atIso = favAtMap.get(it.trailerRel)
+    const atMs = atIso ? Date.parse(atIso) : NaN
+    it.favoritedAtMs = Number.isFinite(atMs) ? atMs : undefined
     const fromDb = tagMap.get(it.trailerRel) ?? []
     it.tags = mergeFolderPairIntoTags(fromDb, it.folderPairTag)
     const sec = progressMap.get(it.mainRel)

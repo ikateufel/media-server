@@ -47,7 +47,7 @@ echo   "%%~dp0shrink_video.bat" "filme.mkv"
 echo   ^(ou caminho absoluto da pasta scripts deste projecto^)
 echo.
 echo Ou defina VIDEO_PLAYER_ROOT ^(variavel de ambiente^) ou crie shrink_video.env.bat:
-echo   set "VIDEO_PLAYER_ROOT=E:\User\Projetos\video_player"
+echo   set "VIDEO_PLAYER_ROOT=C:\caminho\para\video_player"
 echo ^(ver scripts\shrink_video.env.example.bat^)
 exit /b 1
 
@@ -303,16 +303,8 @@ goto :encode_done
 
 :encode_failed
 echo [ERRO] falha ao encodar: "%ORIG%"
-if not exist "%FLOG%" (
-    echo [DET] ffmpeg: ^(ficheiro de log em falta: %FLOG%^)
-    goto :encode_failed_cleanup
-)
-for %%Z in ("%FLOG%") do if %%~zZ EQU 0 (
-    echo [DET] ffmpeg: ^(log vazio^)
-    goto :encode_failed_cleanup
-)
-echo [DET] ffmpeg:
-type "%FLOG%"
+call :dump_ffmpeg_flog
+goto :encode_failed_cleanup
 
 :encode_failed_cleanup
 call :literal_del "%outFile%"
@@ -327,19 +319,29 @@ goto :output_validate
 
 :output_missing
 echo [ERRO] saida em falta: "%outFile%"
-if exist "%FLOG%" type "%FLOG%"
+call :dump_ffmpeg_flog
 if exist "%FLOG%" del "%FLOG%" >nul 2>&1
 exit /b 1
 
 :output_validate
 "%FFPROBE%" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "%outFile%" >nul 2>&1
 if errorlevel 1 goto :output_invalid
+call :check_output_duration
+if errorlevel 1 goto :output_too_short
 goto :output_ok
 
 :output_invalid
 echo [ERRO] saida invalida: "%outFile%"
 call :literal_del "%outFile%"
-if exist "%FLOG%" type "%FLOG%"
+call :dump_ffmpeg_flog
+if exist "%FLOG%" del "%FLOG%" >nul 2>&1
+exit /b 1
+
+:output_too_short
+echo [ERRO] saida demasiado curta vs origem — bitstream provavelmente corrupto: "%ORIG%"
+echo [DET] re-descarregue o ficheiro ou reparar o MP4; shrink recusou substituir o original
+call :literal_del "%outFile%"
+call :dump_ffmpeg_flog
 if exist "%FLOG%" del "%FLOG%" >nul 2>&1
 exit /b 1
 
@@ -692,6 +694,7 @@ exit /b 0
 :probe_source_bitrates
 set "SRC_V_BPS="
 set "SRC_A_BPS="
+set "SRC_TRAILING_JUNK="
 if not defined FFPROBE exit /b 0
 if not defined ORIG exit /b 0
 set "VP_LITERAL_PATH=%ORIG%"
@@ -700,13 +703,57 @@ set "_pf=%TEMP%\vp-sh_%RANDOM%_%RANDOM%.txt"
 if exist "%_pf%" for /f "usebackq tokens=1,* delims==" %%A in ("%_pf%") do (
     if /I "%%A"=="SRC_V_BPS" set "SRC_V_BPS=%%B"
     if /I "%%A"=="SRC_A_BPS" set "SRC_A_BPS=%%B"
+    if /I "%%A"=="SRC_TRAILING_JUNK" set "SRC_TRAILING_JUNK=%%B"
 )
 if exist "%_pf%" del "%_pf%" >nul 2>&1
 set "VP_LITERAL_PATH="
-if defined SRC_V_BPS if %SRC_V_BPS% GTR 0 (
-    set /a SRC_V_K_EST=SRC_V_BPS / 1000
-    echo [META] bitrate origem: video ~%SRC_V_K_EST% kbps
+if not defined SRC_V_BPS goto :probe_bitrates_done
+if %SRC_V_BPS% LEQ 0 goto :probe_bitrates_done
+set /a "SRC_V_K_EST=%SRC_V_BPS%/1000"
+echo [META] bitrate origem: video ~%SRC_V_K_EST% kbps
+:probe_bitrates_done
+if "%SRC_TRAILING_JUNK%"=="1" (
+    echo [AVISO] ficheiro maior que o MP4 estrutural ^(lixo apos mdat^) — bitrate pelo stream/mdat, nao pelo tamanho do ficheiro
 )
+exit /b 0
+
+:dump_ffmpeg_flog
+if not defined FLOG (
+    echo [DET] ffmpeg: ^(sem caminho de log^)
+    exit /b 0
+)
+if not exist "%FLOG%" (
+    echo [DET] ffmpeg: ^(ficheiro de log em falta: %FLOG%^)
+    exit /b 0
+)
+for %%Z in ("%FLOG%") do if %%~zZ EQU 0 (
+    echo [DET] ffmpeg: ^(log vazio^)
+    exit /b 0
+)
+echo [DET] ffmpeg:
+set "VP_FLOG_DUMP=%FLOG%"
+"%VP_POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -Command "$p=$env:VP_FLOG_DUMP; if(-not (Test-Path -LiteralPath $p)){exit 0}; $lines=Get-Content -LiteralPath $p -ErrorAction SilentlyContinue; if(-not $lines){exit 0}; $max=22; $n=0; foreach($l in $lines){ $t=[string]$l; if(-not $t.Trim()){continue}; $n++; if($n -gt $max){ Write-Output ('[DET] ... (mais detalhes no log)'); break }; Write-Output ('[DET] '+$t) }"
+set "VP_FLOG_DUMP="
+exit /b 0
+
+:check_output_duration
+if not defined ORIG exit /b 0
+if not defined outFile exit /b 0
+if not defined vel set "vel=1.5"
+set "VP_ORIG_PATH=%ORIG%"
+set "VP_OUT_PATH=%outFile%"
+set "VP_SPEED=%vel%"
+set "_pf=%TEMP%\vp-sh-dur_%RANDOM%_%RANDOM%.txt"
+"%VP_POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%VP_SCRIPTS_DIR%vp-shrink-check-duration.ps1" > "%_pf%" 2>nul
+set "DUR_RC=%ERRORLEVEL%"
+if exist "%_pf%" (
+    for /f "usebackq delims=" %%L in ("%_pf%") do echo [META] %%L
+    del "%_pf%" >nul 2>&1
+)
+set "VP_ORIG_PATH="
+set "VP_OUT_PATH="
+set "VP_SPEED="
+if "%DUR_RC%"=="2" exit /b 1
 exit /b 0
 
 :apply_bitrate_target
@@ -835,7 +882,7 @@ if "%ENC_OK%"=="1" exit /b 0
 :ive_no_audio
 if not "%HAS_A%"=="1" goto :ive_video_only
 echo [AVISO] encode com audio falhou — a tentar sem audio...
-if exist "%FLOG%" type "%FLOG%"
+call :dump_ffmpeg_flog
 call :literal_del "%VP_SHRINK_OUT%"
 
 :ive_video_only
@@ -1093,7 +1140,7 @@ echo.
 echo shrink_video.bat — um video completo acelerado, sem cortes
 echo.
 echo Correr na pasta da biblioteca ^(videos na raiz^), apontando para o .bat do repo:
-echo   E:\User\Projetos\video_player\scripts\shrink_video.bat "filme.mkv" [opcoes]
+echo   "%%~dp0shrink_video.bat" "filme.mkv" [opcoes]
 echo.
 echo   shrink_video.bat "filme.mkv"
 echo   shrink_video.bat "filme.mkv" 480

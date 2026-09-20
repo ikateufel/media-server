@@ -11,7 +11,7 @@ export default defineEventHandler((event) => {
   if (!menu.length) {
     throw createError({
       statusCode: 503,
-      statusMessage: 'Defina pastas em data/video-menu.json ou VIDEO_ROOT no .env.',
+      statusMessage: 'Defina pastas no menu (Admin / SQLite) ou VIDEO_ROOT no .env.',
     })
   }
 
