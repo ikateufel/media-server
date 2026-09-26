@@ -483,6 +483,7 @@ import {
 } from '#shared/shrinkInPlaceParams'
 import {
   normalizeTrailerBatParams,
+  trailerParamsFromStorage,
   type TrailerBatParams,
 } from '#shared/trailerParams'
 
@@ -575,18 +576,11 @@ const destaqueBusy = ref<string | null>(null)
 const shrinkBusy = ref<string | null>(null)
 const trailerBusy = ref<string | null>(null)
 
-const TRAILER_PARAMS_STORAGE_KEY = 'video_player_trailer_reprocess_params'
 const SHRINK_IN_PLACE_STORAGE_KEY = 'video_player_shrink_in_place_params'
 
 function loadTrailerParamsFromStorage(): TrailerBatParams {
   if (!import.meta.client) return normalizeTrailerBatParams(null)
-  try {
-    const raw = localStorage.getItem(TRAILER_PARAMS_STORAGE_KEY)
-    if (!raw) return normalizeTrailerBatParams(null)
-    return normalizeTrailerBatParams(JSON.parse(raw) as Record<string, unknown>)
-  } catch {
-    return normalizeTrailerBatParams(null)
-  }
+  return trailerParamsFromStorage(localStorage)
 }
 
 function loadShrinkInPlaceParamsFromStorage(): ShrinkInPlaceParams {
@@ -943,8 +937,8 @@ function apiErrMessage(e: unknown, fallback: string): string {
     message?: string
   }
   return (
-    ex?.data?.statusMessage ||
     ex?.data?.message ||
+    ex?.data?.statusMessage ||
     ex?.statusMessage ||
     ex?.message ||
     fallback

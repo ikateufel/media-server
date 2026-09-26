@@ -2,8 +2,8 @@
 
 setlocal DisableDelayedExpansion
 :: CONFIG (ASCII) — valores por defeito; sobrescreve via ambiente (.env ou UI reprocessar).
-if not defined vel set "vel=2.0"
-if not defined pts set "pts=0.5"
+if not defined vel set "vel=1.5"
+if not defined pts set "pts=0.6667"
 if not defined H_TRAILER set "H_TRAILER=720"
 set "SKIP_PAUSE=1"
 :: Encoder de video: 0=libx264 (CPU), 1=h264_nvenc (NVIDIA), auto=tenta NVENC e cai para libx264.
@@ -25,26 +25,61 @@ if not exist "%TRAILER_TEMP%" mkdir "%TRAILER_TEMP%" 2>nul
 if not exist "%TRAILER_TEMP%" (
   set "TRAILER_TEMP=%TEMP%\vp-trailer-%RANDOM%%RANDOM%%RANDOM%%RANDOM%"
 )
-:: PROCESSAMENTO PADRAO (unico; Admin/sync chama trailer.bat sem argumentos):
-::   15 s em 2x a cada 5%% do filme se duracao ^<= TRAILER_LONG_MIN_SEC (60 min)
-::   15 s em 2x a cada TRAILER_LONG_STEP_SEC (5 min) se duracao ^> 60 min
-::   + bloco unico dos ultimos TRAILER_TAIL_SEC (40 s) no fim — sem duplicar cortes nessa zona
+:: PROCESSAMENTO PADRAO (unico; Admin/sync chama trailer.bat sem argumentos): 1.5x, saida ~2 min.
+::   15 s a cada 10%% se duracao ^<= TRAILER_LONG_MIN_SEC (2 h) + ultimos 30 s
+::   10 cortes * 15 s + 30 s = 180 s de origem / 1.5 = ~120 s
+::   acima de 2 h: 15 s a cada TRAILER_LONG_STEP_SEC (15 min)
 :: Ajuste fino via .env: TRAILER_PCT_SEG, TRAILER_PCT_STEP, TRAILER_LONG_MIN_SEC, TRAILER_LONG_STEP_SEC, TRAILER_TAIL_SEC
 :: TRAILER_MODE no .env e ignorado (valores minuto* nao mudam o algoritmo).
 if not defined TRAILER_PCT_SEG set "TRAILER_PCT_SEG=15"
-if not defined TRAILER_PCT_STEP set "TRAILER_PCT_STEP=5"
-if not defined TRAILER_LONG_MIN_SEC set "TRAILER_LONG_MIN_SEC=3600"
-if not defined TRAILER_LONG_STEP_SEC set "TRAILER_LONG_STEP_SEC=300"
-if not defined TRAILER_TAIL_SEC set "TRAILER_TAIL_SEC=40"
-:: Modos legado: so com argumento explicito na linha de comando (nao via .env).
+if not defined TRAILER_PCT_STEP set "TRAILER_PCT_STEP=10"
+if not defined TRAILER_LONG_MIN_SEC set "TRAILER_LONG_MIN_SEC=7200"
+if not defined TRAILER_LONG_STEP_SEC set "TRAILER_LONG_STEP_SEC=900"
+if not defined TRAILER_TAIL_SEC set "TRAILER_TAIL_SEC=30"
+:: Modos legado: argumento CLI ou TRAILER_COLLECT=legado (UI).
+:: Duracao do corte e intervalo entre inicios: TRAILER_LEGACY_SEG / TRAILER_LEGACY_STEP.
 if not defined TRAILER_MAX_OUT_SEC set "TRAILER_MAX_OUT_SEC=120"
 if not defined TRAILER_COLLECT set "TRAILER_COLLECT=padrao"
-if /I "%~1"=="minuto10" set "TRAILER_COLLECT=minuto10"
-if /I "%~1"=="--minuto10" set "TRAILER_COLLECT=minuto10"
-if /I "%~1"=="minuto15" set "TRAILER_COLLECT=minuto15"
-if /I "%~1"=="--minuto15" set "TRAILER_COLLECT=minuto15"
-if /I "%~1"=="minuto20" set "TRAILER_COLLECT=minuto20"
-if /I "%~1"=="--minuto20" set "TRAILER_COLLECT=minuto20"
+if /I "%~1"=="legado" set "TRAILER_COLLECT=legado"
+if /I "%~1"=="--legado" set "TRAILER_COLLECT=legado"
+if /I "%~1"=="minuto10" (
+  set "TRAILER_COLLECT=legado"
+  if not defined TRAILER_LEGACY_SEG set "TRAILER_LEGACY_SEG=10"
+)
+if /I "%~1"=="--minuto10" (
+  set "TRAILER_COLLECT=legado"
+  if not defined TRAILER_LEGACY_SEG set "TRAILER_LEGACY_SEG=10"
+)
+if /I "%~1"=="minuto15" (
+  set "TRAILER_COLLECT=legado"
+  if not defined TRAILER_LEGACY_SEG set "TRAILER_LEGACY_SEG=15"
+)
+if /I "%~1"=="--minuto15" (
+  set "TRAILER_COLLECT=legado"
+  if not defined TRAILER_LEGACY_SEG set "TRAILER_LEGACY_SEG=15"
+)
+if /I "%~1"=="minuto20" (
+  set "TRAILER_COLLECT=legado"
+  if not defined TRAILER_LEGACY_SEG set "TRAILER_LEGACY_SEG=20"
+)
+if /I "%~1"=="--minuto20" (
+  set "TRAILER_COLLECT=legado"
+  if not defined TRAILER_LEGACY_SEG set "TRAILER_LEGACY_SEG=20"
+)
+if /I "%TRAILER_COLLECT%"=="minuto10" (
+  set "TRAILER_COLLECT=legado"
+  if not defined TRAILER_LEGACY_SEG set "TRAILER_LEGACY_SEG=10"
+)
+if /I "%TRAILER_COLLECT%"=="minuto15" (
+  set "TRAILER_COLLECT=legado"
+  if not defined TRAILER_LEGACY_SEG set "TRAILER_LEGACY_SEG=15"
+)
+if /I "%TRAILER_COLLECT%"=="minuto20" (
+  set "TRAILER_COLLECT=legado"
+  if not defined TRAILER_LEGACY_SEG set "TRAILER_LEGACY_SEG=20"
+)
+if not defined TRAILER_LEGACY_SEG set "TRAILER_LEGACY_SEG=15"
+if not defined TRAILER_LEGACY_STEP set "TRAILER_LEGACY_STEP=60"
 if /I "%~1"=="sparse" set "TRAILER_COLLECT=sparse"
 if /I "%~1"=="--sparse" set "TRAILER_COLLECT=sparse"
 if /I "%~1"=="legacy" set "TRAILER_COLLECT=sparse"
@@ -52,8 +87,9 @@ if /I "%~1"=="legacy" set "TRAILER_COLLECT=sparse"
 echo ====================================================
 echo   TRAILER-MAKER v3.8 (mp4 mkv m4v avi mov webm wmv na raiz - saida trailers\*.mp4)
 echo   TRAILER temp: %TRAILER_TEMP%
-if /I "%TRAILER_COLLECT%"=="padrao" echo   COLETA PADRAO: %TRAILER_PCT_SEG%s em 2x — cada %TRAILER_PCT_STEP%%% se ^<=%TRAILER_LONG_MIN_SEC%s\, cada %TRAILER_LONG_STEP_SEC%s se maior + ultimos %TRAILER_TAIL_SEC%s
-if /I not "%TRAILER_COLLECT%"=="padrao" echo   COLETA LEGADO: %TRAILER_COLLECT% ^(so por argumento CLI^)
+if /I "%TRAILER_COLLECT%"=="padrao" echo   COLETA PADRAO: %TRAILER_PCT_SEG%s a %vel%x — cada %TRAILER_PCT_STEP%%% se ^<=%TRAILER_LONG_MIN_SEC%s\, cada %TRAILER_LONG_STEP_SEC%s se maior + ultimos %TRAILER_TAIL_SEC%s
+if /I "%TRAILER_COLLECT%"=="legado" echo   COLETA LEGADO: %TRAILER_LEGACY_SEG%s a cada %TRAILER_LEGACY_STEP%s
+if /I "%TRAILER_COLLECT%"=="sparse" echo   COLETA SPARSE
 if /I not "%TRAILER_COLLECT%"=="padrao" echo   Duracao maxima saida legado: %TRAILER_MAX_OUT_SEC%s (apos 2x)
 echo ====================================================
 
@@ -69,7 +105,9 @@ if errorlevel 1 (
 )
 
 :: Decide encoder: libx264 (-tune zerolatency: mais rapido em clipes curtos) vs h264_nvenc (%TRAILER_NVENC_PRESET%, cq 26).
-set "VENC_ARGS=-c:v libx264 -preset superfast -tune zerolatency"
+:: -bf 0 e -use_editlist 1: sem isto o NVENC (B-frames + start_time) deixa um salto de PTS
+:: em cada corte e o concat -c copy engasga na junção. x264 zerolatency ja nasce sem B-frames.
+set "VENC_ARGS=-c:v libx264 -preset superfast -tune zerolatency -bf 0 -use_editlist 1"
 if /I "%USE_NVENC%"=="1" goto :pick_nvenc
 if /I not "%USE_NVENC%"=="auto" goto :encoder_done
 "%FFMPEG%" -hide_banner -loglevel error -f lavfi -i color=c=black:s=256x144:r=1 -frames:v 1 -c:v h264_nvenc -f null NUL >nul 2>&1
@@ -78,8 +116,8 @@ if errorlevel 1 (
     goto :encoder_done
 )
 :pick_nvenc
-set "VENC_ARGS=-c:v h264_nvenc -preset %TRAILER_NVENC_PRESET% -rc vbr -cq 26 -b:v 0"
-echo [INFO] Encoder de video: h264_nvenc preset %TRAILER_NVENC_PRESET%.
+set "VENC_ARGS=-c:v h264_nvenc -preset %TRAILER_NVENC_PRESET% -rc vbr -cq 26 -b:v 0 -bf 0 -rc-lookahead 0 -zerolatency 1 -use_editlist 1"
+echo [INFO] Encoder de video: h264_nvenc preset %TRAILER_NVENC_PRESET% ^(sem B-frames, junção continua^).
 :encoder_done
 
 if defined VP_TRAILER_INPUT (
@@ -139,8 +177,10 @@ if "!SKIP_ZZ!"=="0" if not exist "trailers\!nome!.mp4" (
             REM scale so desce: min(ih,H) na altura, fica no-op se ja for <= H_TRAILER;
             REM bilinear poupa muito CPU vs lanczos com diferenca imperceptivel num trailer.
             REM \, escapa a virgula dentro do filter-graph (separador de filtros).
-            set "VF_CHAIN=setpts=%pts%*PTS,scale=-2:min(ih\,%H_TRAILER%):flags=bilinear"
-            set "AF_CHAIN=aresample=async=1:first_pts=0,atempo=%vel%"
+            REM PTS-STARTPTS: cada corte começa em 0 para o concat -c copy nao herdar o tempo do filme.
+            REM Sem ^ antes dos parenteses: dentro de set "..." o ^ fica literal e o ffmpeg rejeita a expressao.
+            set "VF_CHAIN=setpts=%pts%*(PTS-STARTPTS),scale=-2:min(ih\,%H_TRAILER%):flags=bilinear"
+            set "AF_CHAIN=asetpts=PTS-STARTPTS,atempo=%vel%,aresample=async=1:first_pts=0"
 
             if /I "!TRAILER_COLLECT!"=="padrao" (
                 set /a "PCT_SEG=!TRAILER_PCT_SEG!"
@@ -148,11 +188,11 @@ if "!SKIP_ZZ!"=="0" if not exist "trailers\!nome!.mp4" (
                 set /a "LONG_MIN=!TRAILER_LONG_MIN_SEC!"
                 set /a "LONG_STEP=!TRAILER_LONG_STEP_SEC!"
                 if !PCT_SEG! LSS 1 set /a "PCT_SEG=15"
-                if !PCT_STEP! LSS 1 set /a "PCT_STEP=5"
-                if !LONG_MIN! LSS 1 set /a "LONG_MIN=3600"
-                if !LONG_STEP! LSS 60 set /a "LONG_STEP=300"
+                if !PCT_STEP! LSS 1 set /a "PCT_STEP=10"
+                if !LONG_MIN! LSS 1 set /a "LONG_MIN=7200"
+                if !LONG_STEP! LSS 60 set /a "LONG_STEP=900"
                 set /a "TAIL_SEC=!TRAILER_TAIL_SEC!"
-                if !TAIL_SEC! LSS 1 set /a "TAIL_SEC=40"
+                if !TAIL_SEC! LSS 1 set /a "TAIL_SEC=30"
                 set /a "TAIL_INI=!DUR_INT!-!TAIL_SEC!"
                 if !TAIL_INI! LSS 0 set /a "TAIL_INI=0"
                 set /a "TAIL_LEN=!DUR_INT!-!TAIL_INI!"
@@ -161,7 +201,7 @@ if "!SKIP_ZZ!"=="0" if not exist "trailers\!nome!.mp4" (
                     set /a "max_m=( !DUR_INT! - 1 ) / !LONG_STEP!"
                     if !max_m! LSS 0 set /a "max_m=0"
                     set /a "npc=!max_m!+1"
-                    echo [META] padrao-longo: filme ~!DUR_INT!s ^(ffprobe !dur_raw!^) - !PCT_SEG!s em 2x a cada !LONG_STEP!s ^(!npc! cortes^) + !TAIL_LEN!s finais ^| setpts=!pts!*PTS\, atempo=!vel!
+                    echo [META] padrao-longo: filme ~!DUR_INT!s ^(ffprobe !dur_raw!^) - !PCT_SEG!s a !vel!x a cada !LONG_STEP!s ^(!npc! cortes^) + !TAIL_LEN!s finais ^| setpts=!pts!*PTS\, atempo=!vel!
 
                     for /L %%m in (0,1,!max_m!) do (
                         set /a "st=%%m*!LONG_STEP!"
@@ -192,7 +232,7 @@ if "!SKIP_ZZ!"=="0" if not exist "trailers\!nome!.mp4" (
                     set /a "pct_max=100-!PCT_STEP!"
                     if !pct_max! LSS 0 set /a "pct_max=0"
                     set /a "npc=!pct_max!/!PCT_STEP!+1"
-                    echo [META] padrao: filme ~!DUR_INT!s ^(ffprobe !dur_raw!^) - !PCT_SEG!s em 2x a cada !PCT_STEP!%% ^(0-!pct_max!%%^, fora ultimos !TAIL_SEC!s^) + !TAIL_LEN!s finais ^| setpts=!pts!*PTS\, atempo=!vel!
+                    echo [META] padrao: filme ~!DUR_INT!s ^(ffprobe !dur_raw!^) - !PCT_SEG!s a !vel!x a cada !PCT_STEP!%% ^(0-!pct_max!%%^, fora ultimos !TAIL_SEC!s^) + !TAIL_LEN!s finais ^| setpts=!pts!*PTS\, atempo=!vel!
 
                     for /L %%p in (0,!PCT_STEP!,!pct_max!) do (
                         set /a "st=!DUR_INT!*%%p/100"
@@ -243,17 +283,13 @@ if "!SKIP_ZZ!"=="0" if not exist "trailers\!nome!.mp4" (
             ) else (
             set "MINUTO_SEG="
             set "MINUTO_TAIL="
-            if /I "!TRAILER_COLLECT!"=="minuto10" (
-                set "MINUTO_SEG=10"
-                set "MINUTO_TAIL=60"
-            )
-            if /I "!TRAILER_COLLECT!"=="minuto15" (
-                set "MINUTO_SEG=15"
-                set "MINUTO_TAIL=90"
-            )
-            if /I "!TRAILER_COLLECT!"=="minuto20" (
-                set "MINUTO_SEG=20"
-                set "MINUTO_TAIL=120"
+            if /I "!TRAILER_COLLECT!"=="legado" (
+                set /a "MINUTO_SEG=!TRAILER_LEGACY_SEG!"
+                set /a "LEGACY_STEP=!TRAILER_LEGACY_STEP!"
+                if !MINUTO_SEG! LSS 1 set /a "MINUTO_SEG=15"
+                if !LEGACY_STEP! LSS 1 set /a "LEGACY_STEP=60"
+                REM Bloco final = 6x a duracao do corte (10s vira 60s, 15s vira 90s, 20s vira 120s).
+                set /a "MINUTO_TAIL=!MINUTO_SEG!*6"
             )
             if defined MINUTO_SEG (
                 REM Teto total (saida 2x): evita trailers enormes em filmes longos.
@@ -262,23 +298,23 @@ if "!SKIP_ZZ!"=="0" if not exist "trailers\!nome!.mp4" (
                 set /a "TAIL_SRC=!MINUTO_TAIL!"
                 if !TAIL_SRC! GTR !MAX_SRC! set /a "TAIL_SRC=!MAX_SRC!"
                 set /a "BUDGET_SRC=!MAX_SRC!-!TAIL_SRC!"
-                REM Ns a partir de mm:00 (cada minuto), sem invadir os ultimos MINUTO_TAIL s; depois bloco final.
+                REM Cortes de MINUTO_SEG s a cada LEGACY_STEP s, sem invadir o bloco final.
                 set /a "f_ini=!DUR_INT!-!MINUTO_TAIL!"
                 if !f_ini! LSS 0 set /a "f_ini=0"
                 set /a "f_len=!DUR_INT!-!f_ini!"
                 if !f_len! GTR !TAIL_SRC! set /a "f_len=!TAIL_SRC!"
                 set /a "max_m=-1"
-                if !BUDGET_SRC! GEQ !MINUTO_SEG! set /a "max_m=(!BUDGET_SRC!-!MINUTO_SEG!)/60"
+                if !BUDGET_SRC! GEQ !MINUTO_SEG! set /a "max_m=(!BUDGET_SRC!-!MINUTO_SEG!)/!LEGACY_STEP!"
                 set /a "npc=0"
                 if !max_m! GEQ 0 set /a "npc=!max_m!+1"
-                echo [META] !TRAILER_COLLECT!: filme ~!DUR_INT!s ^(ffprobe !dur_raw!^) - !npc! x !MINUTO_SEG!s ^(inicio de cada minuto^) + !f_len!s finais ^(teto saida !MAX_OUT!s^) ^| 2x ^(setpts=!pts!*PTS\, atempo=!vel!^)
+                echo [META] legado: filme ~!DUR_INT!s ^(ffprobe !dur_raw!^) - !npc! x !MINUTO_SEG!s a cada !LEGACY_STEP!s + !f_len!s finais ^(teto saida !MAX_OUT!s^) ^| setpts=!pts!*PTS\, atempo=!vel!
 
                 for /L %%m in (0,1,!max_m!) do (
-                    set /a "st=%%m*60"
+                    set /a "st=%%m*!LEGACY_STEP!"
                     set /a "seg_t=!MINUTO_SEG!"
                     set /a "rem=!DUR_INT!-!st!"
                     if !rem! LSS !seg_t! set /a "seg_t=!rem!"
-                    if !seg_t! GTR 0 (
+                    if !seg_t! GTR 0 if !st! LSS !f_ini! (
                         set "tmp=!TRAILER_TEMP!\tq_%%m_!tid!.mp4"
                         if "!HAS_A!"=="1" (
                             "!FFMPEG!" -y -ss !st! -t !seg_t! -i "!orig!" -filter_complex "[0:v]!VF_CHAIN![v];[0:a]!AF_CHAIN![a]" -map "[v]" -map "[a]" !VENC_ARGS! -c:a aac -b:a 128k -threads 0 "!tmp!" >nul 2>&1
@@ -406,9 +442,9 @@ if "!SKIP_ZZ!"=="0" if not exist "trailers\!nome!.mp4" (
                     ) else (
                         echo [AVISO] -c copy falhou ^(timing/streams entre cortes diferem deste MKV - ex.: ~!orig!~^) - uniao com libx264 ^(demora mais^)...
                         if "!HAS_A!"=="1" (
-                            "!FFMPEG!" -y -hide_banner -loglevel error -fflags +genpts -f concat -safe 0 -i "!LISTA!" -vf format=yuv420p -c:v libx264 -preset superfast -tune zerolatency -crf 26 -c:a aac -b:a 128k -movflags +faststart "!trailOut!" >"!clog!" 2>&1
+                            "!FFMPEG!" -y -hide_banner -loglevel error -fflags +genpts -f concat -safe 0 -i "!LISTA!" -vf "setpts=N/FRAME_RATE/TB,format=yuv420p" -af aresample=async=1:first_pts=0 -c:v libx264 -preset superfast -tune zerolatency -bf 0 -crf 26 -c:a aac -b:a 128k -use_editlist 1 -movflags +faststart "!trailOut!" >"!clog!" 2>&1
                         ) else (
-                            "!FFMPEG!" -y -hide_banner -loglevel error -fflags +genpts -f concat -safe 0 -i "!LISTA!" -vf format=yuv420p -c:v libx264 -preset superfast -tune zerolatency -crf 26 -an -movflags +faststart "!trailOut!" >"!clog!" 2>&1
+                            "!FFMPEG!" -y -hide_banner -loglevel error -fflags +genpts -f concat -safe 0 -i "!LISTA!" -vf "setpts=N/FRAME_RATE/TB,format=yuv420p" -c:v libx264 -preset superfast -tune zerolatency -bf 0 -crf 26 -an -use_editlist 1 -movflags +faststart "!trailOut!" >"!clog!" 2>&1
                         )
                         set "CONCAT_OK=0"
                         if not errorlevel 1 if exist "!trailOut!" (

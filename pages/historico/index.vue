@@ -189,9 +189,9 @@ async function openShrinkBackupFolder(item: HistItem) {
       },
     })
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
     actionError.value =
-      ex?.data?.statusMessage || ex?.message || 'Não foi possível abrir a pasta de backup.'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Não foi possível abrir a pasta de backup.'
   } finally {
     backupBusyId.value = null
   }
@@ -207,9 +207,9 @@ async function loadHistory() {
     const res = await $fetch<{ items: HistItem[] }>(`/api/admin/process-job-history${q}`)
     items.value = Array.isArray(res.items) ? res.items : []
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
     loadError.value =
-      ex?.data?.statusMessage || ex?.message || 'Não foi possível carregar o histórico.'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Não foi possível carregar o histórico.'
     items.value = []
   } finally {
     loading.value = false

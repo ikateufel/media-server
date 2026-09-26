@@ -1,4 +1,4 @@
-export type TrailerCollectMode = 'padrao' | 'minuto10' | 'minuto15' | 'minuto20' | 'sparse'
+export type TrailerCollectMode = 'padrao' | 'legado' | 'sparse'
 
 export type TrailerNvencMode = 'auto' | 'cpu' | 'nvenc'
 
@@ -16,6 +16,10 @@ export interface TrailerBatParams {
   tailSec: number
   /** Teto de duração de saída (modos legado), segundos. */
   maxOutSec: number
+  /** Duração de cada corte no modo legado, segundos. */
+  legacySegSec: number
+  /** Intervalo entre inícios dos cortes no modo legado, segundos. */
+  legacyStepSec: number
   /** Velocidade final áudio + vídeo: 1 = normal, 2 = 2×, 3 = 3×, … */
   speed: number
   /** Altura máxima do trailer (px). */
@@ -24,15 +28,22 @@ export interface TrailerBatParams {
   nvencPreset: string
 }
 
+/**
+ * Padrão ~2 min a 1,5×.
+ * Até 2 h: 15 s a cada 10 % (10 cortes) + 30 s finais = 180 s de origem / 1,5 ≈ 120 s.
+ * Acima de 2 h: 15 s a cada 15 min, ainda perto de 2 min.
+ */
 export const TRAILER_BAT_PARAMS_DEFAULT: TrailerBatParams = {
   collect: 'padrao',
   pctSeg: 15,
-  pctStep: 5,
-  longMinSec: 3600,
-  longStepSec: 300,
-  tailSec: 40,
+  pctStep: 10,
+  longMinSec: 7200,
+  longStepSec: 900,
+  tailSec: 30,
   maxOutSec: 120,
-  speed: 2,
+  legacySegSec: 15,
+  legacyStepSec: 60,
+  speed: 1.5,
   heightPx: 720,
   useNvenc: 'auto',
   nvencPreset: 'p4',
@@ -40,13 +51,7 @@ export const TRAILER_BAT_PARAMS_DEFAULT: TrailerBatParams = {
 
 export const TRAILER_SPEED_OPTIONS = [1, 1.25, 1.5, 2, 2.5, 3] as const
 
-const COLLECT_MODES = new Set<TrailerCollectMode>([
-  'padrao',
-  'minuto10',
-  'minuto15',
-  'minuto20',
-  'sparse',
-])
+const COLLECT_MODES = new Set<TrailerCollectMode>(['padrao', 'legado', 'sparse'])
 
 const NVENC_MODES = new Set<TrailerNvencMode>(['auto', 'cpu', 'nvenc'])
 
@@ -64,8 +69,18 @@ function clampFloat(n: number, min: number, max: number, decimals = 2): number {
   return Math.round(v * f) / f
 }
 
+/** `minuto10/15/20` antigos passam a ser o modo `legado` (duração vinha no nome). */
+function legacySegFromOldCollect(raw: unknown): number | undefined {
+  const s = String(raw ?? '').trim().toLowerCase()
+  if (s === 'minuto10') return 10
+  if (s === 'minuto15') return 15
+  if (s === 'minuto20') return 20
+  return undefined
+}
+
 function pickCollect(raw: unknown): TrailerCollectMode {
   const s = String(raw ?? '').trim().toLowerCase()
+  if (s === 'minuto10' || s === 'minuto15' || s === 'minuto20') return 'legado'
   if (COLLECT_MODES.has(s as TrailerCollectMode)) return s as TrailerCollectMode
   return TRAILER_BAT_PARAMS_DEFAULT.collect
 }
@@ -134,6 +149,7 @@ export function normalizeTrailerBatParams(
   const d = TRAILER_BAT_PARAMS_DEFAULT
   const src = input ?? {}
   const { vel: speed } = trailerSpeedToVelPts(readSpeedFromInput(src, d.speed))
+  const legacySegFallback = legacySegFromOldCollect(src.collect) ?? d.legacySegSec
   return {
     collect: pickCollect(src.collect),
     pctSeg: clampInt(Number(src.pctSeg ?? d.pctSeg), 1, 120),
@@ -142,6 +158,8 @@ export function normalizeTrailerBatParams(
     longStepSec: clampInt(Number(src.longStepSec ?? d.longStepSec), 30, 3600),
     tailSec: clampInt(Number(src.tailSec ?? d.tailSec), 1, 600),
     maxOutSec: clampInt(Number(src.maxOutSec ?? d.maxOutSec), 30, 900),
+    legacySegSec: clampInt(Number(src.legacySegSec ?? legacySegFallback), 1, 120),
+    legacyStepSec: clampInt(Number(src.legacyStepSec ?? d.legacyStepSec), 1, 3600),
     speed,
     heightPx: clampInt(Number(src.heightPx ?? d.heightPx), 144, 2160),
     useNvenc: pickNvenc(src.useNvenc),
@@ -162,6 +180,8 @@ export function trailerBatParamsToProcessEnv(p: TrailerBatParams): Record<string
     TRAILER_LONG_STEP_SEC: String(p.longStepSec),
     TRAILER_TAIL_SEC: String(p.tailSec),
     TRAILER_MAX_OUT_SEC: String(p.maxOutSec),
+    TRAILER_LEGACY_SEG: String(p.legacySegSec),
+    TRAILER_LEGACY_STEP: String(p.legacyStepSec),
     vel: String(vel),
     pts: String(pts),
     H_TRAILER: String(p.heightPx),
@@ -170,10 +190,33 @@ export function trailerBatParamsToProcessEnv(p: TrailerBatParams): Record<string
   }
 }
 
+export const TRAILER_PARAMS_STORAGE_KEY = 'video_player_trailer_reprocess_params'
+const TRAILER_PARAMS_REV_KEY = 'video_player_trailer_reprocess_params_rev'
+/** Sobe quando o padrão do formulário muda e o localStorage antigo deve ser substituído. */
+const TRAILER_PARAMS_REV = '2'
+
+/** Lê o formulário do trailer. Revisão nova descarta valores guardados e aplica o padrão atual. */
+export function trailerParamsFromStorage(
+  storage: Pick<Storage, 'getItem' | 'setItem'> | null | undefined,
+): TrailerBatParams {
+  if (!storage) return { ...TRAILER_BAT_PARAMS_DEFAULT }
+  try {
+    if (storage.getItem(TRAILER_PARAMS_REV_KEY) !== TRAILER_PARAMS_REV) {
+      const fresh = { ...TRAILER_BAT_PARAMS_DEFAULT }
+      storage.setItem(TRAILER_PARAMS_STORAGE_KEY, JSON.stringify(fresh))
+      storage.setItem(TRAILER_PARAMS_REV_KEY, TRAILER_PARAMS_REV)
+      return fresh
+    }
+    const raw = storage.getItem(TRAILER_PARAMS_STORAGE_KEY)
+    if (!raw) return { ...TRAILER_BAT_PARAMS_DEFAULT }
+    return normalizeTrailerBatParams(JSON.parse(raw) as Record<string, unknown>)
+  } catch {
+    return { ...TRAILER_BAT_PARAMS_DEFAULT }
+  }
+}
+
 export const TRAILER_COLLECT_LABELS: Record<TrailerCollectMode, string> = {
   padrao: 'Padrão (% + bloco final)',
-  minuto10: 'Legado — início de cada minuto (10 s)',
-  minuto15: 'Legado — início de cada minuto (15 s)',
-  minuto20: 'Legado — início de cada minuto (20 s)',
+  legado: 'Legado — duração e intervalo',
   sparse: 'Legado — sparse (25 s / 90 s)',
 }

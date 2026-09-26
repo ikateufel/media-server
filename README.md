@@ -58,18 +58,17 @@ Lista completa: ver `package.json` → `scripts`.
 
 ## trailer.bat no Windows
 
-O script **distribui** cortes pelo filme e junta-os com aceleração ~2× (`setpts`/áudio em `scripts/trailer.bat`).
+O script **distribui** cortes pelo filme e junta-os a **1,5×** (`setpts`/áudio em `scripts/trailer.bat`). A saída padrão fica em cerca de **2 min**.
 
-**Único processamento padrão** (`trailer.bat`, Admin, `trailer-1min.bat`, `trailer-2min.bat`) — **15 s** em 2×:
-- vídeos **≤ 60 min**: a cada **5 %** do filme (0 %, 5 %, …, exceto na zona final reservada);
-- vídeos **> 60 min**: a cada **5 min** (0 min, 5 min, 10 min, …, exceto na zona final);
-- **sempre** um bloco único dos **últimos 40 s** no fim (sem duplicar cortes que cairiam nessa zona).
+**Processamento padrão** (`trailer.bat`, Admin, `trailer-1min.bat`, `trailer-2min.bat`) — **15 s** a 1,5×:
+- vídeos **≤ 2 h**: a cada **10 %** do filme (0 %, 10 %, …, 90 %) mais os **últimos 30 s** — 180 s de origem / 1,5 ≈ 120 s;
+- vídeos **> 2 h**: **15 s** a cada **15 min**, mais os últimos 30 s.
 
 `TRAILER_MODE` no `.env` **não altera** o algoritmo (valores `minuto*` antigos são ignorados).
 
 Modos legado só por argumento explícito: `trailer.bat minuto15`, `trailer.bat sparse`, etc.
 
-Ajuste fino no `.env`: **`TRAILER_PCT_SEG`**, **`TRAILER_PCT_STEP`**, **`TRAILER_LONG_MIN_SEC`**, **`TRAILER_LONG_STEP_SEC`**, **`TRAILER_TAIL_SEC`** (padrão 15 / 5 / 3600 / 300 / 40).
+Ajuste fino no `.env`: **`TRAILER_PCT_SEG`**, **`TRAILER_PCT_STEP`**, **`TRAILER_LONG_MIN_SEC`**, **`TRAILER_LONG_STEP_SEC`**, **`TRAILER_TAIL_SEC`** (padrão 15 / 10 / 7200 / 900 / 30).
 
 **`preview.bat`** (job «Trailer + preview» no Admin) já **não** gera `preview/*.mp4` — só aquece **miniaturas JPEG** em `.thumb_cache/` a partir dos trailers. O palco toca sempre o **trailer**; ficheiros antigos em `preview/` ficam legados e não são usados para reprodução. Para libertar espaço: `npm run clear-preview-videos` (lista) ou `npm run clear-preview-videos -- --delete` (envia vídeos em `preview/` para a lixeira; **`.thumb_cache/` intacto**).
 

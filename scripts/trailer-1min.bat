@@ -1,6 +1,6 @@
 @echo off
 
-REM Atalho: mesmo processamento padrao de trailer.bat (15s em 2x por %% ou por 5 min).
+REM Atalho: mesmo processamento padrao de trailer.bat (15s a 1.5x a cada 10%%, saida ~2 min).
 
 call "%~dp0trailer.bat" %*
 

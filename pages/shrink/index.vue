@@ -1026,8 +1026,8 @@ async function loadMenu() {
       sourceRoot.value = menuRows.value[0]!.path.trim()
     }
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    loadError.value = ex?.data?.statusMessage || ex?.message || 'Falha ao carregar menu.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    loadError.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao carregar menu.'
   }
 }
 
@@ -1087,8 +1087,8 @@ async function validateQueue() {
       validateMsg.value = `${data.failedCount} com erro · ${data.count} OK no servidor${skipPart}.`
     }
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    validateMsg.value = ex?.data?.statusMessage || ex?.message || 'Validação falhou.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    validateMsg.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Validação falhou.'
   } finally {
     validating.value = false
   }
@@ -1295,8 +1295,8 @@ async function startShrinkJob() {
     rememberJobId(data.jobId)
     await attachToJob(data.jobId)
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    startErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao iniciar shrink.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    startErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao iniciar shrink.'
   }
 }
 
@@ -1312,8 +1312,8 @@ async function cancelJob() {
     })
     if (job.value) job.value.cancelRequested = true
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    jobErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao cancelar.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    jobErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao cancelar.'
   }
 }
 

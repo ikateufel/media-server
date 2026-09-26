@@ -986,6 +986,17 @@
                   catalogSortDir === 'asc' ? ' ↑' : ' ↓'
                 }}</span>
               </button>
+              <button
+                type="button"
+                class="catalog-sort-btn"
+                :class="{ 'catalog-sort-btn--active': catalogSortKey === 'favorite' }"
+                title="Ordenar por timestamp de favorito. Voltar a clicar inverte."
+                @click="cycleCatalogSort('favorite')"
+              >
+                FlagTime<span v-if="catalogSortKey === 'favorite'" class="catalog-sort-dir" aria-hidden="true">{{
+                  catalogSortDir === 'asc' ? ' ↑' : ' ↓'
+                }}</span>
+              </button>
             </div>
             <button
               type="button"
@@ -2192,6 +2203,10 @@
             <p v-if="editorOpenEntry" class="trailer-reprocess-dialog-file">
               Actual: {{ editorOpenEntry.mainFilename }}
             </p>
+            <p v-if="trailerShrunkNotice" class="shrink-already-warn" role="status">
+              <span class="shrink-already-warn-title">Já foi shrinkado</span>
+              {{ trailerShrunkNotice }}
+            </p>
 
             <label class="trailer-reprocess-field trailer-reprocess-field--full">
               <span class="trailer-reprocess-label">Modo de coleta</span>
@@ -2201,6 +2216,31 @@
                 </option>
               </select>
             </label>
+
+            <div v-if="trailerParamsIsLegado" class="trailer-reprocess-grid">
+              <label class="trailer-reprocess-field">
+                <span class="trailer-reprocess-label">Duração do corte (s)</span>
+                <input
+                  v-model.number="trailerParamsForm.legacySegSec"
+                  type="number"
+                  min="1"
+                  max="120"
+                  step="1"
+                  class="admin-input"
+                />
+              </label>
+              <label class="trailer-reprocess-field">
+                <span class="trailer-reprocess-label">Intervalo (s)</span>
+                <input
+                  v-model.number="trailerParamsForm.legacyStepSec"
+                  type="number"
+                  min="1"
+                  max="3600"
+                  step="1"
+                  class="admin-input"
+                />
+              </label>
+            </div>
 
             <div v-if="trailerParamsIsPadrao" class="trailer-reprocess-grid">
               <label class="trailer-reprocess-field">
@@ -2260,7 +2300,7 @@
               </label>
             </div>
 
-            <label v-else class="trailer-reprocess-field trailer-reprocess-field--full">
+            <label v-if="!trailerParamsIsPadrao" class="trailer-reprocess-field trailer-reprocess-field--full">
               <span class="trailer-reprocess-label">Duração máx. saída legado (s)</span>
               <input
                 v-model.number="trailerParamsForm.maxOutSec"
@@ -2286,7 +2326,10 @@
                 </select>
               </label>
               <p class="trailer-reprocess-speed-hint">
-                <template v-if="trailerParamsForm.speed === 1">
+                <template v-if="shrinkAlreadyDone && trailerParamsForm.speed === 1">
+                  1× porque o vídeo já foi shrinkado — não acelera outra vez.
+                </template>
+                <template v-else-if="trailerParamsForm.speed === 1">
                   1× = mesma velocidade do original.
                 </template>
                 <template v-else>
@@ -2584,9 +2627,11 @@ import { useTvStageVideo } from '~/composables/useTvStageVideo'
 import {
   TRAILER_BAT_PARAMS_DEFAULT,
   TRAILER_COLLECT_LABELS,
+  TRAILER_PARAMS_STORAGE_KEY,
   TRAILER_SPEED_OPTIONS,
   formatTrailerFrameFactor,
   normalizeTrailerBatParams,
+  trailerParamsFromStorage,
   type TrailerBatParams,
 } from '#shared/trailerParams'
 import {
@@ -2888,19 +2933,12 @@ async function copyShrinkInPlaceLog() {
   }
 }
 
-const TRAILER_PARAMS_STORAGE_KEY = 'video_player_trailer_reprocess_params'
 const SHRINK_IN_PLACE_STORAGE_KEY = 'video_player_shrink_in_place_params'
 const TRAILER_NVENC_PRESET_OPTIONS = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'] as const
 
 function loadTrailerParamsFromStorage(): TrailerBatParams {
   if (typeof localStorage === 'undefined') return { ...TRAILER_BAT_PARAMS_DEFAULT }
-  try {
-    const raw = localStorage.getItem(TRAILER_PARAMS_STORAGE_KEY)
-    if (!raw) return { ...TRAILER_BAT_PARAMS_DEFAULT }
-    return normalizeTrailerBatParams(JSON.parse(raw) as Record<string, unknown>)
-  } catch {
-    return { ...TRAILER_BAT_PARAMS_DEFAULT }
-  }
+  return trailerParamsFromStorage(localStorage)
 }
 
 function saveTrailerParamsToStorage(p: TrailerBatParams) {
@@ -2937,6 +2975,7 @@ const shrinkInPlaceDialogOpen = ref(false)
 const trailerParamsForm = ref<TrailerBatParams>(loadTrailerParamsFromStorage())
 const shrinkInPlaceForm = ref<ShrinkInPlaceParams>(loadShrinkInPlaceParamsFromStorage())
 const trailerParamsIsPadrao = computed(() => trailerParamsForm.value.collect === 'padrao')
+const trailerParamsIsLegado = computed(() => trailerParamsForm.value.collect === 'legado')
 const moveTitleDialogOpen = ref(false)
 const moveTitleBusy = ref(false)
 const moveTitleError = ref('')
@@ -3177,8 +3216,8 @@ function destaqueFetchErrorMessage(err: unknown, fallback: string): string {
     message?: string
   }
   return (
-    ex?.data?.statusMessage ||
     ex?.data?.message ||
+    ex?.data?.statusMessage ||
     ex?.statusMessage ||
     ex?.message ||
     fallback
@@ -3313,7 +3352,7 @@ function cycleCatalogTriFilter(current: CatalogTriFilter): CatalogTriFilter {
   return 'all'
 }
 
-type CatalogSortKey = 'name' | 'date' | 'size'
+type CatalogSortKey = 'name' | 'date' | 'size' | 'favorite'
 const CATALOG_SORT_STORAGE_KEY = 'video_player_catalog_sort'
 
 function readStoredCatalogSort(): { key: CatalogSortKey; dir: 'asc' | 'desc' } | null {
@@ -3324,7 +3363,7 @@ function readStoredCatalogSort(): { key: CatalogSortKey; dir: 'asc' | 'desc' } |
     const parsed = JSON.parse(raw) as { key?: unknown; dir?: unknown }
     const key = parsed.key
     const dir = parsed.dir
-    if (key !== 'name' && key !== 'date' && key !== 'size') return null
+    if (key !== 'name' && key !== 'date' && key !== 'size' && key !== 'favorite') return null
     if (dir !== 'asc' && dir !== 'desc') return null
     return { key, dir }
   } catch {
@@ -3392,6 +3431,17 @@ function compareCatalogEntries(a: TrailerListEntry, b: TrailerListEntry): number
     const sa = a.mainSizeBytes ?? 0
     const sb = b.mainSizeBytes ?? 0
     if (sa !== sb) return dir * (sa < sb ? -1 : sa > sb ? 1 : 0)
+    return a.mainRel.localeCompare(b.mainRel, undefined, { sensitivity: 'base' })
+  }
+  if (catalogSortKey.value === 'favorite') {
+    // Favoritos com timestamp primeiro; não-favoritos vão no fim.
+    const fa = a.favoritedAtMs ?? 0
+    const fb = b.favoritedAtMs ?? 0
+    const hasFavA = a.isFavorite === true && fa > 0
+    const hasFavB = b.isFavorite === true && fb > 0
+    if (hasFavA !== hasFavB) return hasFavA ? -dir : dir
+    if (fa !== fb) return dir * (fa < fb ? -1 : fa > fb ? 1 : 0)
+    if (a.hasMain !== b.hasMain) return a.hasMain ? -1 : 1
     return a.mainRel.localeCompare(b.mainRel, undefined, { sensitivity: 'base' })
   }
   if (a.hasMain !== b.hasMain) return a.hasMain ? -1 : 1
@@ -4257,9 +4307,9 @@ async function loadTagBrowseItemPreviews(queries: string[], listId?: string | nu
     }
   } catch (e: unknown) {
     if (seq !== tagBrowsePreviewSeq) return
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
     tagBrowseError.value =
-      ex?.data?.statusMessage || ex?.message || 'Falha ao montar pré-visualizações.'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao montar pré-visualizações.'
   } finally {
     if (seq === tagBrowsePreviewSeq) tagBrowsePreviewLoading.value = false
   }
@@ -4371,9 +4421,9 @@ async function refreshTagBrowseData() {
       void loadTagBrowseItemPreviews(list?.tags ?? [], tagBrowseSelectedListId.value)
     }
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
     tagBrowseError.value =
-      ex?.data?.statusMessage || ex?.message || 'Falha ao carregar tags.'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao carregar tags.'
   } finally {
     tagBrowseLoading.value = false
   }
@@ -4441,9 +4491,9 @@ async function commitTagBrowseItemRename() {
     const list = tagBrowseLists.value.find((l) => l.id === listId)
     void loadTagBrowseItemPreviews(list?.tags ?? [], listId)
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
     tagBrowseError.value =
-      ex?.data?.statusMessage || ex?.message || 'Falha ao renomear item.'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao renomear item.'
   } finally {
     tagBrowseListBusy.value = false
   }
@@ -4484,9 +4534,9 @@ async function createTagBrowseList() {
     )
     if (created) selectTagBrowseList(created.id)
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
     tagBrowseError.value =
-      ex?.data?.statusMessage || ex?.message || 'Falha ao criar lista.'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao criar lista.'
   } finally {
     tagBrowseListBusy.value = false
   }
@@ -4539,9 +4589,9 @@ async function deleteTagBrowseList(id: string, confirmed = false) {
       clearTagBrowsePreviews()
     }
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
     tagBrowseError.value =
-      ex?.data?.statusMessage || ex?.message || 'Falha ao apagar lista.'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao apagar lista.'
   } finally {
     tagBrowseListBusy.value = false
   }
@@ -4567,9 +4617,9 @@ async function toggleTagInSelectedList(tag: string, wantIn?: boolean) {
     const list = tagBrowseLists.value.find((l) => l.id === listId)
     void loadTagBrowseItemPreviews(list?.tags ?? [], listId)
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
     tagBrowseError.value =
-      ex?.data?.statusMessage || ex?.message || 'Falha ao actualizar lista.'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao actualizar lista.'
   } finally {
     tagBrowseListBusy.value = false
   }
@@ -5348,9 +5398,9 @@ async function revealPlayingFileInExplorer() {
     })
     errorMsg.value = ''
   } catch (err: unknown) {
-    const ex = err as { data?: { statusMessage?: string }; message?: string }
+    const ex = err as { data?: { message?: string; statusMessage?: string }; message?: string }
     errorMsg.value =
-      ex?.data?.statusMessage || ex?.message || 'Não foi possível abrir a pasta no servidor.'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Não foi possível abrir a pasta no servidor.'
   }
 }
 
@@ -6433,9 +6483,9 @@ async function addTagFromInput() {
     errorMsg.value = ''
   } catch (err: unknown) {
     applyEntryTagsLocal(trailerRel, ls, prevTags)
-    const ex = err as { data?: { statusMessage?: string }; message?: string }
+    const ex = err as { data?: { message?: string; statusMessage?: string }; message?: string }
     const msg =
-      ex?.data?.statusMessage || ex?.message || 'Não foi possível gravar a tag (servidor).'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Não foi possível gravar a tag (servidor).'
     errorMsg.value = msg
     showToast(msg, 'error')
   }
@@ -6463,9 +6513,9 @@ async function removeTagFromEntry(trailerRel: string, tagName: string, libS: num
     errorMsg.value = ''
   } catch (err: unknown) {
     applyEntryTagsLocal(trailerRel, libS, prevTags)
-    const ex = err as { data?: { statusMessage?: string }; message?: string }
+    const ex = err as { data?: { message?: string; statusMessage?: string }; message?: string }
     errorMsg.value =
-      ex?.data?.statusMessage || ex?.message || 'Não foi possível remover a tag (servidor).'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Não foi possível remover a tag (servidor).'
   }
 }
 
@@ -6525,9 +6575,9 @@ async function toggleFavoriteAtIndex(i: number | null, opts?: { grid?: boolean }
       fullEntries.value[idx].isFavorite = prevFav
       fullEntries.value[idx].favoritedAtMs = prevAt
     }
-    const ex = err as { data?: { statusMessage?: string }; message?: string }
+    const ex = err as { data?: { message?: string; statusMessage?: string }; message?: string }
     errorMsg.value =
-      ex?.data?.statusMessage || ex?.message || 'Não foi possível gravar o favorito (servidor).'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Não foi possível gravar o favorito (servidor).'
   }
 }
 
@@ -6567,9 +6617,9 @@ async function toggleMemorableAtIndex(i: number | null, opts?: { grid?: boolean 
     errorMsg.value = ''
     await loadTrailers({ preserveFocusTrailerRel: trailerRel })
   } catch (err: unknown) {
-    const ex = err as { data?: { statusMessage?: string }; message?: string }
+    const ex = err as { data?: { message?: string; statusMessage?: string }; message?: string }
     errorMsg.value =
-      ex?.data?.statusMessage || ex?.message || 'Não foi possível gravar a marca «memorável».'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Não foi possível gravar a marca «memorável».'
     if (idx >= 0) {
       const cur = fullEntries.value[idx].tags ?? []
       if (next) {
@@ -6618,9 +6668,9 @@ async function deleteTitleAtIndex(i: number) {
       focusSlotAfterDelete,
     })
   } catch (err: unknown) {
-    const ex = err as { data?: { statusMessage?: string }; message?: string }
+    const ex = err as { data?: { message?: string; statusMessage?: string }; message?: string }
     errorMsg.value =
-      ex?.data?.statusMessage || ex?.message || 'Não foi possível mover os ficheiros para a Lixeira.'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Não foi possível mover os ficheiros para a Lixeira.'
   }
 }
 
@@ -6775,8 +6825,8 @@ async function enqueueCurrentTrailerReprocess() {
   } catch (err: unknown) {
     const ex = err as { data?: { statusMessage?: string; message?: string }; message?: string }
     const msg =
-      ex?.data?.statusMessage ||
       ex?.data?.message ||
+      ex?.data?.statusMessage ||
       ex?.message ||
       'Não foi possível adicionar à fila de trailers.'
     showToast(msg, 'error')
@@ -6825,10 +6875,12 @@ function openTrailerReprocessDialog() {
   trailerParamsForm.value = loadTrailerParamsFromStorage()
   trailerReprocessDialogOpen.value = true
   void restoreTrailerQueueFromServer()
+  void applyTrailerSpeedIfShrunk()
 }
 
 function resetTrailerParamsForm() {
   trailerParamsForm.value = { ...TRAILER_BAT_PARAMS_DEFAULT }
+  if (shrinkAlreadyDone.value) trailerParamsForm.value.speed = 1
 }
 
 function applyShrinkQueueState(state: ShrinkQueueServerState) {
@@ -7044,8 +7096,8 @@ async function enqueueCurrentShrinkInPlace() {
   } catch (err: unknown) {
     const ex = err as { data?: { statusMessage?: string; message?: string }; message?: string }
     const msg =
-      ex?.data?.statusMessage ||
       ex?.data?.message ||
+      ex?.data?.statusMessage ||
       ex?.message ||
       'Não foi possível adicionar à fila.'
     showToast(msg, 'error')
@@ -7091,6 +7143,21 @@ async function clearFinishedShrinkQueue() {
 
 const shrinkAlreadyDoneAt = ref<number | null>(null)
 const shrinkAlreadyDone = ref(false)
+const trailerShrunkNotice = computed(() => {
+  if (!shrinkAlreadyDone.value) return ''
+  let when = ''
+  if (shrinkAlreadyDoneAt.value) {
+    try {
+      when = ` em ${new Date(shrinkAlreadyDoneAt.value).toLocaleString()}`
+    } catch {
+      /* */
+    }
+  }
+  if (trailerParamsForm.value.speed === 1) {
+    return `Este vídeo já foi shrinkado${when}. Velocidade do trailer em 1× para não acelerar outra vez.`
+  }
+  return `Este vídeo já foi shrinkado${when}.`
+})
 const shrinkAlreadyDoneHint = computed(() => {
   if (!shrinkAlreadyDone.value) return ''
   if (shrinkAlreadyDoneAt.value) {
@@ -7137,6 +7204,17 @@ async function refreshShrinkAlreadyDoneHint() {
   } catch {
     /* */
   }
+}
+
+async function applyTrailerSpeedIfShrunk() {
+  const entry = editorOpenEntry.value
+  const session = entry ? libSession(entry) : -1
+  const mainRel = entry?.mainRel ?? ''
+  await refreshShrinkAlreadyDoneHint()
+  if (!trailerReprocessDialogOpen.value) return
+  const now = editorOpenEntry.value
+  if (!now || libSession(now) !== session || now.mainRel !== mainRel) return
+  if (shrinkAlreadyDone.value) trailerParamsForm.value.speed = 1
 }
 
 function openShrinkInPlaceDialog() {
@@ -7207,9 +7285,9 @@ async function confirmMoveTitleToSession(targetId: number) {
       activeIndex.value = null
     }
   } catch (err: unknown) {
-    const ex = err as { data?: { statusMessage?: string }; message?: string }
+    const ex = err as { data?: { message?: string; statusMessage?: string }; message?: string }
     moveTitleError.value =
-      ex?.data?.statusMessage || ex?.message || 'Não foi possível mover os ficheiros.'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Não foi possível mover os ficheiros.'
   } finally {
     moveTitleBusy.value = false
   }
@@ -7287,9 +7365,9 @@ async function loadSessions() {
     sessionsBootstrapped = true
   } catch (e: unknown) {
     sessions.value = []
-    const err = e as { data?: { statusMessage?: string }; message?: string }
+    const err = e as { data?: { message?: string; statusMessage?: string }; message?: string }
     errorMsg.value =
-      err?.data?.statusMessage || err?.message || 'Não foi possível carregar as sessões (VIDEO_ROOT).'
+      (err?.data?.message || err?.data?.statusMessage) || err?.message || 'Não foi possível carregar as sessões (VIDEO_ROOT).'
   }
 }
 
@@ -7608,12 +7686,12 @@ async function loadRecentsTrailers(opts?: CatalogLoadOpts) {
     }
   } catch (e: unknown) {
     if (myToken !== catalogLoadToken) return
-    const err = e as { data?: { statusMessage?: string }; message?: string }
+    const err = e as { data?: { message?: string; statusMessage?: string }; message?: string }
     fullEntries.value = []
     tagSuggestions.value = []
     recentsCatalog.reset()
     errorMsg.value =
-      err?.data?.statusMessage || err?.message || 'Não foi possível carregar Destaques.'
+      (err?.data?.message || err?.data?.statusMessage) || err?.message || 'Não foi possível carregar Destaques.'
   } finally {
     if (myToken === catalogLoadToken) loading.value = false
   }
@@ -7720,15 +7798,15 @@ async function loadTrailers(opts?: {
     await refreshRecentPlaybackKeys()
   } catch (e: unknown) {
     if (myToken !== catalogLoadToken) return
-    const err = e as { data?: { statusMessage?: string }; message?: string }
+    const err = e as { data?: { message?: string; statusMessage?: string }; message?: string }
     fullEntries.value = []
     tagSuggestions.value = []
     if (isSearchSession) {
       searchSessionError.value =
-        err?.data?.statusMessage || err?.message || 'Não foi possível executar a busca global.'
+        (err?.data?.message || err?.data?.statusMessage) || err?.message || 'Não foi possível executar a busca global.'
     } else {
       errorMsg.value =
-        err?.data?.statusMessage || err?.message || 'Não foi possível carregar a lista de trailers.'
+        (err?.data?.message || err?.data?.statusMessage) || err?.message || 'Não foi possível carregar a lista de trailers.'
     }
   } finally {
     if (myToken === catalogLoadToken) loading.value = false
@@ -8271,8 +8349,8 @@ async function submitCatalogUnlock() {
     catalogGatePassword.value = ''
     await bootstrapPlayerChrome()
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    catalogGateError.value = ex?.data?.statusMessage || ex?.message || 'Senha incorrecta.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    catalogGateError.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Senha incorrecta.'
     catalogUnlocked.value = false
     writeCatalogTabUnlocked(false)
   } finally {

@@ -807,8 +807,8 @@ async function stopServerProcess() {
     })
     stopServerMsg.value = 'Sinal enviado. O servidor deve encerrar em instantes.'
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    stopServerErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao parar servidor.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    stopServerErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao parar servidor.'
   } finally {
     stopServerBusy.value = false
   }
@@ -877,8 +877,8 @@ async function loadSyncFailures() {
     failuresHydrated.value = true
   } catch (e: unknown) {
     failuresHydrated.value = true
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    failuresErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao ler lista de falhas.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    failuresErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao ler lista de falhas.'
   } finally {
     failuresBusy.value = false
   }
@@ -935,8 +935,8 @@ async function loadMenu() {
     if (!jobActive.value) void attachToRunningSyncJobFromServer()
     void loadSyncFailures()
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    loadError.value = ex?.data?.statusMessage || ex?.message || 'Falha ao carregar o menu.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    loadError.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao carregar o menu.'
     rows.value = []
     source.value = ''
     statsCountsByRow.value = {}
@@ -979,8 +979,8 @@ async function saveFastPlayOnly() {
     fastPlaySaveMsg.value = 'Fast Play gravado. Recarregue o reprodutor para aplicar (ou mude de biblioteca).'
     await loadMenu()
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    fastPlaySaveErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao gravar.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    fastPlaySaveErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao gravar.'
   } finally {
     fastPlaySaveBusy.value = false
   }
@@ -1002,8 +1002,8 @@ async function saveCatalogPasswordOnly() {
       : 'Senha do catálogo desligada.'
     await loadMenu()
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    catalogPasswordSaveErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao gravar.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    catalogPasswordSaveErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao gravar.'
   } finally {
     catalogPasswordSaveBusy.value = false
   }
@@ -1028,8 +1028,8 @@ async function saveMenu() {
     saveMsg.value = 'Menu gravado. Recarregue o reprodutor para aplicar (ou mude de biblioteca).'
     await loadMenu()
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    saveErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao gravar.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    saveErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao gravar.'
   } finally {
     saveBusy.value = false
   }
@@ -1247,8 +1247,8 @@ async function attachToJob(jobId: string) {
       void loadSyncFailures()
     }
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string; statusCode?: number }
-    jobErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao ler estado do job.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string; statusCode?: number }
+    jobErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao ler estado do job.'
     rememberJobId(null)
   }
 }
@@ -1267,8 +1267,8 @@ async function startSyncJob(kind: JobKind, opts: { all?: boolean; session?: numb
     rememberJobId(data.jobId)
     await attachToJob(data.jobId)
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    jobErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao iniciar a sincronização.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    jobErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao iniciar a sincronização.'
   }
 }
 
@@ -1313,8 +1313,8 @@ async function runAutoTags(opts: { all?: boolean; session?: number; newOnly?: bo
       )
     }
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    autoTagsErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao correr auto-tags.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    autoTagsErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao correr auto-tags.'
   } finally {
     autoTagsBusy.value = false
   }
@@ -1333,8 +1333,8 @@ async function cancelCurrentJob() {
     })
     if (job.value) job.value.cancelRequested = true
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    jobErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao cancelar.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    jobErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao cancelar.'
   }
 }
 
@@ -1437,8 +1437,8 @@ async function checkFolderStatsRow(rowIndex: number, mode: 'counts' | 'pairing')
       statsPairByRow.value = { ...statsPairByRow.value, [rowIndex]: formatStatsPairLine(r) }
     }
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    statsErr.value = ex?.data?.statusMessage || ex?.message || 'Falha na checagem.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    statsErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha na checagem.'
   } finally {
     statsBusy.value = false
     statsRowLoading.value = null
@@ -1466,8 +1466,8 @@ async function checkFolderStatsAll(mode: 'counts' | 'pairing') {
     statsCountsByRow.value = counts
     if (mode === 'pairing') statsPairByRow.value = pairs
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    statsErr.value = ex?.data?.statusMessage || ex?.message || 'Falha na checagem.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    statsErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha na checagem.'
   } finally {
     statsBusy.value = false
   }

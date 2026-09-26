@@ -751,9 +751,9 @@ async function openEditedFolder() {
       body: { session, target: 'edited', rel },
     })
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
     revealEditedErr.value =
-      ex?.data?.statusMessage || ex?.message || 'Não foi possível abrir a pasta edited.'
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Não foi possível abrir a pasta edited.'
   } finally {
     revealEditedBusy.value = false
   }
@@ -1150,8 +1150,8 @@ async function loadMenu() {
     }
     await applyRoutePrefill()
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    loadError.value = ex?.data?.statusMessage || ex?.message || 'Falha ao carregar menu.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    loadError.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao carregar menu.'
   }
 }
 
@@ -1206,8 +1206,8 @@ async function validateExportSplit() {
     const labels = data.chunkPlans.map((p) => p.label).join(', ')
     validateMsg.value = `OK — ${data.partCount} parte(s): ${labels}`
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    validateMsg.value = ex?.data?.statusMessage || ex?.message || 'Validação falhou.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    validateMsg.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Validação falhou.'
   } finally {
     validating.value = false
   }
@@ -1226,8 +1226,8 @@ async function startExportSplit() {
     rememberJobId(data.jobId)
     openStreamForJob(data.jobId)
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    startErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao iniciar exportação.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    startErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao iniciar exportação.'
   }
 }
 
@@ -1250,8 +1250,8 @@ async function validateExport(mode: EditorMarkMode) {
     const modeLabel = data.editMode === 'keep' ? 'recorte' : 'exclusão'
     validateMsg.value = `OK (${modeLabel}) — ${data.markedCount} marcação(ões), ${data.keepCount} trecho(s) a exportar.`
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    validateMsg.value = ex?.data?.statusMessage || ex?.message || 'Validação falhou.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    validateMsg.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Validação falhou.'
   } finally {
     validating.value = false
   }
@@ -1394,8 +1394,8 @@ async function startExport(mode: EditorMarkMode) {
     rememberJobId(data.jobId)
     openStreamForJob(data.jobId)
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    startErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao iniciar exportação.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    startErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao iniciar exportação.'
   }
 }
 
@@ -1410,8 +1410,8 @@ async function cancelJob() {
     })
     if (job.value) job.value.cancelRequested = true
   } catch (e: unknown) {
-    const ex = e as { data?: { statusMessage?: string }; message?: string }
-    jobErr.value = ex?.data?.statusMessage || ex?.message || 'Falha ao cancelar.'
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    jobErr.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao cancelar.'
   }
 }
 
