@@ -5,6 +5,7 @@ import { createError, getQuery, sendStream, setHeader } from 'h3'
 import {
   ensurePreviewFrameCached,
   isPreviewCatalogRel,
+  PREVIEW_FRAME_MAX_SLOTS,
   previewFrameCacheFilePath,
 } from '../../utils/previewFrameCache'
 import { resolveSafeUnderRoot } from '../../utils/videoPaths'
@@ -38,7 +39,9 @@ export default defineEventHandler(async (event) => {
   const rawSlot = q.slot
   const slotRaw = Array.isArray(rawSlot) ? rawSlot[0] : rawSlot
   const slotN = Number(slotRaw ?? 0)
-  const slot = Number.isFinite(slotN) ? Math.min(3, Math.max(0, Math.floor(slotN))) : 0
+  const slot = Number.isFinite(slotN)
+    ? Math.min(PREVIEW_FRAME_MAX_SLOTS - 1, Math.max(0, Math.floor(slotN)))
+    : 0
 
   const full = resolveSafeUnderRoot(root, relStr)
   const candidates = resolveCatalogRelAbsoluteCandidates(root, relStr)

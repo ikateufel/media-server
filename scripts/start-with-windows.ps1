@@ -20,6 +20,11 @@ function Write-StartupLog([string]$msg, [string]$path = $logPath) {
     $sw.Dispose()
     $fs.Dispose()
   } catch {}
+  # Feedback no terminal interactivo (atalho/VBS continua sem janela).
+  if ($Host.Name -ne 'ConsoleHost') { return }
+  if ([Environment]::UserInteractive -and -not [Console]::IsOutputRedirected) {
+    Write-Host $line
+  }
 }
 
 function Ensure-UserPath {

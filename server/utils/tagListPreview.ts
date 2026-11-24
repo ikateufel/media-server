@@ -68,25 +68,8 @@ type CatalogHit = {
 /** Uma imagem por vídeo, até 6 títulos distintos. */
 export const TAG_LIST_PREVIEW_SAMPLE = 6
 
-/**
- * Uma passagem pelo catálogo; para cada query devolve total + amostra aleatória
- * (para mosaico de orientação nas listas de tags). Match = todas as palavras.
- */
-export async function previewQueriesAgainstCatalog(
-  event: H3Event,
-  queriesRaw: string[],
-  samplePerQuery = TAG_LIST_PREVIEW_SAMPLE,
-): Promise<TagListPreviewRow[]> {
-  const sample = Math.max(1, Math.min(TAG_LIST_PREVIEW_SAMPLE, Math.floor(samplePerQuery) || TAG_LIST_PREVIEW_SAMPLE))
-  const queries = [
-    ...new Set(
-      queriesRaw
-        .map((q) => String(q ?? '').trim().replace(/\s+/g, ' '))
-        .filter((q) => q.length >= 2),
-    ),
-  ]
-  if (!queries.length) return []
-
+/** Todos os vídeos do catálogo (todas as pastas), já deduplicados. */
+export async function buildCatalogHits(event: H3Event): Promise<CatalogHit[]> {
   const config = useRuntimeConfig(event)
   const menu = getVideoMenuItems(config)
   const catalog: CatalogHit[] = []
@@ -115,6 +98,39 @@ export async function previewQueriesAgainstCatalog(
       /* pasta inacessível */
     }
   }
+  return catalog
+}
+
+/** Vídeos que correspondem a uma query (todas as palavras), para escolher a capa de um item. */
+export async function listCatalogMatchesForQuery(event: H3Event, query: string): Promise<CatalogHit[]> {
+  const catalog = await buildCatalogHits(event)
+  return catalog
+    .filter((h) => entryMatchesQuery(h.entry, query))
+    .sort((a, b) => (a.entry.label || '').localeCompare(b.entry.label || '', 'pt'))
+}
+
+export { type CatalogHit }
+
+/**
+ * Uma passagem pelo catálogo; para cada query devolve total + amostra aleatória
+ * (para mosaico de orientação nas listas de tags). Match = todas as palavras.
+ */
+export async function previewQueriesAgainstCatalog(
+  event: H3Event,
+  queriesRaw: string[],
+  samplePerQuery = TAG_LIST_PREVIEW_SAMPLE,
+): Promise<TagListPreviewRow[]> {
+  const sample = Math.max(1, Math.min(TAG_LIST_PREVIEW_SAMPLE, Math.floor(samplePerQuery) || TAG_LIST_PREVIEW_SAMPLE))
+  const queries = [
+    ...new Set(
+      queriesRaw
+        .map((q) => String(q ?? '').trim().replace(/\s+/g, ' '))
+        .filter((q) => q.length >= 2),
+    ),
+  ]
+  if (!queries.length) return []
+
+  const catalog = await buildCatalogHits(event)
 
   return queries.map((query) => {
     const hits = catalog.filter((h) => entryMatchesQuery(h.entry, query))

@@ -105,12 +105,12 @@ function Build-Args([string]$logLevel, [bool]$gpuDecode) {
         }
         $a += @('-c:a', 'aac', '-b:a', $ab)
         $a += $metaParts
-        $a += @('-movflags', '+faststart', '-threads', $threadArg, $out)
+        $a += @('-movflags', '+faststart+use_metadata_tags', '-threads', $threadArg, $out)
     } else {
         $a += @('-vf', $vf, '-an')
         $a += $vencParts
         $a += $metaParts
-        $a += @('-movflags', '+faststart', '-threads', $threadArg, $out)
+        $a += @('-movflags', '+faststart+use_metadata_tags', '-threads', $threadArg, $out)
     }
     return $a
 }

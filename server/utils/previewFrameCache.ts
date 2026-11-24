@@ -9,11 +9,19 @@ import { resolveSafeUnderRoot } from './videoPaths'
 
 const execFileAsync = promisify(execFile)
 
-/** Número de miniaturas JPEG por título (grelha / preview-frame). */
+/** Número de miniaturas JPEG na grelha 2×2 (slots 0..3). */
 export const PREVIEW_FRAME_SLOT_COUNT = 4
 
+/**
+ * Número total de frames por título (grelha 2×2 + diálogo de escolha da capa).
+ * Slots 0..3 mantêm as posições antigas, por isso a cache existente continua válida.
+ */
+export const PREVIEW_FRAME_MAX_SLOTS = 12
+
 /** Fracções da duração para cada slot (igual à API `preview-frame`). */
-export const PREVIEW_FRAME_SLOT_FRACS = [0.2, 0.38, 0.55, 0.72] as const
+export const PREVIEW_FRAME_SLOT_FRACS = [
+  0.2, 0.38, 0.55, 0.72, 0.06, 0.12, 0.29, 0.33, 0.46, 0.63, 0.8, 0.9,
+] as const
 
 /** Extensões de vídeo aceites como fonte de miniaturas (preview/ ou trailer “plano”). */
 const PREVIEW_FRAME_SOURCE_EXTS = ['.mp4', '.webm', '.mkv', '.m4v', '.mov', '.avi'] as const
@@ -156,7 +164,9 @@ export async function ensurePreviewFrameCached(opts: {
   const dur = await ffprobeDurationSec(full)
   if (dur === null) return 'ffprobe-fail'
 
-  const frac = PREVIEW_FRAME_SLOT_FRACS[Math.min(3, Math.max(0, slot))] ?? PREVIEW_FRAME_SLOT_FRACS[0]
+  const frac =
+    PREVIEW_FRAME_SLOT_FRACS[Math.min(PREVIEW_FRAME_MAX_SLOTS - 1, Math.max(0, slot))] ??
+    PREVIEW_FRAME_SLOT_FRACS[0]
   const sec = Math.min(Math.max(dur * frac, 0.1), Math.max(0.15, dur - 0.1))
   try {
     await ffmpegExtractJpeg(full, sec, cachedPath)

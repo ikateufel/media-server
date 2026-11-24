@@ -39,9 +39,14 @@ dist
 # Log append ( trailer / preview: uma linha por ficheiro em processamento = caminho absoluto .mp4/.mkv/. )
 /data/sync-bat-processing.log
 
+# Inbox worker (settings + ledger local)
+/data/inbox-worker-settings.json
+/data/inbox-worker-state.json
+
 # Segmentos/ffmpeg temporários dentro de cada VIDEO_ROOT (quando algo força pasta fora do repo)
 **/.trailer_temp_segments/
 **/.preview_work/
 
 # Export CSV (listagens para IA / Excel)
 /data/file-lists/
+.aider*

@@ -274,7 +274,7 @@ function parseStdoutHints(
 
 export function normalizeShrinkSpeed(raw: unknown): ShrinkSpeed | null {
   const n = Number(raw)
-  if (n === 1.25 || n === 1.5 || n === 2) return n
+  if (n === 1 || n === 1.25 || n === 1.5 || n === 2) return n
   return null
 }
 

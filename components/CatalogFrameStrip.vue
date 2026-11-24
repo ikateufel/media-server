@@ -5,10 +5,12 @@ const props = withDefaults(
   defineProps<{
     previewRel: string
     sessionIndex: number
-    /** 1 = uma imagem (Destaques / TV); 4 = grelha 2×2. */
+    /** 1 = uma imagem (busca / TV); 4 = grelha 2×2. */
     maxSlots?: number
+    /** Frame (0..11) usado como imagem única quando `maxSlots` = 1. */
+    coverSlot?: number
   }>(),
-  { maxSlots: 4 },
+  { maxSlots: 4, coverSlot: 0 },
 )
 
 const catalogFrameSlots = computed(() => {
@@ -17,6 +19,11 @@ const catalogFrameSlots = computed(() => {
 })
 
 const singleFrameMode = computed(() => catalogFrameSlots.value.length === 1)
+
+/** Slot do JPEG a pedir: em modo de imagem única usa a capa escolhida. */
+function frameSlotFor(slot: number): number {
+  return singleFrameMode.value ? props.coverSlot : slot
+}
 
 const rootEl = ref<HTMLElement | null>(null)
 /** Tile intersectou o scroll — mostra grelha (slots preenchem-se aos poucos). */
@@ -143,7 +150,7 @@ onUnmounted(() => {
           decoding="async"
           :fetchpriority="slot === 0 ? 'high' : 'low'"
           alt=""
-          :src="catalogPreviewFrameUrl(props.previewRel, props.sessionIndex, slot)"
+          :src="catalogPreviewFrameUrl(props.previewRel, props.sessionIndex, frameSlotFor(slot))"
           @error="onImgError"
         />
         <div v-else class="catalog-frame-skeleton-cell" aria-hidden="true" />

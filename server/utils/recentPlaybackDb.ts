@@ -60,6 +60,21 @@ export function isInRecentPlayback(session: number, trailerRel: string): boolean
   return !!row
 }
 
+/** Todos os `trailer_rel` em Destaques para uma sessão de biblioteca. */
+export function listRecentPlaybackRelsForSession(session: number): string[] {
+  const d = getVideoTagsDb()
+  const rows = d
+    .prepare(
+      `SELECT trailer_rel AS trailerRel
+       FROM recent_playback
+       WHERE session = ?`,
+    )
+    .all(Math.max(0, Math.floor(session))) as { trailerRel: string }[]
+  return rows
+    .map((r) => normalizeTrailerRel(r.trailerRel))
+    .filter((r) => r.startsWith('trailers/'))
+}
+
 /** Unifica entrada em Destaques quando dois `trailer_rel` são o mesmo vídeo. */
 export function remapRecentPlaybackTrailerRel(session: number, fromRel: string, toRel: string): void {
   const from = normalizeTrailerRel(fromRel)

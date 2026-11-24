@@ -113,7 +113,7 @@
               <th>Caminho</th>
               <th>Nome no menu</th>
               <th>Checagem</th>
-              <th>Sincronizar</th>
+              <th title="Trailer.bat ou pipeline Novos (sem trailer → trailer → auto-tags → shrink ≥600MB)">Sincronizar</th>
               <th title="Pipeline npm run auto-tags para esta biblioteca">Auto-tags</th>
               <th aria-label="Remover linha"></th>
             </tr>
@@ -161,22 +161,33 @@
                 </div>
               </td>
               <td class="admin-td-sync">
-                <button
-                  type="button"
-                  class="admin-btn admin-btn--sm"
-                  :disabled="jobActive || !isWinServer"
-                  title="Corre só trailer.bat nesta pasta"
-                  @click="startSyncJob('trailers', { session: i })"
-                >
-                  Trailer
-                </button>
+                <div class="admin-sync-btns">
+                  <button
+                    type="button"
+                    class="admin-btn admin-btn--sm"
+                    :disabled="jobActive || processNewBusy || !isWinServer"
+                    title="Corre só trailer.bat nesta pasta"
+                    @click="startSyncJob('trailers', { session: i })"
+                  >
+                    Trailer
+                  </button>
+                  <button
+                    type="button"
+                    class="admin-btn admin-btn--sm"
+                    :disabled="jobActive || processNewBusy || autoTagsBusy || !isWinServer"
+                    title="Lista vídeos sem trailer (exclui já shrinkados): trailer → auto-tags new → shrink ≥600MB sem backup"
+                    @click="startProcessNewVideos(i)"
+                  >
+                    Novos
+                  </button>
+                </div>
               </td>
               <td class="admin-td-autotags">
                 <div class="admin-autotags-btns">
                   <button
                     type="button"
                     class="admin-btn admin-btn--sm"
-                    :disabled="autoTagsBusy || jobActive"
+                    :disabled="autoTagsBusy || jobActive || processNewBusy"
                     title="Pipeline completo nesta sessão (limpa auto-tags e regenera)"
                     @click="runAutoTags({ session: i })"
                   >
@@ -185,7 +196,7 @@
                   <button
                     type="button"
                     class="admin-btn admin-btn--sm"
-                    :disabled="autoTagsBusy || jobActive"
+                    :disabled="autoTagsBusy || jobActive || processNewBusy"
                     title="Só gera tags para vídeos desta pasta que ainda não têm nenhuma tag (não limpa existentes)"
                     @click="runAutoTags({ session: i, newOnly: true })"
                   >
@@ -296,6 +307,149 @@
         <p v-if="catalogPasswordSaveErr" class="admin-err admin-inline-msg">{{ catalogPasswordSaveErr }}</p>
       </div>
 
+      <h3 class="admin-h3">Inbox worker</h3>
+      <p class="admin-muted">
+        De tempo em tempo procura vídeos novos na pasta de watch (ledger por caminho + tamanho + mtime).
+        Para cada novo: enfileira trailer se faltar, shrink in-place se estiver acima do limite (só uma vez por
+        ficheiro), e corre <code class="admin-code">auto-tags --new-only</code> na sessão correspondente.
+        A pasta tem de ser uma biblioteca do menu. Só Windows.
+      </p>
+      <div class="admin-row admin-row--checks">
+        <label class="admin-check-label">
+          <input v-model="inboxWorker.enabled" type="checkbox" />
+          Activar timer
+        </label>
+        <label class="admin-check-label">
+          <input v-model="inboxWorker.runAutoTags" type="checkbox" />
+          Auto-tags new
+        </label>
+        <label class="admin-check-label">
+          <input v-model="inboxWorker.runTrailer" type="checkbox" />
+          Trailer
+        </label>
+        <label class="admin-check-label">
+          <input v-model="inboxWorker.runShrink" type="checkbox" />
+          Shrink
+        </label>
+      </div>
+      <div class="admin-row">
+        <label class="admin-check-label admin-input--wide">
+          Pasta (watch)
+          <input
+            v-model="inboxWorker.watchPath"
+            type="text"
+            class="admin-input admin-input--full"
+            placeholder="H:\temp\note_h\downloaded"
+          />
+        </label>
+      </div>
+      <div class="admin-row admin-row--checks">
+        <label class="admin-check-label">
+          Intervalo (min)
+          <input
+            v-model.number="inboxWorker.intervalMinutes"
+            type="number"
+            class="admin-input"
+            min="1"
+            max="1440"
+            step="1"
+          />
+        </label>
+        <label class="admin-check-label">
+          Shrink a partir de (MB)
+          <input
+            v-model.number="inboxWorkerShrinkMinMb"
+            type="number"
+            class="admin-input"
+            min="1"
+            max="100000"
+            step="1"
+          />
+        </label>
+        <label class="admin-check-label">
+          Shrink altura
+          <select v-model.number="inboxWorker.shrinkParams.height" class="admin-input">
+            <option :value="480">480p</option>
+            <option :value="720">720p</option>
+            <option :value="1080">1080p</option>
+            <option :value="1440">1440p</option>
+          </select>
+        </label>
+        <label class="admin-check-label">
+          Shrink velocidade
+          <select v-model.number="inboxWorker.shrinkParams.speed" class="admin-input">
+            <option :value="1.25">1.25×</option>
+            <option :value="1.5">1.5×</option>
+            <option :value="2">2×</option>
+          </select>
+        </label>
+        <label class="admin-check-label">
+          Shrink codec
+          <select v-model="inboxWorker.shrinkParams.codec" class="admin-input">
+            <option value="h264_nvenc">H.264 NVENC</option>
+            <option value="auto">Auto</option>
+            <option value="libx264">H.264 CPU</option>
+            <option value="hevc_nvenc">H.265 NVENC</option>
+            <option value="libx265">H.265 CPU</option>
+          </select>
+        </label>
+      </div>
+      <div class="admin-row admin-row--checks">
+        <label class="admin-check-label">
+          Trailer velocidade
+          <input
+            v-model.number="inboxWorker.trailerParams.speed"
+            type="number"
+            class="admin-input"
+            min="0.5"
+            max="4"
+            step="0.25"
+          />
+        </label>
+        <label class="admin-check-label">
+          Trailer altura (px)
+          <input
+            v-model.number="inboxWorker.trailerParams.heightPx"
+            type="number"
+            class="admin-input"
+            min="240"
+            max="2160"
+            step="1"
+          />
+        </label>
+      </div>
+      <div class="admin-row">
+        <button
+          type="button"
+          class="admin-btn admin-btn--primary"
+          :disabled="inboxWorkerSaveBusy"
+          @click="saveInboxWorker"
+        >
+          Gravar inbox worker
+        </button>
+        <button
+          type="button"
+          class="admin-btn"
+          :disabled="inboxWorkerRunBusy || inboxWorkerStatus?.busy"
+          @click="runInboxWorkerNow"
+        >
+          Correr agora
+        </button>
+        <button
+          type="button"
+          class="admin-btn admin-btn--ghost"
+          :disabled="inboxWorkerLoadBusy"
+          @click="loadInboxWorker"
+        >
+          Actualizar estado
+        </button>
+        <p v-if="inboxWorkerSaveMsg" class="admin-ok admin-inline-msg">{{ inboxWorkerSaveMsg }}</p>
+        <p v-if="inboxWorkerSaveErr" class="admin-err admin-inline-msg">{{ inboxWorkerSaveErr }}</p>
+        <p v-if="inboxWorkerRunErr" class="admin-err admin-inline-msg">{{ inboxWorkerRunErr }}</p>
+      </div>
+      <p v-if="inboxWorkerStatusLine" class="admin-muted admin-inline-msg">{{ inboxWorkerStatusLine }}</p>
+      <p v-if="inboxWorkerStatus?.lastError" class="admin-err">{{ inboxWorkerStatus.lastError }}</p>
+
       <h3 class="admin-h3">Tags automáticas</h3>
       <p class="admin-muted">
         Equivalente a <code class="admin-code">npm run auto-tags</code>: exporta nomes, gera
@@ -386,6 +540,53 @@
         </summary>
         <pre class="admin-pre admin-pre--autotags">{{ autoTagsMergedOutput }}</pre>
       </details>
+
+      <p v-if="processNewErr" class="admin-err">{{ processNewErr }}</p>
+      <div v-if="processNewStatus && (processNewBusy || processNewStatus.phase !== 'idle')" class="admin-process-new">
+        <h3 class="admin-h3">Pipeline Novos</h3>
+        <p class="admin-muted">
+          {{ processNewStatusLine }}
+        </p>
+        <p v-if="processNewStatus.lastError" class="admin-err">{{ processNewStatus.lastError }}</p>
+        <p v-if="processNewStatus.summary" class="admin-meta">
+          Scan {{ processNewStatus.summary.scanned }} · candidatos {{ processNewStatus.summary.candidates }} ·
+          saltados (já shrink) {{ processNewStatus.summary.skippedAlreadyShrunk }} · trailers
+          {{ processNewStatus.summary.trailersEnqueued }} · shrinks {{ processNewStatus.summary.shrinksEnqueued }}
+          <template v-if="processNewStatus.summary.autoTagsRan">
+            · auto-tags
+            {{ processNewStatus.summary.autoTagsOk === true ? 'ok' : processNewStatus.summary.autoTagsOk === false ? 'falhou' : '…' }}
+          </template>
+        </p>
+        <details
+          v-if="processNewStatus.candidates.length || processNewStatus.skipped.length"
+          class="admin-autotags-details"
+          open
+        >
+          <summary class="admin-autotags-summary">
+            Lista ({{ processNewStatus.candidates.length }} candidatos
+            <template v-if="processNewStatus.skipped.length">
+              · {{ processNewStatus.skipped.length }} saltados
+            </template>
+            )
+          </summary>
+          <ul v-if="processNewStatus.candidates.length" class="admin-process-new-list">
+            <li v-for="c in processNewStatus.candidates" :key="c.mainRel">
+              {{ c.label }}
+              <span class="admin-meta">
+                · {{ formatMb(c.size) }}
+                <template v-if="c.willShrink"> · shrink</template>
+              </span>
+            </li>
+          </ul>
+          <ul v-if="processNewStatus.skipped.length" class="admin-process-new-list admin-process-new-list--skipped">
+            <li v-for="s in processNewStatus.skipped" :key="`skip-${s.mainRel}`">
+              {{ s.label }}
+              <span class="admin-meta"> · já shrinkado</span>
+            </li>
+          </ul>
+        </details>
+      </div>
+
       <p v-if="saveMsg" class="admin-ok">{{ saveMsg }}</p>
       <p v-if="saveErr" class="admin-err">{{ saveErr }}</p>
       <p v-if="statsErr" class="admin-err">{{ statsErr }}</p>
@@ -617,6 +818,328 @@ const catalogPasswordSaveMsg = ref('')
 const catalogPasswordSaveErr = ref('')
 const catalogPasswordSaveBusy = ref(false)
 
+interface InboxWorkerFormSettings {
+  enabled: boolean
+  watchPath: string
+  intervalMinutes: number
+  runAutoTags: boolean
+  runTrailer: boolean
+  runShrink: boolean
+  shrinkMinBytes: number
+  shrinkParams: {
+    height: number
+    speed: number
+    codec: string
+    prioritizeSize: boolean
+  }
+  trailerParams: {
+    speed: number
+    heightPx: number
+  }
+}
+
+interface InboxWorkerStatusApi {
+  settings: InboxWorkerFormSettings & {
+    shrinkParams: InboxWorkerFormSettings['shrinkParams']
+    trailerParams: Record<string, unknown>
+  }
+  busy: boolean
+  schedulerActive: boolean
+  nextRunAt: number | null
+  lastRunAt: number | null
+  lastError: string | null
+  lastSummary: {
+    scanned: number
+    newFiles: number
+    trailersEnqueued: number
+    shrinksEnqueued: number
+    autoTagsRan: boolean
+    autoTagsOk: boolean | null
+  } | null
+  platform: string
+  session: number | null
+  sessionTitle: string | null
+  ledgerFileCount: number
+}
+
+const inboxWorker = ref<InboxWorkerFormSettings>({
+  enabled: false,
+  watchPath: 'H:\\temp\\note_h\\downloaded',
+  intervalMinutes: 15,
+  runAutoTags: true,
+  runTrailer: true,
+  runShrink: true,
+  shrinkMinBytes: 700 * 1024 * 1024,
+  shrinkParams: {
+    height: 1080,
+    speed: 1.5,
+    codec: 'h264_nvenc',
+    prioritizeSize: false,
+  },
+  trailerParams: {
+    speed: 1.5,
+    heightPx: 720,
+  },
+})
+const inboxWorkerShrinkMinMb = computed({
+  get: () => Math.round(inboxWorker.value.shrinkMinBytes / (1024 * 1024)),
+  set: (mb: number) => {
+    const n = Number(mb)
+    inboxWorker.value.shrinkMinBytes = Number.isFinite(n)
+      ? Math.max(1, Math.round(n)) * 1024 * 1024
+      : 700 * 1024 * 1024
+  },
+})
+const inboxWorkerStatus = ref<InboxWorkerStatusApi | null>(null)
+const inboxWorkerLoadBusy = ref(false)
+const inboxWorkerSaveBusy = ref(false)
+const inboxWorkerSaveMsg = ref('')
+const inboxWorkerSaveErr = ref('')
+const inboxWorkerRunBusy = ref(false)
+const inboxWorkerRunErr = ref('')
+
+interface ProcessNewVideosStatusApi {
+  busy: boolean
+  phase: 'idle' | 'scanning' | 'trailers' | 'auto-tags' | 'shrink' | 'done' | 'failed'
+  session: number | null
+  sessionTitle: string | null
+  startedAt: number | null
+  endedAt: number | null
+  lastError: string | null
+  candidates: { mainRel: string; label: string; size: number; willShrink: boolean }[]
+  skipped: { mainRel: string; label: string; reason: string }[]
+  summary: {
+    scanned: number
+    candidates: number
+    skippedAlreadyShrunk: number
+    trailersEnqueued: number
+    shrinksEnqueued: number
+    autoTagsRan: boolean
+    autoTagsOk: boolean | null
+  } | null
+  platform: string
+  windowsOnly: boolean
+}
+
+const processNewStatus = ref<ProcessNewVideosStatusApi | null>(null)
+const processNewErr = ref('')
+let processNewPollTimer: ReturnType<typeof setInterval> | null = null
+
+const processNewBusy = computed(() => Boolean(processNewStatus.value?.busy))
+
+const processNewStatusLine = computed(() => {
+  const st = processNewStatus.value
+  if (!st) return ''
+  const sess =
+    st.sessionTitle != null
+      ? ` · ${st.sessionTitle}`
+      : st.session != null
+        ? ` · sessão ${st.session}`
+        : ''
+  const phaseLabel: Record<ProcessNewVideosStatusApi['phase'], string> = {
+    idle: 'Idle',
+    scanning: 'A listar vídeos sem trailer…',
+    trailers: 'A gerar trailers…',
+    'auto-tags': 'A correr auto-tags new…',
+    shrink: 'A shrinkar (≥600 MB, sem backup)…',
+    done: 'Concluído',
+    failed: 'Falhou',
+  }
+  return `${phaseLabel[st.phase] || st.phase}${sess}`
+})
+
+function formatMb(bytes: number): string {
+  const n = Number(bytes)
+  if (!Number.isFinite(n) || n < 0) return '—'
+  return `${Math.round(n / (1024 * 1024))} MB`
+}
+
+function stopProcessNewPoll() {
+  if (processNewPollTimer) {
+    clearInterval(processNewPollTimer)
+    processNewPollTimer = null
+  }
+}
+
+function startProcessNewPoll() {
+  stopProcessNewPoll()
+  processNewPollTimer = setInterval(() => {
+    void refreshProcessNewStatus()
+  }, 2000)
+}
+
+async function refreshProcessNewStatus() {
+  const t = token.value.trim()
+  if (!t) return
+  try {
+    const h = await adminHeaders()
+    const data = await $fetch<ProcessNewVideosStatusApi>('/api/admin/process-new-videos', {
+      headers: h,
+    })
+    processNewStatus.value = data
+    if (!data.busy) stopProcessNewPoll()
+  } catch {
+    /* ignore poll errors */
+  }
+}
+
+async function startProcessNewVideos(session: number) {
+  if (processNewBusy.value || jobActive.value || autoTagsBusy.value) return
+  processNewErr.value = ''
+  try {
+    const h = await adminHeaders()
+    const data = await $fetch<ProcessNewVideosStatusApi>('/api/admin/process-new-videos', {
+      method: 'POST',
+      headers: { ...h, 'Content-Type': 'application/json' },
+      body: { session },
+    })
+    processNewStatus.value = data
+    processNewErr.value = ''
+    startProcessNewPoll()
+  } catch (e: unknown) {
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    processNewErr.value =
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao iniciar pipeline Novos.'
+  }
+}
+
+const inboxWorkerStatusLine = computed(() => {
+  const st = inboxWorkerStatus.value
+  if (!st) return ''
+  const parts: string[] = []
+  if (st.busy) parts.push('A correr…')
+  else if (st.schedulerActive) parts.push('Timer activo')
+  else parts.push('Timer parado')
+  if (st.sessionTitle != null && st.session != null) {
+    parts.push(`sessão ${st.session} (${st.sessionTitle})`)
+  } else if (st.session == null) {
+    parts.push('pasta não está no menu')
+  }
+  parts.push(`ledger ${st.ledgerFileCount}`)
+  if (st.lastRunAt) {
+    parts.push(`último ${new Date(st.lastRunAt).toLocaleString()}`)
+  }
+  if (st.nextRunAt && st.schedulerActive) {
+    parts.push(`próximo ${new Date(st.nextRunAt).toLocaleString()}`)
+  }
+  const s = st.lastSummary
+  if (s) {
+    parts.push(
+      `último ciclo: ${s.newFiles} novos / ${s.trailersEnqueued} trailers / ${s.shrinksEnqueued} shrinks` +
+        (s.autoTagsRan
+          ? s.autoTagsOk
+            ? ' / tags ok'
+            : ' / tags falhou'
+          : ''),
+    )
+  }
+  if (st.platform && st.platform.toLowerCase() !== 'win32') {
+    parts.push(`plataforma ${st.platform} (só Windows processa)`)
+  }
+  return parts.join(' · ')
+})
+
+function applyInboxWorkerStatus(data: InboxWorkerStatusApi) {
+  inboxWorkerStatus.value = data
+  const s = data.settings
+  inboxWorker.value = {
+    enabled: Boolean(s.enabled),
+    watchPath: String(s.watchPath ?? ''),
+    intervalMinutes: Number(s.intervalMinutes) || 15,
+    runAutoTags: Boolean(s.runAutoTags),
+    runTrailer: Boolean(s.runTrailer),
+    runShrink: Boolean(s.runShrink),
+    shrinkMinBytes: Number(s.shrinkMinBytes) || 700 * 1024 * 1024,
+    shrinkParams: {
+      height: Number(s.shrinkParams?.height) || 1080,
+      speed: Number(s.shrinkParams?.speed) || 1.5,
+      codec: String(s.shrinkParams?.codec || 'h264_nvenc'),
+      prioritizeSize: Boolean(s.shrinkParams?.prioritizeSize),
+    },
+    trailerParams: {
+      speed: Number(s.trailerParams?.speed) || 1.5,
+      heightPx: Number(s.trailerParams?.heightPx) || 720,
+    },
+  }
+}
+
+async function loadInboxWorker() {
+  inboxWorkerSaveErr.value = ''
+  inboxWorkerRunErr.value = ''
+  const t = token.value.trim()
+  if (!t) return
+  inboxWorkerLoadBusy.value = true
+  try {
+    const h = await adminHeaders()
+    const data = await $fetch<InboxWorkerStatusApi>('/api/admin/inbox-worker', { headers: h })
+    applyInboxWorkerStatus(data)
+  } catch (e: unknown) {
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    inboxWorkerSaveErr.value =
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao ler inbox worker.'
+  } finally {
+    inboxWorkerLoadBusy.value = false
+  }
+}
+
+async function saveInboxWorker() {
+  inboxWorkerSaveMsg.value = ''
+  inboxWorkerSaveErr.value = ''
+  inboxWorkerSaveBusy.value = true
+  try {
+    const h = await adminHeaders()
+    const body = {
+      enabled: inboxWorker.value.enabled,
+      watchPath: inboxWorker.value.watchPath,
+      intervalMinutes: inboxWorker.value.intervalMinutes,
+      runAutoTags: inboxWorker.value.runAutoTags,
+      runTrailer: inboxWorker.value.runTrailer,
+      runShrink: inboxWorker.value.runShrink,
+      shrinkMinBytes: inboxWorker.value.shrinkMinBytes,
+      shrinkParams: { ...inboxWorker.value.shrinkParams },
+      trailerParams: {
+        ...inboxWorkerStatus.value?.settings.trailerParams,
+        speed: inboxWorker.value.trailerParams.speed,
+        heightPx: inboxWorker.value.trailerParams.heightPx,
+      },
+    }
+    const data = await $fetch<InboxWorkerStatusApi>('/api/admin/inbox-worker', {
+      method: 'PUT',
+      headers: { ...h, 'Content-Type': 'application/json' },
+      body,
+    })
+    applyInboxWorkerStatus(data)
+    inboxWorkerSaveMsg.value = 'Inbox worker gravado.'
+  } catch (e: unknown) {
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    inboxWorkerSaveErr.value =
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao gravar inbox worker.'
+  } finally {
+    inboxWorkerSaveBusy.value = false
+  }
+}
+
+async function runInboxWorkerNow() {
+  inboxWorkerRunErr.value = ''
+  inboxWorkerRunBusy.value = true
+  try {
+    const h = await adminHeaders()
+    const data = await $fetch<InboxWorkerStatusApi>('/api/admin/inbox-worker', {
+      method: 'POST',
+      headers: { ...h, 'Content-Type': 'application/json' },
+      body: { action: 'run-now' },
+    })
+    applyInboxWorkerStatus(data)
+    inboxWorkerSaveMsg.value = 'Ciclo inbox worker concluído.'
+  } catch (e: unknown) {
+    const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
+    inboxWorkerRunErr.value =
+      (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao correr inbox worker.'
+  } finally {
+    inboxWorkerRunBusy.value = false
+  }
+}
+
 /** Linha de texto: contagens (R/T/P); segunda linha: cruzamento preview. */
 interface LibraryFolderStatsApiResult {
   session: number
@@ -818,7 +1341,14 @@ onMounted(() => {
   if (!import.meta.client) return
   token.value = sessionStorage.getItem('video_admin_token') ?? ''
   if (token.value.trim()) {
-    void Promise.all([loadMenu(), bootstrapSyncJobOnAdminLoad(), loadSyncFailures()])
+    void Promise.all([
+      loadMenu(),
+      bootstrapSyncJobOnAdminLoad(),
+      loadSyncFailures(),
+      refreshProcessNewStatus().then(() => {
+        if (processNewBusy.value) startProcessNewPoll()
+      }),
+    ])
   }
 })
 
@@ -827,6 +1357,7 @@ onUnmounted(() => {
     clearTimeout(reloadMsgTimer)
     reloadMsgTimer = null
   }
+  stopProcessNewPoll()
   if (libraryRefreshChannel) {
     try {
       libraryRefreshChannel.close()
@@ -934,6 +1465,7 @@ async function loadMenu() {
     statsErr.value = ''
     if (!jobActive.value) void attachToRunningSyncJobFromServer()
     void loadSyncFailures()
+    void loadInboxWorker()
   } catch (e: unknown) {
     const ex = e as { data?: { message?: string; statusMessage?: string }; message?: string }
     loadError.value = (ex?.data?.message || ex?.data?.statusMessage) || ex?.message || 'Falha ao carregar o menu.'
@@ -1273,7 +1805,7 @@ async function startSyncJob(kind: JobKind, opts: { all?: boolean; session?: numb
 }
 
 async function runAutoTags(opts: { all?: boolean; session?: number; newOnly?: boolean }) {
-  if (autoTagsBusy.value || jobActive.value) return
+  if (autoTagsBusy.value || jobActive.value || processNewBusy.value) return
 
   const newOnly = opts.newOnly === true
   const clearManual = !newOnly && autoTagsClearManual.value
@@ -1767,10 +2299,15 @@ async function checkFolderStatsAll(mode: 'counts' | 'pairing') {
 }
 
 .admin-td-sync {
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.admin-sync-btns {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: stretch;
 }
 
 .admin-autotags-btns {
@@ -1778,6 +2315,24 @@ async function checkFolderStatsAll(mode: 'counts' | 'pairing') {
   flex-direction: column;
   gap: 0.35rem;
   align-items: stretch;
+}
+
+.admin-process-new {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.admin-process-new-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+  max-height: 14rem;
+  overflow: auto;
+  font-size: 0.9rem;
+}
+
+.admin-process-new-list--skipped {
+  opacity: 0.75;
 }
 
 .admin-col-del {

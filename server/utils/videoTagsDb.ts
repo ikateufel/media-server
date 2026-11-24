@@ -6,7 +6,9 @@ import { dirname, join } from 'node:path'
 
 type DatabaseSync = import('node:sqlite').DatabaseSync
 
-const require = createRequire(import.meta.url)
+// Evitar import.meta.url: o Nitro reescreve para file:///_entry.js e o Node 24
+// rejeita isso em createRequire (servidor de producao nao arranca).
+const require = createRequire(join(process.cwd(), 'package.json'))
 let databaseSyncCtor: typeof import('node:sqlite').DatabaseSync | null = null
 
 function getDatabaseSyncCtor(): typeof import('node:sqlite').DatabaseSync {
@@ -453,6 +455,81 @@ export function listTagNamesForSession(session: number): string[] {
     )
     .all(session) as { name: string }[]
   return rows.map((r) => r.name)
+}
+
+function normalizeSessionId(session: number): number {
+  return Math.max(0, Math.floor(Number(session) || 0))
+}
+
+/** `trailer_rel` com a tag exacta (NOCASE) nesta sessão. */
+export function listTrailerRelsWithTagExact(session: number, tagName: string): string[] {
+  const name = tagName.trim()
+  if (!name) return []
+  const d = getVideoTagsDb()
+  const rows = d
+    .prepare(
+      `SELECT DISTINCT vt.trailer_rel AS trailerRel
+       FROM video_tags vt
+       JOIN tags t ON t.id = vt.tag_id
+       WHERE vt.session = ? AND t.name = ? COLLATE NOCASE`,
+    )
+    .all(normalizeSessionId(session), name) as { trailerRel: string }[]
+  return rows
+    .map((r) => String(r.trailerRel ?? '').replace(/\\/g, '/').trim())
+    .filter((r) => r.startsWith('trailers/'))
+}
+
+/** `trailer_rel` cuja alguma tag contém o texto (para filtro local por tags). */
+export function listTrailerRelsWithTagSubstring(session: number, query: string): string[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+  const d = getVideoTagsDb()
+  const rows = d
+    .prepare(
+      `SELECT DISTINCT vt.trailer_rel AS trailerRel
+       FROM video_tags vt
+       JOIN tags t ON t.id = vt.tag_id
+       WHERE vt.session = ? AND lower(t.name) LIKE ?`,
+    )
+    .all(normalizeSessionId(session), `%${q.replace(/[%_]/g, '')}%`) as { trailerRel: string }[]
+  return rows
+    .map((r) => String(r.trailerRel ?? '').replace(/\\/g, '/').trim())
+    .filter((r) => r.startsWith('trailers/'))
+}
+
+/**
+ * Títulos com `concluido` ou `memoravel` (classe "vistos" do catálogo).
+ */
+export function listTrailerRelsWatchedClass(session: number): string[] {
+  const d = getVideoTagsDb()
+  const rows = d
+    .prepare(
+      `SELECT DISTINCT vt.trailer_rel AS trailerRel
+       FROM video_tags vt
+       JOIN tags t ON t.id = vt.tag_id
+       WHERE vt.session = ?
+         AND (t.name = ? COLLATE NOCASE OR t.name = ? COLLATE NOCASE)`,
+    )
+    .all(normalizeSessionId(session), COMPLETED_TAG_NAME, MEMORABLE_TAG_NAME) as {
+    trailerRel: string
+  }[]
+  return rows
+    .map((r) => String(r.trailerRel ?? '').replace(/\\/g, '/').trim())
+    .filter((r) => r.startsWith('trailers/'))
+}
+
+export function countWatchedClassForSession(session: number): number {
+  const d = getVideoTagsDb()
+  const row = d
+    .prepare(
+      `SELECT COUNT(DISTINCT vt.trailer_rel) AS c
+       FROM video_tags vt
+       JOIN tags t ON t.id = vt.tag_id
+       WHERE vt.session = ?
+         AND (t.name = ? COLLATE NOCASE OR t.name = ? COLLATE NOCASE)`,
+    )
+    .get(normalizeSessionId(session), COMPLETED_TAG_NAME, MEMORABLE_TAG_NAME) as { c: number }
+  return Math.max(0, Math.floor(Number(row?.c) || 0))
 }
 
 /** Top tags por quantidade de títulos na sessão (para menu da pasta). */

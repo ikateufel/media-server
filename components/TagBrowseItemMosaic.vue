@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { catalogPreviewFrameUrl } from '~/composables/useVideoFolder'
 
+export interface ItemCoverRef {
+  session: number
+  rel: string
+  slot: number
+}
+
 const props = defineProps<{
   samples: {
     session: number
@@ -9,118 +15,126 @@ const props = defineProps<{
     label: string
   }[]
   itemLabel: string
+  /** Pré-visualização ainda não chegou do servidor para este item. */
+  pending?: boolean
+  /** Fotos escolhidas pelo utilizador (até 2); substituem as automáticas. */
+  covers?: ItemCoverRef[]
+  /** Item em modo de edição: clicar na foto abre o escolhedor. */
+  editing?: boolean
 }>()
 
 const emit = defineEmits<{
   open: []
+  pick: []
 }>()
 
-const urls = computed(() => {
+function frameUrl(rel: string, session: number, slot: number) {
+  return catalogPreviewFrameUrl(rel.replace(/\\/g, '/'), session, slot)
+}
+
+/**
+ * Até 2 fotos: primeiro as escolhidas pelo utilizador; se faltar, completa com fotos
+ * automáticas de vídeos diferentes do item (ou duas frames do único vídeo).
+ */
+const frames = computed(() => {
   const out: string[] = []
-  const seen = new Set<string>()
-  for (const s of props.samples) {
-    const rel = s.previewRel || s.trailerRel
-    if (!rel) continue
-    const url = catalogPreviewFrameUrl(rel, s.session, 2)
-    if (seen.has(url)) continue
-    seen.add(url)
-    out.push(url)
+  const chosen = (props.covers ?? []).slice(0, 2)
+  for (const c of chosen) out.push(frameUrl(c.rel, c.session, c.slot))
+
+  const vids = props.samples
+    .map((s) => ({ session: s.session, rel: (s.previewRel || s.trailerRel || '').replace(/\\/g, '/') }))
+    .filter((s) => s.rel)
+  const usedRels = new Set(chosen.map((c) => `${c.session}|${c.rel.replace(/\\/g, '/')}`))
+  for (const v of vids) {
+    if (out.length >= 2) break
+    if (usedRels.has(`${v.session}|${v.rel}`)) continue
+    out.push(frameUrl(v.rel, v.session, 0))
   }
-  return out
+  if (!chosen.length && out.length === 1 && vids.length === 1) {
+    out.push(frameUrl(vids[0]!.rel, vids[0]!.session, 2))
+  }
+  return out.slice(0, 2)
 })
 
-const tick = ref(0)
-const hovering = ref(false)
-let timer: ReturnType<typeof setInterval> | null = null
-let prefetch: HTMLImageElement | null = null
-
-const src = computed(() => {
-  const list = urls.value
-  if (!list.length) return ''
-  if (!hovering.value || list.length < 2) return list[0]!
-  return list[((tick.value % list.length) + list.length) % list.length]!
+const statusText = computed(() => {
+  if (frames.value.length) return ''
+  return props.pending ? 'A carregar…' : 'Sem imagem'
 })
 
-function stop() {
-  if (timer) {
-    clearInterval(timer)
-    timer = null
-  }
-  hovering.value = false
-  tick.value = 0
-  prefetch = null
+function onClick() {
+  if (props.editing) emit('pick')
+  else emit('open')
 }
-
-function start() {
-  const list = urls.value
-  if (list.length < 2 || timer) return
-  hovering.value = true
-  tick.value = 0
-  timer = setInterval(() => {
-    tick.value += 1
-    const next = list[((tick.value + 1) % list.length + list.length) % list.length]
-    if (!next) return
-    prefetch = new Image()
-    prefetch.src = next
-  }, 500)
-}
-
-onUnmounted(stop)
 </script>
 
 <template>
   <button
-    v-if="src"
     type="button"
-    class="mosaic"
-    :title="samples[0]?.label || itemLabel"
-    :aria-label="`Pré-visualização de «${itemLabel}»`"
-    @pointerenter="start"
-    @pointerleave="stop"
-    @click="emit('open')"
+    class="item-photos"
+    :class="{ 'item-photos--empty': !frames.length, 'item-photos--editing': editing }"
+    :title="editing ? 'Escolher fotos do item' : samples[0]?.label || itemLabel"
+    :aria-label="editing ? `Escolher fotos de «${itemLabel}»` : `Fotos de «${itemLabel}»`"
+    @click="onClick"
   >
-    <span class="mosaic-sizer" aria-hidden="true" />
-    <img class="mosaic-img" :src="src" alt="" decoding="async" />
+    <template v-if="frames.length">
+      <img
+        v-for="(src, i) in frames"
+        :key="i"
+        class="item-photos-img"
+        :src="src"
+        alt=""
+        loading="lazy"
+        decoding="async"
+      />
+    </template>
+    <span v-else class="item-photos-status">{{ statusText }}</span>
   </button>
 </template>
 
 <style scoped>
-.mosaic {
-  position: relative;
-  display: block;
-  box-sizing: border-box;
+.item-photos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
   width: 100%;
+  aspect-ratio: 16 / 9;
   margin: 0;
   padding: 0;
   border: 1px solid #2d333b;
   border-radius: 8px;
   overflow: hidden;
-  isolation: isolate;
   background: #050608;
   cursor: pointer;
 }
 
-.mosaic-sizer {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  pointer-events: none;
-}
-
-.mosaic:hover {
+.item-photos:hover {
   outline: 1px solid #5f9dee;
   outline-offset: -1px;
 }
 
-.mosaic-img {
-  position: absolute;
-  inset: 0;
+.item-photos--editing {
+  outline: 1px dashed #f5b942;
+  outline-offset: -1px;
+}
+
+.item-photos--empty {
+  grid-template-columns: 1fr;
+  cursor: default;
+}
+
+.item-photos-img {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  object-position: center;
+  min-width: 0;
+  object-fit: cover;
   background: #050608;
-  pointer-events: none;
+}
+
+.item-photos-status {
+  align-self: center;
+  justify-self: center;
+  font-size: 0.78rem;
+  color: #9aa0a6;
 }
 </style>

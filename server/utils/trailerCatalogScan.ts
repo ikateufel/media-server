@@ -99,7 +99,60 @@ export async function buildTrailerEntryFromTrailersBasename(
   return { entry, mainStat }
 }
 
-export async function scanTrailersCatalogInRoot(root: string): Promise<{
+/** Filtros aplicados *antes* do `stat`/enrich — pastas grandes com filtro activo. */
+export type CatalogScanOptions = {
+  /** Só estes `trailers/...` (SQLite); `null`/omit = sem allowlist. */
+  allowTrailerRels?: Set<string> | null
+  /** Excluir estes rels (favorito/destaques em modo exclude). */
+  denyTrailerRels?: Set<string> | null
+  /** Tag exacta — também aceita `folderPairTag` derivado da subpasta. */
+  tagExact?: string | null
+  /** Substring de tag — também na `folderPairTag` da subpasta. */
+  tagSubstring?: string | null
+  /** Substring em path/nome (modo filtro arquivos). */
+  fileSubstring?: string | null
+}
+
+function trailerRelFromWithin(within: string): string {
+  return `trailers/${within.replace(/\\/g, '/')}`.replace(/\\/g, '/')
+}
+
+function catalogPathPassesScanFilter(within: string, opts?: CatalogScanOptions): boolean {
+  if (!opts) return true
+  const rel = trailerRelFromWithin(within)
+  if (opts.denyTrailerRels?.has(rel)) return false
+
+  const parsed = parseTrailersDirRelativePath(within)
+  const folderTag = parsed?.subfolder ? folderPairWordsTag(parsed.subfolder) : ''
+  const folderTagLow = folderTag.trim().toLowerCase()
+  const tagExactLow = opts.tagExact?.trim().toLowerCase() || ''
+  const tagSubLow = opts.tagSubstring?.trim().toLowerCase() || ''
+
+  const hasAllow = !!opts.allowTrailerRels
+  if (hasAllow) {
+    const inAllow = opts.allowTrailerRels!.has(rel)
+    const folderExactOk = !!tagExactLow && folderTagLow === tagExactLow
+    const folderSubOk = !!tagSubLow && folderTagLow.includes(tagSubLow)
+    if (!inAllow && !folderExactOk && !folderSubOk) return false
+  } else if (tagExactLow) {
+    if (folderTagLow !== tagExactLow) return false
+  } else if (tagSubLow) {
+    if (!folderTagLow.includes(tagSubLow)) return false
+  }
+
+  const fileQ = opts.fileSubstring?.trim().toLowerCase() || ''
+  if (fileQ) {
+    const hay = `${within} ${parsed?.fileName ?? ''} ${folderTag}`.toLowerCase()
+    if (!hay.includes(fileQ)) return false
+  }
+
+  return true
+}
+
+export async function scanTrailersCatalogInRoot(
+  root: string,
+  opts?: CatalogScanOptions,
+): Promise<{
   items: TrailerListEntry[]
   mainStatsByRel: Map<string, Stats>
 }> {
@@ -115,12 +168,17 @@ export async function scanTrailersCatalogInRoot(root: string): Promise<{
   const items: TrailerListEntry[] = []
   const mainStatsByRel = new Map<string, Stats>()
 
+  async function pushWithin(relWithin: string) {
+    if (!catalogPathPassesScanFilter(relWithin, opts)) return
+    const built = await buildTrailerEntryFromTrailersBasename(rootTrim, relWithin)
+    if (!built) return
+    if (built.mainStat) mainStatsByRel.set(built.entry.mainRel, built.mainStat)
+    items.push(built.entry)
+  }
+
   for (const d of dirents) {
     if (d.isFile()) {
-      const built = await buildTrailerEntryFromTrailersBasename(rootTrim, d.name)
-      if (!built) continue
-      if (built.mainStat) mainStatsByRel.set(built.entry.mainRel, built.mainStat)
-      items.push(built.entry)
+      await pushWithin(d.name)
       continue
     }
 
@@ -134,11 +192,7 @@ export async function scanTrailersCatalogInRoot(root: string): Promise<{
     }
     for (const f of subFiles) {
       if (!f.isFile()) continue
-      const relWithin = `${d.name}/${f.name}`.replace(/\\/g, '/')
-      const built = await buildTrailerEntryFromTrailersBasename(rootTrim, relWithin)
-      if (!built) continue
-      if (built.mainStat) mainStatsByRel.set(built.entry.mainRel, built.mainStat)
-      items.push(built.entry)
+      await pushWithin(`${d.name}/${f.name}`.replace(/\\/g, '/'))
     }
   }
 
@@ -156,11 +210,7 @@ export async function scanTrailersCatalogInRoot(root: string): Promise<{
     }
     for (const f of actressTrailers) {
       if (!f.isFile()) continue
-      const relWithin = `${d.name}/${f.name}`.replace(/\\/g, '/')
-      const built = await buildTrailerEntryFromTrailersBasename(rootTrim, relWithin)
-      if (!built) continue
-      if (built.mainStat) mainStatsByRel.set(built.entry.mainRel, built.mainStat)
-      items.push(built.entry)
+      await pushWithin(`${d.name}/${f.name}`.replace(/\\/g, '/'))
     }
   }
 

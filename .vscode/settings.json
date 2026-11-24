@@ -1,0 +1,23 @@
+{
+  "window.title": "VIDEO PLAYER · ${rootName} · ${activeEditorShort}${separator}${appName}",
+  "workbench.colorCustomizations": {
+    "titleBar.activeBackground": "#0b1f3a",
+    "titleBar.activeForeground": "#e6edf7",
+    "titleBar.inactiveBackground": "#0b1f3a",
+    "titleBar.inactiveForeground": "#8fa3bf",
+    "activityBar.background": "#0b1f3a",
+    "activityBar.foreground": "#e6edf7",
+    "statusBar.background": "#0b1f3a",
+    "statusBar.foreground": "#e6edf7",
+    "statusBar.noFolderBackground": "#0b1f3a",
+    "sideBar.background": "#0f1b2d",
+    "sideBarSectionHeader.background": "#13294a",
+    "editorGroupHeader.tabsBackground": "#0b1f3a",
+    "tab.activeBackground": "#13294a",
+    "tab.inactiveBackground": "#0b1f3a",
+    "tab.activeBorderTop": "#f5b942",
+    "tab.activeForeground": "#ffffff",
+    "panel.background": "#0b1f3a",
+    "panel.border": "#f5b942"
+  }
+}

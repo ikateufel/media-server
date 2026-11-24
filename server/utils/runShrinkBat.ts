@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { createError } from 'h3'
 
-export type ShrinkSpeed = 1.25 | 1.5 | 2
+export type ShrinkSpeed = 1 | 1.25 | 1.5 | 2
 
 export type ShrinkCodec = 'auto' | 'h264_nvenc' | 'libx264' | 'hevc_nvenc' | 'libx265'
 

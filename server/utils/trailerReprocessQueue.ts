@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   normalizeTrailerBatParams,
   type TrailerBatParams,
 } from '#shared/trailerParams'
+import { createPersistGate, isRetryableFsError, writeJsonFileAtomic } from './atomicJsonFile'
 import {
   getTrailerReprocessSnapshot,
   startTrailerReprocessFromConfig,
@@ -67,6 +68,7 @@ interface QueueRuntime {
   listeners: Set<QueueListener>
   loaded: boolean
   loadPromise: Promise<void> | null
+  runPersist: ReturnType<typeof createPersistGate>
 }
 
 const g = globalThis as typeof globalThis & { __vpTrailerReprocessQueue?: QueueRuntime }
@@ -80,7 +82,10 @@ function runtime(): QueueRuntime {
       listeners: new Set(),
       loaded: false,
       loadPromise: null,
+      runPersist: createPersistGate(),
     }
+  } else if (!g.__vpTrailerReprocessQueue.runPersist) {
+    g.__vpTrailerReprocessQueue.runPersist = createPersistGate()
   }
   return g.__vpTrailerReprocessQueue
 }
@@ -167,13 +172,21 @@ function parseItem(raw: unknown): TrailerReprocessQueueItem | null {
   return item
 }
 
-async function persist() {
+async function persist(opts?: { critical?: boolean }) {
   const rt = runtime()
-  rt.items = pruneFinished(rt.items)
-  rt.updatedAt = Date.now()
-  const payload: QueueFileShape = { items: rt.items, updatedAt: rt.updatedAt }
-  await mkdir(join(process.cwd(), 'data'), { recursive: true })
-  await writeFile(QUEUE_FILE(), JSON.stringify(payload, null, 2), 'utf8')
+  const critical = opts?.critical === true
+  try {
+    await rt.runPersist(async () => {
+      rt.items = pruneFinished(rt.items)
+      rt.updatedAt = Date.now()
+      const payload: QueueFileShape = { items: rt.items, updatedAt: rt.updatedAt }
+      await writeJsonFileAtomic(QUEUE_FILE(), payload)
+    })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[trailer-reprocess-queue] persist failed:', msg)
+    if (critical) throw e instanceof Error ? e : new Error(msg)
+  }
 }
 
 /** Itens `running` sem job vivo (HMR/crash) bloqueavam a bomba — voltam a pending. */
@@ -223,7 +236,29 @@ async function ensureLoaded() {
   }
   rt.loadPromise = (async () => {
     try {
-      const raw = await readFile(QUEUE_FILE(), 'utf8')
+      let raw = ''
+      let lastReadErr: unknown
+      for (let attempt = 0; attempt < 8; attempt++) {
+        try {
+          raw = await readFile(QUEUE_FILE(), 'utf8')
+          lastReadErr = null
+          break
+        } catch (e) {
+          lastReadErr = e
+          const code = (e as NodeJS.ErrnoException)?.code
+          if (code === 'ENOENT') break
+          if (!isRetryableFsError(e) || attempt === 7) break
+          await new Promise<void>((r) => setTimeout(r, 30 + attempt * 40))
+        }
+      }
+      if (lastReadErr && (lastReadErr as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        throw lastReadErr
+      }
+      if (!raw) {
+        rt.items = []
+        rt.updatedAt = Date.now()
+        return
+      }
       const parsed = JSON.parse(raw) as QueueFileShape
       const rows = Array.isArray(parsed.items) ? parsed.items : []
       const items: TrailerReprocessQueueItem[] = []
@@ -238,7 +273,14 @@ async function ensureLoaded() {
         typeof parsed.updatedAt === 'number' && Number.isFinite(parsed.updatedAt)
           ? parsed.updatedAt
           : Date.now()
-    } catch {
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException)?.code
+      if (code !== 'ENOENT') {
+        console.error(
+          '[trailer-reprocess-queue] load failed, starting empty:',
+          e instanceof Error ? e.message : e,
+        )
+      }
       rt.items = []
       rt.updatedAt = Date.now()
     } finally {
@@ -424,7 +466,7 @@ export async function enqueueTrailerReprocessQueueItem(input: {
     endedAt: null,
   }
   rt.items.push(item)
-  await persist()
+  await persist({ critical: true })
   emitQueue()
   kickPump()
   return publicState()

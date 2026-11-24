@@ -214,11 +214,19 @@ async function backupOriginalBeforeReplace(originalPath: string): Promise<string
   return dest
 }
 
+/**
+ * Backup do original (shrinked_backup) desativado por agora.
+ * O código de backup mantém-se intacto — basta voltar a `true` para reativar.
+ */
+const SHRINK_BACKUP_ENABLED = false
+
 async function replaceOriginalWithShrinked(opts: {
   originalPath: string
   shrinkedPath: string
-}): Promise<{ finalPath: string; backupPath: string }> {
-  const backupPath = await backupOriginalBeforeReplace(opts.originalPath)
+  skipBackup?: boolean
+}): Promise<{ finalPath: string; backupPath: string | null }> {
+  const skipBackup = Boolean(opts.skipBackup) || !SHRINK_BACKUP_ENABLED
+  const backupPath = skipBackup ? null : await backupOriginalBeforeReplace(opts.originalPath)
 
   const dest = finalMainPath(opts.originalPath)
   const destSameAsOrig =
@@ -288,13 +296,15 @@ async function runJob(
   videoPath: string,
   libraryRoot: string,
   params: ShrinkInPlaceParams,
+  skipBackup = false,
 ) {
+  const effectiveSkipBackup = skipBackup || !SHRINK_BACKUP_ENABLED
   try {
     pushLine(job, 'meta', `[INICIO] ficheiro: ${videoPath}`)
     pushLine(
       job,
       'meta',
-      `[INICIO] params: ${params.speed}x · ${params.height}px · ${params.codec}${params.prioritizeSize ? ' · priorizar tamanho' : ''} · force`,
+      `[INICIO] params: ${params.speed}x · ${params.height}px · ${params.codec}${params.prioritizeSize ? ' · priorizar tamanho' : ''} · force${effectiveSkipBackup ? ' · sem backup' : ''}`,
     )
     pushLine(job, 'meta', `[INICIO] mainRel=${job.snapshot.mainRel} · session=${job.snapshot.session}`)
     const shrinkedPath = expectedShrinkedOutputPath(videoPath)
@@ -384,15 +394,26 @@ async function runJob(
       }
     }
 
-    pushLine(job, 'meta', `[REPLACE] a substituir o original por ${basename(shrinkedPath)}…`)
+    pushLine(
+      job,
+      'meta',
+      effectiveSkipBackup
+        ? `[REPLACE] a substituir o original por ${basename(shrinkedPath)} (sem backup)…`
+        : `[REPLACE] a substituir o original por ${basename(shrinkedPath)}…`,
+    )
     try {
       const { finalPath, backupPath } = await replaceOriginalWithShrinked({
         originalPath: videoPath,
         shrinkedPath,
+        skipBackup: effectiveSkipBackup,
       })
       const newMainRel = toPosixRel(finalPath, libraryRoot)
       await remapProgressMainRel(job.snapshot.session, job.snapshot.mainRel, newMainRel)
-      pushLine(job, 'meta', `[BACKUP] original em ${backupPath}`)
+      if (backupPath) {
+        pushLine(job, 'meta', `[BACKUP] original em ${backupPath}`)
+      } else {
+        pushLine(job, 'meta', '[REPLACE] sem backup')
+      }
       pushLine(job, 'meta', `[OK] vídeo substituído → ${newMainRel}`)
       setStatus(job, 'done', 0, newMainRel)
     } catch (e) {
@@ -419,6 +440,7 @@ export function createShrinkInPlaceJob(opts: {
   libraryRoot: string
   title: string
   params: ShrinkInPlaceParams
+  skipBackup?: boolean
 }): ShrinkInPlaceSnapshot {
   pruneOldJobs()
   const id = randomUUID()
@@ -439,7 +461,14 @@ export function createShrinkInPlaceJob(opts: {
   }
   const internal: InternalJob = { snapshot, listeners: new Set() }
   jobs.set(id, internal)
-  void runJob(internal, opts.projectRoot, opts.path, opts.libraryRoot, opts.params)
+  void runJob(
+    internal,
+    opts.projectRoot,
+    opts.path,
+    opts.libraryRoot,
+    opts.params,
+    Boolean(opts.skipBackup),
+  )
   return snapshot
 }
 
@@ -465,6 +494,7 @@ export function startShrinkInPlaceFromConfig(
     trailerRel?: string
     projectRoot: string
     params?: Partial<ShrinkInPlaceParams> | Record<string, unknown> | null
+    skipBackup?: boolean
   },
 ): ShrinkInPlaceSnapshot {
   const menu = getVideoMenuItems(config)
@@ -480,5 +510,6 @@ export function startShrinkInPlaceFromConfig(
     libraryRoot,
     title: resolved.title,
     params,
+    skipBackup: Boolean(opts.skipBackup),
   })
 }

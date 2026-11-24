@@ -411,7 +411,7 @@
         <div class="dup-shrink-body">
           <p class="admin-muted">
             Adiciona à fila; processa no servidor e <strong>substitui o original</strong>
-            (backup em <code class="admin-code">shrinked_backup</code>).
+            (sem backup).
             Progresso no reprodutor / Admin · histórico em
             <NuxtLink to="/historico" class="empty-hint-link">/historico</NuxtLink>.
           </p>
@@ -622,9 +622,20 @@ const shrinkDialogAlreadyHint = computed(() => {
   return 'Histórico: este vídeo já foi shrinkado pelo grid. Enfileirar outra vez substitui o ficheiro de novo — vais precisar de confirmar duas vezes.'
 })
 
+function pauseAllDupVideos() {
+  for (const el of videoEls.values()) {
+    try {
+      if (!el.paused) el.pause()
+    } catch {
+      /* */
+    }
+  }
+}
+
 async function openShrinkDialog(v: DupVideo) {
   const info = await ensureMainRel(v)
   if (!info?.mainRel) return
+  pauseAllDupVideos()
   shrinkDialogVideo.value = v
   shrinkForm.value = loadShrinkInPlaceParamsFromStorage()
   shrinkDialogOpen.value = true
@@ -1822,6 +1833,7 @@ async function enqueueTrailerReprocess(v: DupVideo) {
   const info = await ensureMainRel(v)
   if (!info?.mainRel) return
   if (!confirm(`Reprocessar trailer de «${v.displayName}»?`)) return
+  pauseAllDupVideos()
 
   const ref = titleRef(v)
   const params = loadTrailerParamsFromStorage()

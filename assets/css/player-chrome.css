@@ -363,6 +363,44 @@
   background: #2d333b;
 }
 
+.player-chrome .tag-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  margin-top: 0.4rem;
+}
+
+.player-chrome .tag-suggest-item,
+.player-chrome .tag-suggest-add {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid #3c4043;
+  background: #1a1d22;
+  color: #e8eaed;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-chrome .tag-suggest-item:hover {
+  background: #252a32;
+}
+
+.player-chrome .tag-suggest-add {
+  border-color: #5f6368;
+  background: #252a32;
+  font-weight: 600;
+}
+
+.player-chrome .tag-suggest-add:hover {
+  background: #2d333b;
+}
+
 .player-chrome .tag-chip-list {
   display: flex;
   flex-wrap: wrap;

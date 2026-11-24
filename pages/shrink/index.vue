@@ -220,6 +220,7 @@
         <label class="shrink-field">
           <span class="shrink-label">Velocidade</span>
           <select v-model="speed" class="admin-input">
+            <option :value="1">1×</option>
             <option :value="1.25">1.25×</option>
             <option :value="1.5">1.5×</option>
             <option :value="2">2×</option>
@@ -442,7 +443,7 @@ const loadError = ref('')
 const queue = ref<QueueItem[]>([])
 const dropActive = ref(false)
 const height = ref(1080)
-const speed = ref<1.25 | 1.5 | 2>(1.5)
+const speed = ref<1 | 1.25 | 1.5 | 2>(1.5)
 const codec = ref<ShrinkCodec>('h264_nvenc')
 const prioritizeSize = ref(false)
 const force = ref(false)

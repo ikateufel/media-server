@@ -1077,6 +1077,14 @@ exit /b 0
 :apply_speed
 set "SPD=%~1"
 if /I "%SPD%"=="2" set "SPD=2.0"
+if /I "%SPD%"=="1" (
+    set "vel=1.0"
+    exit /b 0
+)
+if /I "%SPD%"=="1.0" (
+    set "vel=1.0"
+    exit /b 0
+)
 if /I "%SPD%"=="1.25" (
     set "vel=1.25"
     exit /b 0
@@ -1104,6 +1112,7 @@ exit /b 0
 
 :velo_div_for_bitrate
 set "VELO_DIV=150"
+if /I "%vel%"=="1.0" set "VELO_DIV=100"
 if /I "%vel%"=="1.25" set "VELO_DIV=125"
 if /I "%vel%"=="1.5" set "VELO_DIV=150"
 if /I "%vel%"=="2.0" set "VELO_DIV=200"

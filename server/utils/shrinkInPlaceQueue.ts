@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   normalizeShrinkInPlaceParams,
   type ShrinkInPlaceParams,
 } from '#shared/shrinkInPlaceParams'
+import { createPersistGate, isRetryableFsError, writeJsonFileAtomic } from './atomicJsonFile'
 import {
   getShrinkInPlaceSnapshot,
   startShrinkInPlaceFromConfig,
@@ -22,6 +23,8 @@ export interface ShrinkInPlaceQueueItem {
   trailerRel: string
   label: string
   params: ShrinkInPlaceParams
+  /** Se true, substitui o original sem gravar em shrinked_backup. */
+  skipBackup?: boolean
   status: ShrinkInPlaceQueueItemStatus
   error?: string
   jobId?: string | null
@@ -67,6 +70,7 @@ interface QueueRuntime {
   listeners: Set<QueueListener>
   loaded: boolean
   loadPromise: Promise<void> | null
+  runPersist: ReturnType<typeof createPersistGate>
 }
 
 const g = globalThis as typeof globalThis & { __vpShrinkInPlaceQueue?: QueueRuntime }
@@ -80,7 +84,10 @@ function runtime(): QueueRuntime {
       listeners: new Set(),
       loaded: false,
       loadPromise: null,
+      runPersist: createPersistGate(),
     }
+  } else if (!g.__vpShrinkInPlaceQueue.runPersist) {
+    g.__vpShrinkInPlaceQueue.runPersist = createPersistGate()
   }
   return g.__vpShrinkInPlaceQueue
 }
@@ -158,6 +165,9 @@ function parseItem(raw: unknown): ShrinkInPlaceQueueItem | null {
     status,
     createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
   }
+  if (o.skipBackup === true || o.skipBackup === 1 || o.skipBackup === 'true') {
+    item.skipBackup = true
+  }
   if (typeof o.error === 'string' && o.error.trim()) item.error = o.error.trim()
   if (typeof o.jobId === 'string' && o.jobId.trim()) item.jobId = o.jobId.trim()
   else item.jobId = null
@@ -168,14 +178,21 @@ function parseItem(raw: unknown): ShrinkInPlaceQueueItem | null {
   return item
 }
 
-async function persist() {
+async function persist(opts?: { critical?: boolean }) {
   const rt = runtime()
-  rt.items = pruneFinished(rt.items)
-  rt.updatedAt = Date.now()
-  const payload: QueueFileShape = { items: rt.items, updatedAt: rt.updatedAt }
-  const path = QUEUE_FILE()
-  await mkdir(join(process.cwd(), 'data'), { recursive: true })
-  await writeFile(path, JSON.stringify(payload, null, 2), 'utf8')
+  const critical = opts?.critical === true
+  try {
+    await rt.runPersist(async () => {
+      rt.items = pruneFinished(rt.items)
+      rt.updatedAt = Date.now()
+      const payload: QueueFileShape = { items: rt.items, updatedAt: rt.updatedAt }
+      await writeJsonFileAtomic(QUEUE_FILE(), payload)
+    })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[shrink-in-place-queue] persist failed:', msg)
+    if (critical) throw e instanceof Error ? e : new Error(msg)
+  }
 }
 
 /** Itens `running` sem job vivo (HMR/crash) bloqueavam a bomba — voltam a pending. */
@@ -225,7 +242,29 @@ async function ensureLoaded() {
   }
   rt.loadPromise = (async () => {
     try {
-      const raw = await readFile(QUEUE_FILE(), 'utf8')
+      let raw = ''
+      let lastReadErr: unknown
+      for (let attempt = 0; attempt < 8; attempt++) {
+        try {
+          raw = await readFile(QUEUE_FILE(), 'utf8')
+          lastReadErr = null
+          break
+        } catch (e) {
+          lastReadErr = e
+          const code = (e as NodeJS.ErrnoException)?.code
+          if (code === 'ENOENT') break
+          if (!isRetryableFsError(e) || attempt === 7) break
+          await new Promise<void>((r) => setTimeout(r, 30 + attempt * 40))
+        }
+      }
+      if (lastReadErr && (lastReadErr as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        throw lastReadErr
+      }
+      if (!raw) {
+        rt.items = []
+        rt.updatedAt = Date.now()
+        return
+      }
       const parsed = JSON.parse(raw) as QueueFileShape
       const rows = Array.isArray(parsed.items) ? parsed.items : []
       const items: ShrinkInPlaceQueueItem[] = []
@@ -240,7 +279,14 @@ async function ensureLoaded() {
         typeof parsed.updatedAt === 'number' && Number.isFinite(parsed.updatedAt)
           ? parsed.updatedAt
           : Date.now()
-    } catch {
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException)?.code
+      if (code !== 'ENOENT') {
+        console.error(
+          '[shrink-in-place-queue] load failed, starting empty:',
+          e instanceof Error ? e.message : e,
+        )
+      }
       rt.items = []
       rt.updatedAt = Date.now()
     } finally {
@@ -316,6 +362,7 @@ async function runPump() {
           trailerRel: next.trailerRel,
           projectRoot: process.cwd(),
           params: next.params,
+          skipBackup: Boolean(next.skipBackup),
         })
         jobId = snap.id
         next.jobId = jobId
@@ -395,6 +442,7 @@ export async function enqueueShrinkInPlaceQueueItem(input: {
   trailerRel?: string
   label?: string
   params?: Partial<ShrinkInPlaceParams> | Record<string, unknown> | null
+  skipBackup?: boolean
 }): Promise<ShrinkInPlaceQueueState> {
   await ensureLoaded()
   const rt = runtime()
@@ -419,6 +467,7 @@ export async function enqueueShrinkInPlaceQueueItem(input: {
     trailerRel: String(input.trailerRel ?? mainRel).trim() || mainRel,
     label: String(input.label ?? mainRel).trim() || mainRel,
     params: normalizeShrinkInPlaceParams(input.params),
+    ...(input.skipBackup ? { skipBackup: true } : {}),
     status: 'pending',
     jobId: null,
     createdAt: Date.now(),
@@ -426,7 +475,7 @@ export async function enqueueShrinkInPlaceQueueItem(input: {
     endedAt: null,
   }
   rt.items.push(item)
-  await persist()
+  await persist({ critical: true })
   emitQueue()
   kickPump()
   return publicState()

@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
 
   const speed = normalizeShrinkSpeed(body?.speed ?? 1.5)
   if (!speed) {
-    throw createError({ statusCode: 400, statusMessage: 'Velocidade inválida: use 1.25, 1.5 ou 2.' })
+    throw createError({ statusCode: 400, statusMessage: 'Velocidade inválida: use 1, 1.25, 1.5 ou 2.' })
   }
 
   const codec = normalizeShrinkCodec(body?.codec ?? 'auto')

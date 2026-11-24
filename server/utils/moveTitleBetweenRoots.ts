@@ -4,7 +4,7 @@ import { createError } from 'h3'
 import {
   isPreviewCatalogRel,
   previewFrameCacheFilePath,
-  PREVIEW_FRAME_SLOT_COUNT,
+  PREVIEW_FRAME_MAX_SLOTS,
 } from './previewFrameCache'
 import { moveTitleLibraryState } from './libraryState'
 import { resolvePreviewTrailerRel } from './previewTrailer'
@@ -161,7 +161,7 @@ export async function moveTitleBetweenVideoRoots(opts: {
 
   let movedThumbs = 0
   if (frameSourceFull && mtimeMsForCache > 0) {
-    for (let slot = 0; slot < PREVIEW_FRAME_SLOT_COUNT; slot++) {
+    for (let slot = 0; slot < PREVIEW_FRAME_MAX_SLOTS; slot++) {
       const srcJpg = previewFrameCacheFilePath(fromRoot, relForFrames, slot, mtimeMsForCache)
       const dstJpg = previewFrameCacheFilePath(toRoot, relForFrames, slot, mtimeMsForCache)
       if (!(await isExistingFile(srcJpg))) continue

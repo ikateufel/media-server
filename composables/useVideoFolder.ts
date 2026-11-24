@@ -152,8 +152,14 @@ export function parseApiVideoUrl(href: string): { rel: string; session: number }
   }
 }
 
-/** Número de slots de JPEG estático por título na grelha (API `preview-frame`). */
-export const CATALOG_PREVIEW_FRAME_SLOTS = 4
+/** Número de slots de JPEG estático por título (API `preview-frame`; grelha usa 0..3, diálogo usa todos). */
+export const CATALOG_PREVIEW_FRAME_SLOTS = 12
+
+/**
+ * Ordem cronológica dos slots no diálogo de capa. Tem de acompanhar `PREVIEW_FRAME_SLOT_FRACS`
+ * em `server/utils/previewFrameCache.ts` (ordenado pela fracção da duração).
+ */
+export const CATALOG_PREVIEW_FRAME_ORDER = [4, 5, 0, 6, 7, 1, 8, 2, 9, 3, 10, 11] as const
 
 /** Slideshow em `preview/` (geração descontinuada); não usar para o palco — só miniatura inline legada. */
 export function isDedicatedPreviewVideoRel(rel: string | null | undefined): boolean {

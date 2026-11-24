@@ -2,6 +2,11 @@
 import { basename, extname, join, resolve } from 'node:path'
 import { createError, getQuery } from 'h3'
 import type { TrailerListEntry } from '~/composables/useVideoFolder'
+import {
+  catalogLoadFiltersActive,
+  parseCatalogLoadFilters,
+  resolveCatalogScanOptions,
+} from '../utils/catalogLoadFilters'
 import { ensureSessionCatalogTagRepair } from '../utils/catalogTagRepair'
 import { dedupeCatalogItemsByPhysicalVideo } from '../utils/catalogPhysicalKey'
 import {
@@ -101,9 +106,12 @@ export default defineEventHandler(async (event) => {
 
   let items: TrailerListEntry[] = []
   let catalogMode: 'trailers' | 'main-only' = 'trailers'
+  const filters = parseCatalogLoadFilters(event)
+  const { scan: scanOpts, stats: catalogStats } = await resolveCatalogScanOptions(session, filters)
+  const filtersActive = catalogLoadFiltersActive(filters)
 
   try {
-    const scanned = await scanTrailersCatalogInRoot(root)
+    const scanned = await scanTrailersCatalogInRoot(root, scanOpts)
     await ensureSessionCatalogTagRepair(
       session,
       root,
@@ -117,12 +125,41 @@ export default defineEventHandler(async (event) => {
     catalogMode = 'main-only'
   }
 
-  if (!items.length) {
+  if (!items.length && !filtersActive) {
     const fallback = await collectMainOnlyEntries(root)
     if (fallback.length) {
       items = fallback
       catalogMode = 'main-only'
     }
+  }
+
+  // Fallback main-only: aplicar filtros em memória (não há allowlist de disco).
+  if (catalogMode === 'main-only' && filtersActive && items.length) {
+    items = items.filter((e) => {
+      const tags = e.tags ?? []
+      if (filters.tag && !tags.some((t) => t.trim().toLowerCase() === filters.tag!.toLowerCase())) {
+        return false
+      }
+      if (filters.folderQ) {
+        const q = filters.folderQ.toLowerCase()
+        if (filters.folderMode === 'tags') {
+          if (!tags.some((t) => t.toLowerCase().includes(q))) return false
+        } else {
+          const hay = `${e.label ?? ''} ${e.mainFilename ?? ''} ${e.trailerRel ?? ''} ${e.mainRel ?? ''}`.toLowerCase()
+          if (!hay.includes(q)) return false
+        }
+      }
+      if (filters.watchedOnly) {
+        const watched = tags.some((t) => {
+          const n = t.trim().toLowerCase()
+          return n === 'concluido' || n === 'memoravel'
+        })
+        if (!watched) return false
+      }
+      if (filters.favorite === 'only' && e.isFavorite !== true) return false
+      if (filters.favorite === 'exclude' && e.isFavorite === true) return false
+      return true
+    })
   }
 
   const menu = getVideoMenuItems(config)
@@ -136,6 +173,8 @@ export default defineEventHandler(async (event) => {
     items,
     tagSuggestions: tagSuggestionsForSession(session),
     catalogMode,
+    catalogStats,
+    catalogFiltered: filtersActive,
     /** Cliente: só para decidir UI (ex. botão Explorador em Windows). */
     serverPlatform: process.platform,
     fastPlay: getFastPlaySettingsFromDisk(),

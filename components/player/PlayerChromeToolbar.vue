@@ -155,6 +155,57 @@ function onRateChange(e: Event) {
 function onTagInput(e: Event) {
   emit('update:tagInput', (e.target as HTMLInputElement).value)
 }
+
+/** Minúsculas e sem acentos, para comparar tags. */
+function foldTag(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+}
+
+const TAG_SUGGEST_MAX = 12
+
+/** Sugestões já normalizadas (recalcula só quando a lista muda). */
+const foldedSuggestions = computed(() =>
+  props.tagSuggestions.map((s) => ({ tag: s, key: foldTag(s) })),
+)
+
+/** Texto do último segmento (depois de , ou ;) — é o que se pesquisa. */
+const tagQuery = computed(() => {
+  const parts = (props.tagInput ?? '').split(/[,;]/)
+  return (parts[parts.length - 1] ?? '').trim().replace(/\s+/g, ' ')
+})
+
+const tagQueryKey = computed(() => foldTag(tagQuery.value))
+
+/** Tags que contêm o texto (começadas por ele primeiro), sem repetir as que o título já tem. */
+const tagMatches = computed<string[]>(() => {
+  const q = tagQueryKey.value
+  if (!q) return []
+  const current = new Set((props.title?.tags ?? []).map(foldTag))
+  const starts: string[] = []
+  const contains: string[] = []
+  for (const { tag, key } of foldedSuggestions.value) {
+    if (!key.includes(q) || current.has(key)) continue
+    if (key.startsWith(q)) starts.push(tag)
+    else contains.push(tag)
+  }
+  return [...starts, ...contains].slice(0, TAG_SUGGEST_MAX)
+})
+
+/** Mostra «Adicionar» em baixo só quando nada parecido existe. */
+const showTagAddBelow = computed(() => {
+  const q = tagQueryKey.value
+  if (!q || tagMatches.value.length > 0) return false
+  return !props.tagSuggestions.some((s) => foldTag(s) === q)
+})
+
+/** Escolhe uma tag existente: substitui o último segmento e adiciona. */
+function pickTag(tag: string) {
+  const parts = (props.tagInput ?? '').split(/[,;]/)
+  parts.pop()
+  const prefix = parts.map((p) => p.trim()).filter(Boolean)
+  emit('update:tagInput', [...prefix, tag].join(', '))
+  emit('addTags')
+}
 </script>
 
 <template>
@@ -539,16 +590,36 @@ function onTagInput(e: Event) {
           class="tag-input"
           maxlength="80"
           placeholder="Uma ou várias tags (separar com , ou ;)"
-          :list="datalistId"
           autocomplete="off"
           @input="onTagInput($event)"
           @keydown.enter.prevent="emit('addTags')"
         />
         <button type="button" class="tag-add-btn" @click="emit('addTags')">Adicionar</button>
       </div>
-      <datalist :id="datalistId">
-        <option v-for="s in tagSuggestions" :key="s" :value="s" />
-      </datalist>
+      <div
+        v-if="tagMatches.length > 0 || showTagAddBelow"
+        v-show="mode === 'full' || tagsPanelOpen"
+        class="tag-suggest"
+        aria-label="Tags parecidas"
+      >
+        <button
+          v-for="s in tagMatches"
+          :key="s"
+          type="button"
+          class="tag-suggest-item"
+          @click="pickTag(s)"
+        >
+          {{ s }}
+        </button>
+        <button
+          v-if="showTagAddBelow"
+          type="button"
+          class="tag-suggest-add"
+          @click="emit('addTags')"
+        >
+          Adicionar «{{ tagQuery }}»
+        </button>
+      </div>
       <div
         v-if="title.tags.length > 0"
         class="tag-chip-list"

@@ -3,7 +3,7 @@ import { basename, extname, join } from 'node:path'
 import {
   isPreviewCatalogRel,
   previewFrameCacheFilePath,
-  PREVIEW_FRAME_SLOT_COUNT,
+  PREVIEW_FRAME_MAX_SLOTS,
 } from './previewFrameCache'
 import { resolvePreviewTrailerRel } from './previewTrailer'
 import {
@@ -209,7 +209,7 @@ export async function purgePreviewThumbCacheForTitle(
     }
     if (!mtimeMs) continue
 
-    for (let slot = 0; slot < PREVIEW_FRAME_SLOT_COUNT; slot++) {
+    for (let slot = 0; slot < PREVIEW_FRAME_MAX_SLOTS; slot++) {
       const jpg = previewFrameCacheFilePath(root, norm, slot, mtimeMs)
       if (seen.has(jpg)) continue
       seen.add(jpg)
