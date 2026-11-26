@@ -1,4 +1,86 @@
 {
-  "items": [],
-  "updatedAt": 1790453293174
+  "items": [
+    {
+      "id": "9856880e-41af-4e43-87a8-3d65e63d7187",
+      "session": 9,
+      "mainRel": "Dirty Masseur 7_3 Aryana Augustine .mp4",
+      "trailerRel": "trailers/Dirty Masseur 7_3 Aryana Augustine .mp4",
+      "label": "Dirty Masseur 7_3 Aryana Augustine .mp4",
+      "params": {
+        "collect": "padrao",
+        "pctSeg": 5,
+        "pctStep": 5,
+        "longMinSec": 7200,
+        "longStepSec": 900,
+        "tailSec": 5,
+        "maxOutSec": 60,
+        "legacySegSec": 5,
+        "legacyStepSec": 60,
+        "speed": 1,
+        "heightPx": 720,
+        "useNvenc": "auto",
+        "nvencPreset": "p4"
+      },
+      "status": "done",
+      "jobId": "48c3f9e3-7f7d-40ac-9b15-d3bda2dd26cd",
+      "createdAt": 1795696816501,
+      "startedAt": 1795696816505,
+      "endedAt": 1795696836137
+    },
+    {
+      "id": "83b62716-e657-4bff-9c2b-1952e38fd7c7",
+      "session": 9,
+      "mainRel": "Big.Natural.Boobs.2024.Zero.Tolerance.720p/Big.Natural.Boobs.2024.Zero.Tolerance.720p.P3.mp4",
+      "trailerRel": "trailers/Big.Natural.Boobs.2024.Zero.Tolerance.720p/Big.Natural.Boobs.2024.Zero.Tolerance.720p.P3.mp4",
+      "label": "Big.Natural.Boobs.2024.Zero.Tolerance.720p/Big.Natural.Boobs.2024.Zero.Tolerance.720p.P3.mp4",
+      "params": {
+        "collect": "padrao",
+        "pctSeg": 5,
+        "pctStep": 5,
+        "longMinSec": 7200,
+        "longStepSec": 900,
+        "tailSec": 5,
+        "maxOutSec": 60,
+        "legacySegSec": 5,
+        "legacyStepSec": 60,
+        "speed": 1,
+        "heightPx": 720,
+        "useNvenc": "auto",
+        "nvencPreset": "p4"
+      },
+      "status": "done",
+      "jobId": "baa7aef4-9110-470a-bc95-91ec65e329e3",
+      "createdAt": 1795696900604,
+      "startedAt": 1795696900608,
+      "endedAt": 1795696913884
+    },
+    {
+      "id": "9d3933ae-de60-4ea9-80da-631243079a15",
+      "session": 9,
+      "mainRel": "2026_Yurievij_Bad Babysitter_Digital Playground_2017 WEB-DL 1080p Split Scenes/DigitalPlayground_Bad Babysitter_Episode 1_Dolly Leigh_Justin Hunt_1080p.mp4",
+      "trailerRel": "trailers/2026_Yurievij_Bad Babysitter_Digital Playground_2017 WEB-DL 1080p Split Scenes/DigitalPlayground_Bad Babysitter_Episode 1_Dolly Leigh_Justin Hunt_1080p.mp4",
+      "label": "2026_Yurievij_Bad Babysitter_Digital Playground_2017 WEB-DL 1080p Split Scenes/DigitalPlayground_Bad Babysitter_Episode 1_Dolly Leigh_Justin Hunt_1080p.mp4",
+      "params": {
+        "collect": "padrao",
+        "pctSeg": 5,
+        "pctStep": 5,
+        "longMinSec": 7200,
+        "longStepSec": 900,
+        "tailSec": 5,
+        "maxOutSec": 60,
+        "legacySegSec": 5,
+        "legacyStepSec": 60,
+        "speed": 1,
+        "heightPx": 720,
+        "useNvenc": "auto",
+        "nvencPreset": "p4"
+      },
+      "status": "done",
+      "jobId": "c7410b19-c15c-49f8-aea8-75574b5005c4",
+      "createdAt": 1795702419013,
+      "startedAt": 1795702419017,
+      "endedAt": 1795702456489
+    }
+  ],
+  "updatedAt": 1795702456489
 }

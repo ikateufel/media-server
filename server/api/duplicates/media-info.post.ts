@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { createError, readBody } from 'h3'
 import { requireCatalogUnlock } from '../../utils/catalogAccess'
+import { resolveTrailerRelForTagMutation } from '../../utils/catalogTagMutation'
 import { getFavoriteSet } from '../../utils/libraryState'
 import { findSuccessfulShrinkHistory } from '../../utils/processJobHistory'
 import { isInRecentPlayback } from '../../utils/recentPlaybackDb'
@@ -36,9 +37,9 @@ export default defineEventHandler(async (event) => {
   const sessionRaw = body?.session
   const session =
     typeof sessionRaw === 'number' ? sessionRaw : Number(asTrimmedString(sessionRaw))
-  const trailerRel = asTrimmedString(body?.trailerRel).replace(/\\/g, '/')
+  const rawTrailerRel = asTrimmedString(body?.trailerRel).replace(/\\/g, '/')
 
-  if (!trailerRel) {
+  if (!rawTrailerRel) {
     throw createError({ statusCode: 400, statusMessage: 'trailerRel em falta.' })
   }
   if (!Number.isFinite(session) || session < 0) {
@@ -54,6 +55,8 @@ export default defineEventHandler(async (event) => {
   const sess = Math.floor(session)
   const root = roots[sess]!.trim()
   const sessionLabel = menu[sess]?.title?.trim() || `Sessão ${sess}`
+  // Mesma chave que a biblioteca usa (o vídeo pode ter mais de um trailer_rel no SQLite).
+  const trailerRel = await resolveTrailerRelForTagMutation(event, sess, rawTrailerRel)
 
   let trailerBytes: number | null = null
   const trailerCandidates = trailerRel.startsWith('trailers/')

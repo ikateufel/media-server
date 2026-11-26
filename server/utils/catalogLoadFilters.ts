@@ -79,7 +79,7 @@ export function catalogLoadFiltersActive(f: CatalogLoadFilters): boolean {
 export async function resolveCatalogScanOptions(
   session: number,
   filters: CatalogLoadFilters,
-): Promise<{ scan: CatalogScanOptions; stats: CatalogFilterStats }> {
+): Promise<{ scan: CatalogScanOptions; stats: CatalogFilterStats; postDeny: Set<string> }> {
   const favSet = await getFavoriteSet(session)
   const stats: CatalogFilterStats = {
     watchedCount: countWatchedClassForSession(session),
@@ -87,7 +87,7 @@ export async function resolveCatalogScanOptions(
   }
 
   if (!catalogLoadFiltersActive(filters)) {
-    return { scan: {}, stats }
+    return { scan: {}, stats, postDeny: new Set() }
   }
 
   const allowParts: Set<string>[] = []
@@ -107,6 +107,7 @@ export async function resolveCatalogScanOptions(
   } else if (filters.favorite === 'exclude') {
     for (const r of favSet) deny.add(r)
   }
+  // `deny` (favoritos/destaques) vale por vídeo físico: aplicado depois do scan, ver `postDeny`.
 
   if (filters.destaques === 'only') {
     allowParts.push(new Set(listRecentPlaybackRelsForSession(session)))
@@ -116,7 +117,7 @@ export async function resolveCatalogScanOptions(
 
   const scan: CatalogScanOptions = {
     allowTrailerRels: allowParts.length ? intersectSets(allowParts) : null,
-    denyTrailerRels: deny.size ? deny : null,
+    denyTrailerRels: null,
     tagExact: filters.tag,
     tagSubstring:
       filters.folderQ && filters.folderMode === 'tags' ? filters.folderQ : null,
@@ -124,5 +125,5 @@ export async function resolveCatalogScanOptions(
       filters.folderQ && filters.folderMode === 'files' ? filters.folderQ : null,
   }
 
-  return { scan, stats }
+  return { scan, stats, postDeny: deny }
 }

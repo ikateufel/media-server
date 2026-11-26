@@ -1,5 +1,6 @@
 import { createError, readBody } from 'h3'
 import { requireCatalogUnlock } from '../../utils/catalogAccess'
+import { resolveTrailerRelForTagMutation } from '../../utils/catalogTagMutation'
 import { toggleFavorite } from '../../utils/libraryState'
 import { getVideoRootsFromRuntime } from '../../utils/videoMenu'
 
@@ -18,6 +19,8 @@ export default defineEventHandler(async (event) => {
   if (!Number.isFinite(session) || session < 0 || session >= roots.length || !trailerRel) {
     throw createError({ statusCode: 400, statusMessage: 'session e trailerRel são obrigatórios.' })
   }
-  const { isFavorite, favoritedAt } = await toggleFavorite(Math.floor(session), trailerRel)
+  // Mesma chave que a biblioteca usa (o vídeo pode ter mais de um trailer_rel no SQLite).
+  const canonicalRel = await resolveTrailerRelForTagMutation(event, Math.floor(session), trailerRel)
+  const { isFavorite, favoritedAt } = await toggleFavorite(Math.floor(session), canonicalRel)
   return { ok: true, isFavorite, favoritedAt }
 })

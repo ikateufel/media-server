@@ -193,6 +193,24 @@ export async function toggleFavorite(session: number, trailerRel: string): Promi
 
 
 
+/**
+ * Define o favorito para um estado pedido (`desired`), sem alternar às cegas.
+ * Se o vídeo já está no estado pedido, não grava nada. Assim, um clique repetido
+ * (ou duplicado) não desfaz o favorito que acabou de ser marcado.
+ */
+export async function setFavorite(
+  session: number,
+  trailerRel: string,
+  desired: boolean,
+): Promise<ToggleFavoriteResult> {
+  const current = await getFavoriteSet(session)
+  if (current.has(trailerRel) === desired) {
+    const at = (await getFavoriteAtMap(session)).get(trailerRel) ?? null
+    return { isFavorite: desired, favoritedAt: desired ? at : null }
+  }
+  return toggleFavorite(session, trailerRel)
+}
+
 export async function getFavoriteSet(session: number): Promise<Set<string>> {
 
   const state = await readLibraryState()

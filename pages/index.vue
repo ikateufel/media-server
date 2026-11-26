@@ -769,6 +769,15 @@
               </button>
               <button
                 type="button"
+                class="catalog-chrome-toggle catalog-lists-shortcut"
+                title="Abrir tags e listas de tags (de qualquer tela)"
+                aria-label="Abrir tags e listas de tags"
+                @click="openTagBrowseDialog"
+              >
+                Listas
+              </button>
+              <button
+                type="button"
                 class="catalog-chrome-toggle"
                 :class="{ 'catalog-chrome-toggle--on': catalogChromeHidden }"
                 :title="catalogChromeHidden ? 'Mostrar controlos do catálogo' : 'Esconder controlos do catálogo'"
@@ -927,6 +936,14 @@
                 }}</span>
               </button>
             </div>
+            <label
+              class="watched-filter-toggle catalog-cover-edit-toggle"
+              :class="{ 'watched-filter-toggle--on': catalogCoverEdit }"
+              title="Editar capas: com isto ligado, tocar na miniatura abre a escolha de capa"
+            >
+              <input v-model="catalogCoverEdit" type="checkbox" class="catalog-cover-edit-input" />
+              <span>Editar</span>
+            </label>
             <button
               type="button"
               class="watched-filter-toggle"
@@ -1352,6 +1369,7 @@
                 />
                 <button
                   v-if="
+                    catalogCoverEdit &&
                     catalogThumbInlineVideo &&
                     isDedicatedPreviewVideoRel(item.entry.previewRel) &&
                     gridInlinePreviewIndex === item.index
@@ -4780,6 +4798,8 @@ function onCatalogSplitterKeydown(e: KeyboardEvent) {
 }
 
 const catalogGalleryIndex = ref<number | null>(null)
+/** Checkbox «Editar» no catálogo: só com ela ligada a miniatura/toque longo abrem a escolha de capa. */
+const catalogCoverEdit = ref(false)
 /** Frame ampliado no diálogo de capa; `null` = grelha de miniaturas. */
 const galleryFocusSlot = ref<number | null>(null)
 /** Capas escolhidas: chave `${session}|${rel}` → slot (API `preview-covers`). */
@@ -4849,9 +4869,9 @@ function closeCatalogGalleryDialog() {
   galleryFocusSlot.value = null
 }
 
-/** Na busca, clicar na imagem abre o diálogo de frames (em vez de só selecionar o item). */
+/** Miniatura: com «Editar» ligado abre a escolha de capa; senão comportamento normal (selecionar / pré-visualizar). */
 function onCatalogThumbActivate(i: number) {
-  if (searchSessionActive.value) openCatalogGalleryDialog(i)
+  if (catalogCoverEdit.value) openCatalogGalleryDialog(i)
   else onCatalogThumbClick(i)
 }
 
@@ -4932,6 +4952,7 @@ let gridChromeLongTimer: ReturnType<typeof setTimeout> | null = null
 
 /** Toque longo (~0,5s) na margem do tile (não no thumb/botões) abre a galeria em ecrã inteiro. */
 function onGridTileChromePointerDown(i: number, e: PointerEvent) {
+  if (!catalogCoverEdit.value) return
   if (e.button !== 0) return
   if (e.target !== e.currentTarget) return
   if (!entries.value[i]?.previewRel && !entries.value[i]?.trailerRel) return
@@ -6503,7 +6524,23 @@ function entryLeavesCatalogAfterFavoriteChange(nextFavorite: boolean): boolean {
   return false
 }
 
+/** Chaves (sessão|trailerRel) com pedido de favorito em andamento: cliques repetidos são ignorados. */
+const favoriteInFlight = new Set<string>()
+
 async function toggleFavoriteAtIndex(i: number | null, opts?: { grid?: boolean }) {
+  const e = resolveCatalogActionEntry(i, opts)
+  if (!e) return
+  const favKey = `${libSession(e)}|${e.trailerRel}`
+  if (favoriteInFlight.has(favKey)) return
+  favoriteInFlight.add(favKey)
+  try {
+    await toggleFavoriteAtIndexInner(i, opts)
+  } finally {
+    favoriteInFlight.delete(favKey)
+  }
+}
+
+async function toggleFavoriteAtIndexInner(i: number | null, opts?: { grid?: boolean }) {
   const playbackBefore = resolvePlaybackEntryFromUrls()
   const e = resolveCatalogActionEntry(i, opts)
   if (!e) return
@@ -6534,7 +6571,7 @@ async function toggleFavoriteAtIndex(i: number | null, opts?: { grid?: boolean }
   try {
     const res = await $fetch<{ isFavorite?: boolean; favoritedAt?: string | null }>('/api/library/favorite', {
       method: 'POST',
-      body: { session: ls, trailerRel },
+      body: { session: ls, trailerRel, favorite: next },
     })
     if (idx >= 0 && typeof res.isFavorite === 'boolean') {
       fullEntries.value[idx].isFavorite = res.isFavorite
@@ -8946,6 +8983,14 @@ onUnmounted(() => {
   border-color: #5f6368;
 }
 
+.catalog-lists-shortcut {
+  width: auto;
+  padding: 0 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-color: #f5b942;
+}
+
 .catalog-chrome-toggle--on {
   border-color: #5f9dee;
   background: #2a3f5f;
@@ -10318,6 +10363,12 @@ onUnmounted(() => {
   font-size: 0.95rem;
   line-height: 1;
   opacity: 0.9;
+}
+
+.catalog-cover-edit-input {
+  margin: 0 0.3rem 0 0;
+  accent-color: #8ab4f8;
+  cursor: pointer;
 }
 
 .watched-filter-toggle {

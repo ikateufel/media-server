@@ -48,6 +48,27 @@ export function pickBestCatalogEntry(group: TrailerListEntry[]): TrailerListEntr
 }
 
 /**
+ * Remove os vídeos físicos que têm QUALQUER `trailerRel` no conjunto `deny`.
+ *
+ * Um mesmo vídeo pode aparecer no scan com mais de uma chave (ex.: `trailers/x.mp4` e
+ * `trailers/Pasta.XXX/x.mp4`). O favorito fica na chave canónica; filtrar só pela chave
+ * exata deixava a entrada "alias" na lista "Sem favoritos", e o clique no favorito
+ * acabava alternando a chave canónica (desmarcando o vídeo).
+ */
+export function dropPhysicalGroupsWithDeniedRel(
+  items: TrailerListEntry[],
+  deny: Set<string> | null | undefined,
+): TrailerListEntry[] {
+  if (!deny || deny.size === 0) return items
+  const denied = new Set<string>()
+  for (const it of items) {
+    if (deny.has(it.trailerRel)) denied.add(physicalVideoGroupKey(it))
+  }
+  if (denied.size === 0) return items
+  return items.filter((it) => !denied.has(physicalVideoGroupKey(it)))
+}
+
+/**
  * Um cartão por vídeo físico (mesmo `mainRel`). Evita duplicados quando existem
  * `trailers/Filme.mkv` + `trailers/zz_Filme_acelerado.*` ou scan legado + `trailers/`.
  */

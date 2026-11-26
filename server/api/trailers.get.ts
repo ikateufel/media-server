@@ -8,7 +8,7 @@ import {
   resolveCatalogScanOptions,
 } from '../utils/catalogLoadFilters'
 import { ensureSessionCatalogTagRepair } from '../utils/catalogTagRepair'
-import { dedupeCatalogItemsByPhysicalVideo } from '../utils/catalogPhysicalKey'
+import { dedupeCatalogItemsByPhysicalVideo, dropPhysicalGroupsWithDeniedRel } from '../utils/catalogPhysicalKey'
 import {
   enrichTrailerListForSession,
   scanTrailersCatalogInRoot,
@@ -107,7 +107,7 @@ export default defineEventHandler(async (event) => {
   let items: TrailerListEntry[] = []
   let catalogMode: 'trailers' | 'main-only' = 'trailers'
   const filters = parseCatalogLoadFilters(event)
-  const { scan: scanOpts, stats: catalogStats } = await resolveCatalogScanOptions(session, filters)
+  const { scan: scanOpts, stats: catalogStats, postDeny } = await resolveCatalogScanOptions(session, filters)
   const filtersActive = catalogLoadFiltersActive(filters)
 
   try {
@@ -117,7 +117,8 @@ export default defineEventHandler(async (event) => {
       root,
       scanned.items.map((e) => e.trailerRel),
     )
-    items = dedupeCatalogItemsByPhysicalVideo(scanned.items)
+    // Favoritos/destaques "excluir": vale por vídeo físico (inclui entradas alias do mesmo vídeo).
+    items = dedupeCatalogItemsByPhysicalVideo(dropPhysicalGroupsWithDeniedRel(scanned.items, postDeny))
     await enrichTrailerListForSession(session, items, scanned.mainStatsByRel)
   } catch {
     // Catálogo em trailers/ ou pastas legado inacessível: tenta só vídeos completos na raiz.
